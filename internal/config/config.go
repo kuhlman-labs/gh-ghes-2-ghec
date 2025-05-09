@@ -8,28 +8,79 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds all configuration for the application
 type Config struct {
-	Port            int           `mapstructure:"port"`
-	WebhookURL      string        `mapstructure:"webhook_url"`
-	GHESToken       string        `mapstructure:"ghes_token"`
-	GHCloudToken    string        `mapstructure:"gh_cloud_token"`
-	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
-	Clients         *Clients      // GitHub API clients
+	Server  ServerConfig  `mapstructure:"server"`
+	GitHub  GitHubConfig  `mapstructure:"github"`
+	Webhook WebhookConfig `mapstructure:"webhook"`
+	Clients *Clients      // GitHub API clients
 }
+
+// ServerConfig holds server-specific configuration
+type ServerConfig struct {
+	Port            int           `mapstructure:"port"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
+}
+
+// GitHubConfig holds GitHub-specific configuration
+type GitHubConfig struct {
+	GHESToken    string `mapstructure:"ghes_token"`
+	GHCloudToken string `mapstructure:"gh_cloud_token"`
+}
+
+// WebhookConfig holds webhook-specific configuration
+type WebhookConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+// ConfigForWriting is used to serialize config to YAML
+type ConfigForWriting struct {
+	Server struct {
+		Port            int `yaml:"port"`
+		ShutdownTimeout int `yaml:"shutdown_timeout"`
+		ReadTimeout     int `yaml:"read_timeout"`
+		WriteTimeout    int `yaml:"write_timeout"`
+	} `yaml:"server"`
+	GitHub struct {
+		GHESToken    string `yaml:"ghes_token"`
+		GHCloudToken string `yaml:"gh_cloud_token"`
+	} `yaml:"github"`
+	Webhook struct {
+		URL string `yaml:"url"`
+	} `yaml:"webhook"`
+}
+
+const (
+	configFileName   = "config.yaml"
+	defaultPort      = 8080
+	defaultTimeout   = 30 * time.Second
+	defaultIOTimeout = 15 * time.Second
+)
 
 var (
 	cfg  *Config
 	once sync.Once
 )
 
+// GetConfigPath returns the path to the configuration file
+func GetConfigPath() (string, error) {
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current directory: %w", err)
+	}
+	return filepath.Join(currentDir, configFileName), nil
+}
+
 // Init initializes the configuration
 func Init() error {
 	var err error
 	once.Do(func() {
-		cfg = &Config{}
+		cfg = CreateDefaultConfig()
 		err = loadConfig()
 	})
 	return err
@@ -37,37 +88,54 @@ func Init() error {
 
 // Get returns the configuration instance
 func Get() *Config {
+	if cfg == nil {
+		panic("config not initialized")
+	}
 	return cfg
+}
+
+// Validate checks if the configuration is valid for running the application
+func Validate() error {
+	if cfg.GitHub.GHESToken == "" {
+		return fmt.Errorf("ghes_token is required")
+	}
+	if cfg.GitHub.GHCloudToken == "" {
+		return fmt.Errorf("gh_cloud_token is required")
+	}
+	if cfg.Server.Port <= 0 {
+		return fmt.Errorf("invalid port number")
+	}
+	return nil
 }
 
 func loadConfig() error {
 	// Set default values
-	viper.SetDefault("port", 8080)
-	viper.SetDefault("shutdown_timeout", 30*time.Second)
+	viper.SetDefault("server.port", defaultPort)
+	viper.SetDefault("server.shutdown_timeout", defaultTimeout)
+	viper.SetDefault("server.read_timeout", defaultIOTimeout)
+	viper.SetDefault("server.write_timeout", defaultIOTimeout)
 
 	// Read from environment variables
 	viper.SetEnvPrefix("GH_REPO_MIGRATE")
 	viper.AutomaticEnv()
 
-	// Read from config file if it exists
-	configDir, err := os.UserConfigDir()
+	// Get config path
+	configPath, err := GetConfigPath()
 	if err != nil {
-		return fmt.Errorf("failed to get user config directory: %w", err)
+		return fmt.Errorf("failed to get config path: %w", err)
 	}
 
-	configPath := filepath.Join(configDir, "gh-repo-migrate")
-	if err := os.MkdirAll(configPath, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	viper.SetConfigName("config")
+	// Set up viper
+	viper.SetConfigFile(configPath)
 	viper.SetConfigType("yaml")
-	viper.AddConfigPath(configPath)
 
+	// Try to read config, but don't error if it doesn't exist
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
+		// If config doesn't exist, keep using defaults that were set in Init()
+		return nil
 	}
 
 	if err := viper.Unmarshal(cfg); err != nil {
@@ -75,4 +143,49 @@ func loadConfig() error {
 	}
 
 	return nil
+}
+
+// WriteConfig writes the configuration to a file
+func WriteConfig(cfg *Config, file *os.File) error {
+	// Convert config to writable format
+	writeCfg := convertToWritable(cfg)
+
+	// Create YAML encoder
+	encoder := yaml.NewEncoder(file)
+	encoder.SetIndent(2)
+
+	// Write config
+	if err := encoder.Encode(writeCfg); err != nil {
+		return fmt.Errorf("failed to encode config: %w", err)
+	}
+
+	return nil
+}
+
+// CreateDefaultConfig creates a new Config instance with default values
+func CreateDefaultConfig() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Port:            defaultPort,
+			ShutdownTimeout: defaultTimeout,
+			ReadTimeout:     defaultIOTimeout,
+			WriteTimeout:    defaultIOTimeout,
+		},
+		GitHub:  GitHubConfig{},
+		Webhook: WebhookConfig{},
+	}
+}
+
+// convertToWritable converts a Config to ConfigForWriting
+func convertToWritable(cfg *Config) ConfigForWriting {
+	writeCfg := ConfigForWriting{}
+	writeCfg.Server.Port = cfg.Server.Port
+	writeCfg.Server.ShutdownTimeout = int(cfg.Server.ShutdownTimeout.Seconds())
+	writeCfg.Server.ReadTimeout = int(cfg.Server.ReadTimeout.Seconds())
+	writeCfg.Server.WriteTimeout = int(cfg.Server.WriteTimeout.Seconds())
+	writeCfg.GitHub.GHESToken = cfg.GitHub.GHESToken
+	writeCfg.GitHub.GHCloudToken = cfg.GitHub.GHCloudToken
+	writeCfg.Webhook.URL = cfg.Webhook.URL
+
+	return writeCfg
 }

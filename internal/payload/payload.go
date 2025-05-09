@@ -2,6 +2,7 @@ package payload
 
 import (
 	"fmt"
+	"time"
 )
 
 // MigrationRequest represents a request to migrate repositories
@@ -31,9 +32,10 @@ func (r *MigrationRequest) Validate() error {
 
 // MigrationStatus represents the status of a repository migration
 type MigrationStatus struct {
-	Repository string `json:"repository"`
-	Status     string `json:"status"`
-	Error      string `json:"error,omitempty"`
+	Repository string    `json:"repository"`
+	Status     string    `json:"status"`
+	Error      string    `json:"error,omitempty"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 const (

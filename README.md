@@ -47,6 +47,59 @@ Response:
 }
 ```
 
+### Get Migration Status
+
+Get status for all migrations:
+
+```http
+GET /status
+```
+
+Response:
+```json
+{
+  "repo1": {
+    "repository": "repo1",
+    "status": "succeeded",
+    "updated_at": "2023-05-01T12:34:56Z"
+  },
+  "repo2": {
+    "repository": "repo2",
+    "status": "in_progress",
+    "error": "migration state: pending",
+    "updated_at": "2023-05-01T12:35:00Z"
+  }
+}
+```
+
+Get status for a specific repository:
+
+```http
+GET /status?repository=repo1
+```
+
+Response:
+```json
+{
+  "repository": "repo1",
+  "status": "succeeded",
+  "updated_at": "2023-05-01T12:34:56Z"
+}
+```
+
+### Health Check
+
+```http
+GET /health
+```
+
+Response:
+```json
+{
+  "status": "healthy"
+}
+```
+
 ## Development
 
 ### Prerequisites
