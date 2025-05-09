@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"net/url"
+	"strings"
 
 	"github.com/google/go-github/v70/github"
 	"github.com/shurcooL/githubv4"
@@ -40,6 +41,11 @@ func NewClients(ghesToken, ghCloudToken string) (*Clients, error) {
 
 // UpdateGHESBaseURL updates the GHES client's base URL
 func (c *Clients) UpdateGHESBaseURL(baseURL string) error {
+	// Ensure the URL has a trailing slash as required by go-github
+	if !strings.HasSuffix(baseURL, "/") {
+		baseURL += "/"
+	}
+
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
 		return err

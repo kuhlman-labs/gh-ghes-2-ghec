@@ -3,10 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var configCmd = &cobra.Command{
@@ -28,58 +27,19 @@ You can then edit this file to customize your settings.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("Starting config init command...")
 
-		// Get current directory
-		currentDir, err := os.Getwd()
+		// Get config path
+		configPath, err := config.GetConfigPath()
 		if err != nil {
-			return fmt.Errorf("failed to get current directory: %w", err)
+			return fmt.Errorf("failed to get config path: %w", err)
 		}
 
-		// Create config file in current directory
-		configFile := filepath.Join(currentDir, "config.yaml")
-
 		// Check if file already exists
-		if _, err := os.Stat(configFile); err == nil {
-			return fmt.Errorf("config file already exists at %s", configFile)
+		if _, err := os.Stat(configPath); err == nil {
+			return fmt.Errorf("config file already exists at %s", configPath)
 		}
 
 		// Create default config
-		type ServerConfig struct {
-			Port            int `yaml:"port"`
-			ShutdownTimeout int `yaml:"shutdown_timeout"`
-			ReadTimeout     int `yaml:"read_timeout"`
-			WriteTimeout    int `yaml:"write_timeout"`
-		}
-
-		type GitHubConfig struct {
-			GHESToken    string `yaml:"ghes_token"`
-			GHCloudToken string `yaml:"gh_cloud_token"`
-		}
-
-		type WebhookConfig struct {
-			URL string `yaml:"url"`
-		}
-
-		type Config struct {
-			Server  ServerConfig  `yaml:"server"`
-			GitHub  GitHubConfig  `yaml:"github"`
-			Webhook WebhookConfig `yaml:"webhook"`
-		}
-
-		defaultConfig := Config{
-			Server: ServerConfig{
-				Port:            8080,
-				ShutdownTimeout: 30,
-				ReadTimeout:     15,
-				WriteTimeout:    15,
-			},
-			GitHub: GitHubConfig{
-				GHESToken:    "", // Will be filled from flag if provided
-				GHCloudToken: "", // Will be filled from flag if provided
-			},
-			Webhook: WebhookConfig{
-				URL: "", // Will be filled from flag if provided
-			},
-		}
+		defaultConfig := config.CreateDefaultConfig()
 
 		// Update config with flag values if provided
 		if ghesToken != "" {
@@ -96,24 +56,20 @@ You can then edit this file to customize your settings.`,
 		}
 
 		// Create file
-		file, err := os.Create(configFile)
+		file, err := os.Create(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
 		}
 		defer file.Close()
 
-		// Create YAML encoder
-		encoder := yaml.NewEncoder(file)
-		encoder.SetIndent(2)
-
 		// Write config
-		if err := encoder.Encode(defaultConfig); err != nil {
+		if err := config.WriteConfig(defaultConfig, file); err != nil {
 			// Clean up the file if we failed to write
-			os.Remove(configFile)
-			return fmt.Errorf("failed to encode config: %w", err)
+			os.Remove(configPath)
+			return fmt.Errorf("failed to write config: %w", err)
 		}
 
-		fmt.Printf("Configuration file created at: %s\n", configFile)
+		fmt.Printf("Configuration file created at: %s\n", configPath)
 		fmt.Println("You can now edit this file to customize your settings.")
 		return nil
 	},

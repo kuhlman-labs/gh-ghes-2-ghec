@@ -2,6 +2,7 @@ package logging
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,8 +13,10 @@ import (
 )
 
 var (
-	logger *slog.Logger
-	once   sync.Once
+	logger    *slog.Logger
+	once      sync.Once
+	logLevel  = slog.LevelInfo // Default log level
+	levelLock sync.RWMutex
 )
 
 // Init initializes the logging system
@@ -31,7 +34,7 @@ func Get() *slog.Logger {
 		if err := Init(); err != nil {
 			// Fallback to stdout logger if initialization fails
 			logger = slog.New(tint.NewHandler(os.Stdout, &tint.Options{
-				Level:      slog.LevelInfo,
+				Level:      getLogLevel(),
 				TimeFormat: "15:04:05",
 			}))
 		}
@@ -39,29 +42,94 @@ func Get() *slog.Logger {
 	return logger
 }
 
-func setupLogger() error {
+// SetLevel sets the logging level
+func SetLevel(level slog.Level) {
+	levelLock.Lock()
+	defer levelLock.Unlock()
+
+	// Store the new log level
+	logLevel = level
+
+	// If logger already exists, create a new one with the updated level
+	if logger != nil {
+		// Create handlers with the new level
+		fileLogger := setupFileLogger()
+
+		fileHandler := slog.NewJSONHandler(fileLogger, &slog.HandlerOptions{
+			Level: level,
+		})
+
+		terminalHandler := tint.NewHandler(os.Stdout, &tint.Options{
+			Level:      level,
+			TimeFormat: "15:04:05",
+		})
+
+		// Create multi-handler
+		multiHandler := NewMultiHandler(terminalHandler, fileHandler)
+
+		// Create logger
+		logger = slog.New(multiHandler)
+	}
+}
+
+// setupFileLogger creates and returns the file logger
+func setupFileLogger() *lumberjack.Logger {
 	// Create logs directory
 	logDir := filepath.Join(os.TempDir(), "gh-ghes-2-ghec", "logs")
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return err
+		return nil
 	}
 
 	// Setup rotating file logger
-	fileLogger := &lumberjack.Logger{
+	return &lumberjack.Logger{
 		Filename:   filepath.Join(logDir, "gh-ghes-2-ghec.log"),
 		MaxSize:    10, // MB
 		MaxBackups: 5,
 		MaxAge:     30, // days
 		Compress:   true,
 	}
+}
+
+// getLogLevel safely returns the current log level
+func getLogLevel() slog.Level {
+	levelLock.RLock()
+	defer levelLock.RUnlock()
+	return logLevel
+}
+
+// ParseLevel converts a string level to slog.Level
+func ParseLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
+func setupLogger() error {
+	// Setup file logger
+	fileLogger := setupFileLogger()
+	if fileLogger == nil {
+		return fmt.Errorf("failed to create logs directory")
+	}
+
+	// Get current log level
+	level := getLogLevel()
 
 	// Create handlers
 	fileHandler := slog.NewJSONHandler(fileLogger, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: level,
 	})
 
 	terminalHandler := tint.NewHandler(os.Stdout, &tint.Options{
-		Level:      slog.LevelInfo,
+		Level:      level,
 		TimeFormat: "15:04:05",
 	})
 

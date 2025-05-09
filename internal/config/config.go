@@ -16,6 +16,7 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	GitHub  GitHubConfig  `mapstructure:"github"`
 	Webhook WebhookConfig `mapstructure:"webhook"`
+	Logging LoggingConfig `mapstructure:"logging"`
 	Clients *Clients      // GitHub API clients
 }
 
@@ -38,6 +39,11 @@ type WebhookConfig struct {
 	URL string `mapstructure:"url"`
 }
 
+// LoggingConfig holds logging-specific configuration
+type LoggingConfig struct {
+	Level string `mapstructure:"level"`
+}
+
 // ConfigForWriting is used to serialize config to YAML
 type ConfigForWriting struct {
 	Server struct {
@@ -53,6 +59,9 @@ type ConfigForWriting struct {
 	Webhook struct {
 		URL string `yaml:"url"`
 	} `yaml:"webhook"`
+	Logging struct {
+		Level string `yaml:"level"`
+	} `yaml:"logging"`
 }
 
 const (
@@ -114,6 +123,7 @@ func loadConfig() error {
 	viper.SetDefault("server.shutdown_timeout", defaultTimeout)
 	viper.SetDefault("server.read_timeout", defaultIOTimeout)
 	viper.SetDefault("server.write_timeout", defaultIOTimeout)
+	viper.SetDefault("logging.level", "info")
 
 	// Read from environment variables
 	viper.SetEnvPrefix("GH_REPO_MIGRATE")
@@ -173,6 +183,9 @@ func CreateDefaultConfig() *Config {
 		},
 		GitHub:  GitHubConfig{},
 		Webhook: WebhookConfig{},
+		Logging: LoggingConfig{
+			Level: "info",
+		},
 	}
 }
 
@@ -186,6 +199,7 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.GitHub.GHESToken = cfg.GitHub.GHESToken
 	writeCfg.GitHub.GHCloudToken = cfg.GitHub.GHCloudToken
 	writeCfg.Webhook.URL = cfg.Webhook.URL
+	writeCfg.Logging.Level = cfg.Logging.Level
 
 	return writeCfg
 }

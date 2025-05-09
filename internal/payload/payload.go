@@ -2,6 +2,7 @@ package payload
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -10,7 +11,7 @@ type MigrationRequest struct {
 	SourceOrg    string   `json:"source_org"`
 	TargetOrg    string   `json:"target_org"`
 	Repositories []string `json:"repositories"`
-	GHESAPIURL   string   `json:"ghes_api_url"`
+	GHESBaseURL  string   `json:"ghes_base_url"` // Base URL of GHES instance (e.g., https://github.example.com)
 }
 
 // Validate validates the migration request
@@ -24,10 +25,22 @@ func (r *MigrationRequest) Validate() error {
 	if len(r.Repositories) == 0 {
 		return fmt.Errorf("repositories is required")
 	}
-	if r.GHESAPIURL == "" {
-		return fmt.Errorf("ghes_api_url is required")
+	if r.GHESBaseURL == "" {
+		return fmt.Errorf("ghes_base_url is required")
 	}
 	return nil
+}
+
+// GetGHESAPIURL returns the REST API URL for the GHES instance
+func (r *MigrationRequest) GetGHESAPIURL() string {
+	baseURL := strings.TrimSuffix(r.GHESBaseURL, "/")
+	return baseURL + "/api/v3/"
+}
+
+// GetGHESGraphQLURL returns the GraphQL API URL for the GHES instance
+func (r *MigrationRequest) GetGHESGraphQLURL() string {
+	baseURL := strings.TrimSuffix(r.GHESBaseURL, "/")
+	return baseURL + "/api/graphql"
 }
 
 // MigrationStatus represents the status of a repository migration

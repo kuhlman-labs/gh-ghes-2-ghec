@@ -37,12 +37,10 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/health", s.handleHealth)
 
-	// Create server with timeouts
+	// Create server with basic config
 	s.server = &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      s.withMiddleware(mux),
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler: mux,
 	}
 
 	return s
@@ -50,7 +48,10 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	s.logger.Info("Starting server", "port", s.config.Server.Port)
+	s.logger.Info("Starting server",
+		"port", s.config.Server.Port,
+		"addr", s.server.Addr,
+	)
 	return s.server.ListenAndServe()
 }
 
@@ -157,6 +158,16 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log the URLs for debugging
+	s.logger.Info("Starting migration",
+		"source_org", req.SourceOrg,
+		"target_org", req.TargetOrg,
+		"repositories", req.Repositories,
+		"ghes_base_url", req.GHESBaseURL,
+		"ghes_api_url", req.GetGHESAPIURL(),
+		"ghes_graphql_url", req.GetGHESGraphQLURL(),
+	)
+
 	// Start migration in background
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
@@ -178,6 +189,7 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 
 // writeJSON writes a JSON response with the given status code
 func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
 	if err := json.NewEncoder(w).Encode(data); err != nil {
@@ -198,6 +210,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 		"request_id", r.Context().Value("request_id"),
 	)
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(map[string]string{
 		"error": message,

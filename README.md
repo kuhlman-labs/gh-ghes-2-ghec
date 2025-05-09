@@ -1,123 +1,119 @@
-# GitHub Enterprise Server to GitHub Enterprise Cloud Migration Tool
+# GitHub GHES to GHEC Migration Tool
 
-A GitHub CLI extension for migrating repositories from GitHub Enterprise Server (GHES) to GitHub Enterprise Cloud (GHEC).
-
-## Installation
-
-```bash
-gh extension install kuhlman-labs/gh-ghes-2-ghec
-```
+A tool to migrate repositories from GitHub Enterprise Server (GHES) to GitHub Enterprise Cloud (GHEC).
 
 ## Usage
 
-Start the migration server:
+### Configuration
 
-```bash
-gh ghes-2-ghec --ghes-token <token> --gh-cloud-token <token> [--webhook-url <url>] [--port <port>]
+Create a `config.yaml` file in the root directory with the following structure:
+
+```yaml
+server:
+  port: 8080
+  shutdown_timeout: 30
+  read_timeout: 15
+  write_timeout: 15
+github:
+  ghes_token: "your-ghes-token"
+  gh_cloud_token: "your-gh-cloud-token"
+webhook:
+  url: "https://your-webhook-url"
 ```
 
-Required flags:
-- `--ghes-token`: GitHub Enterprise Server token
-- `--gh-cloud-token`: GitHub Enterprise Cloud token
+### Starting the Server
 
-Optional flags:
-- `--webhook-url`: URL for notifications (default: empty)
-- `--port`: Port to listen on (default: 8080)
+```bash
+./gh-ghes-2-ghec
+```
 
-## API
+### API Endpoints
 
-### Start Migration
+#### Start Migration
 
-```http
+```
 POST /migrate
-Content-Type: application/json
+```
 
+Request body:
+
+```json
 {
-  "source_org": "source-org",
-  "target_org": "target-org",
+  "source_org": "source-organization",
+  "target_org": "target-organization",
   "repositories": ["repo1", "repo2"],
-  "ghes_api_url": "https://ghes.example.com/api/v3"
+  "ghes_base_url": "https://github.example.com"
 }
 ```
 
+Note: `ghes_base_url` should be the base URL of your GitHub Enterprise Server instance (e.g., `https://github.example.com`) without any API paths.
+
 Response:
+
 ```json
 {
   "status": "migration started"
 }
 ```
 
-### Get Migration Status
+#### Check Migration Status
 
-Get status for all migrations:
+For a specific repository:
 
-```http
-GET /status
 ```
-
-Response:
-```json
-{
-  "repo1": {
-    "repository": "repo1",
-    "status": "succeeded",
-    "updated_at": "2023-05-01T12:34:56Z"
-  },
-  "repo2": {
-    "repository": "repo2",
-    "status": "in_progress",
-    "error": "migration state: pending",
-    "updated_at": "2023-05-01T12:35:00Z"
-  }
-}
-```
-
-Get status for a specific repository:
-
-```http
 GET /status?repository=repo1
 ```
 
 Response:
+
 ```json
 {
   "repository": "repo1",
-  "status": "succeeded",
-  "updated_at": "2023-05-01T12:34:56Z"
+  "status": "in_progress",
+  "updated_at": "2023-06-01T12:00:00Z"
 }
 ```
 
-### Health Check
+For all repositories:
 
-```http
+```
+GET /status
+```
+
+Response:
+
+```json
+{
+  "repo1": {
+    "repository": "repo1",
+    "status": "in_progress",
+    "updated_at": "2023-06-01T12:00:00Z"
+  },
+  "repo2": {
+    "repository": "repo2",
+    "status": "succeeded",
+    "updated_at": "2023-06-01T12:05:00Z"
+  }
+}
+```
+
+#### Health Check
+
+```
 GET /health
 ```
 
 Response:
+
 ```json
 {
   "status": "healthy"
 }
 ```
 
-## Development
+## Webhook Notifications
 
-### Prerequisites
-
-- Go 1.21 or later
-- GitHub CLI
-
-### Building
-
-```bash
-go build
-```
-
-### Testing
-
-```bash
-go test ./...
-```
+If configured, the tool will send webhook notifications when the status of a migration changes. The payload will be the same as the response from the status endpoint.
 
 ## License
 
