@@ -172,12 +172,16 @@ POST /migrate
   "repositories": ["repo1", "repo2"],
   "ghes_base_url": "https://github.example.com",
   "ghes_token": "your-ghes-token",
-  "gh_cloud_token": "your-gh-cloud-token"
+  "gh_cloud_token": "your-gh-cloud-token",
+  "use_ghos": true
 }
 ```
 </details>
 
-Note: `ghes_base_url` should be the base URL of your GitHub Enterprise Server instance (e.g., `https://github.example.com`) without any API paths. You must provide valid tokens for both GHES and GHEC.
+Note: 
+- `ghes_base_url` should be the base URL of your GitHub Enterprise Server instance (e.g., `https://github.example.com`) without any API paths.
+- You must provide valid tokens for both GHES and GHEC.
+- `use_ghos` (optional) enables GitHub Owned Storage for migration archives. When enabled, archives are uploaded directly to GitHub's storage service, which is required for some enterprises.
 
 <details>
 <summary>Response example</summary>

@@ -186,6 +186,13 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 	// Track how long we've been waiting
 	exportStartTime := time.Now()
 
+	// Variable to store archive URL, will be set when archive is exported
+	var archiveURL string
+
+	// Variable to store the migration ID
+	var migrationID string
+
+	// Simplify control flow and avoid goto statements that may cross variable declarations
 	for {
 		select {
 		case <-ctx.Done():
@@ -201,14 +208,17 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 			// Continue polling
 		}
 
-		// Check status of migration source
+		// Check archive export status
 		status, err := githubAPI.GetMigrationArchiveStatus(ctx, archiveID, req.SourceOrg)
 		if err != nil {
-			m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get migration source status: %v", err), time.Now(), startTime)
-			return fmt.Errorf("failed to get migration source status: %w", err)
+			m.updateStatus(repoName, payload.StatusFailed, err.Error(), time.Now(), startTime)
+			return fmt.Errorf("failed to get archive export status: %w", err)
 		}
 
-		// Update status with current state
+		// Update status with current export state
+		exportDuration := time.Since(exportStartTime)
+		exportDurationStr := formatDuration(exportDuration)
+
 		m.updateStatus(
 			repoName,
 			payload.StatusInProgress,
@@ -217,99 +227,168 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 			startTime,
 		)
 
-		exportDuration := time.Since(exportStartTime)
 		m.logger.Debug("Archive export status",
-			"status", status,
-			"archiveID", archiveID,
 			"repository", repoName,
-			"duration", fmt.Sprintf("%dm%ds", int(exportDuration.Minutes()), int(exportDuration.Seconds())%60),
+			"status", status,
+			"duration", exportDurationStr,
 		)
 
-		// Handle different states of migration export
+		// Log progress every 5 minutes to INFO level (approx. 20 iterations at 15s)
+		if int(exportDuration.Minutes())%5 == 0 && int(exportDuration.Seconds())%60 < 15 {
+			m.logger.Info("Archive export in progress",
+				"repository", repoName,
+				"status", status,
+				"duration", exportDurationStr,
+			)
+		}
+
+		// Check migration state and act accordingly
 		switch status {
 		case "exported":
-			// Export completed successfully, proceed to next step
-			m.logger.Info("Archive export completed",
+			// Archive is ready to be downloaded
+			m.logger.Info("Migration archive export completed",
 				"repository", repoName,
-				"archiveID", archiveID,
+				"duration", exportDurationStr,
 			)
 
-			// Get the migration archive URL
-			archiveURL, err := githubAPI.GetMigrationArchiveURL(ctx, archiveID, req.SourceOrg)
+			// Get archive URL
+			archiveURL, err = githubAPI.GetMigrationArchiveURL(ctx, archiveID, req.SourceOrg)
 			if err != nil {
-				m.logger.Error("Failed to get archive URL",
-					"repository", repoName,
-					"archiveID", archiveID,
-					"error", err,
-				)
-				m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get migration archive URL: %v", err), time.Now(), startTime)
-				return fmt.Errorf("failed to get migration archive URL: %w", err)
+				m.updateStatus(repoName, payload.StatusFailed, err.Error(), time.Now(), startTime)
+				return fmt.Errorf("failed to get archive URL: %w", err)
 			}
 
-			m.logger.Debug("Archive URL retrieved",
-				"repository", repoName,
-				"archiveID", archiveID,
-			)
-
-			// Update status with archive URL
 			m.updateStatus(
 				repoName,
 				payload.StatusInProgress,
-				fmt.Sprintf("archive ready for migration: %s", archiveURL),
+				"archive ready for migration",
 				time.Now(),
 				startTime,
 			)
 
-			goto startRepositoryMigration
+			// If using GitHub Owned Storage, handle the special upload flow
+			if req.UseGHOS {
+				// Extract organization ID (numeric) from the ownerID
+				orgDatabaseID := config.ExtractOrgDatabaseID(ownerID)
+
+				if orgDatabaseID == "" {
+					errMsg := "failed to extract organization database ID for GHOS upload"
+					m.updateStatus(repoName, payload.StatusFailed, errMsg, time.Now(), startTime)
+					return fmt.Errorf("error extracting organization database ID for GHOS upload: %w", err)
+				}
+
+				m.updateStatus(
+					repoName,
+					payload.StatusInProgress,
+					"uploading archive to GitHub Owned Storage",
+					time.Now(),
+					startTime,
+				)
+
+				// Upload the archive to GHOS
+				archiveName := fmt.Sprintf("%s-%s.tar.gz", repoName, time.Now().Format("20060102-150405"))
+				geiURI, err := githubAPI.UploadArchiveToGHOS(ctx, orgDatabaseID, archiveURL, archiveName, req.GHCloudToken)
+				if err != nil {
+					m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to upload to GHOS: %v", err), time.Now(), startTime)
+					return fmt.Errorf("failed to upload archive to GitHub Owned Storage: %w", err)
+				}
+
+				m.updateStatus(
+					repoName,
+					payload.StatusInProgress,
+					fmt.Sprintf("archive uploaded to GHOS: %s", geiURI),
+					time.Now(),
+					startTime,
+				)
+
+				// In the GHOS flow, we directly start the migration with the GEI URI
+				m.updateStatus(repoName, payload.StatusInProgress, "starting repository migration with GHOS archive", time.Now(), startTime)
+
+				// Start repository migration using the GHOS URI
+				// Use a blank string for sourceRepoURL since it's not needed when using GEI URI
+				migrationID, err = githubAPI.StartRepositoryMigrationWithGEIURI(ctx, migrationSourceID, ownerID, repoName, geiURI, req.GHESToken, req.GHCloudToken)
+				if err != nil {
+					m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration: %v", err), time.Now(), startTime)
+					return fmt.Errorf("failed to start repository migration: %w", err)
+				}
+
+				// Update status with migration ID
+				m.updateStatus(
+					repoName,
+					payload.StatusInProgress,
+					fmt.Sprintf("migration created with ID: %s", migrationID),
+					time.Now(),
+					startTime,
+				)
+
+				// Store migration ID in the status object
+				m.mu.Lock()
+				if status, exists := m.migrations[repoName]; exists {
+					status.MigrationID = migrationID
+				}
+				m.mu.Unlock()
+
+				// Skip directly to monitoring migration progress
+				break
+			}
+
+			// Regular non-GHOS flow
+			// Construct the source repository URL from the base URL
+			sourceRepoURL := fmt.Sprintf("%s/%s", baseURL, sourceRepo)
+
+			m.logger.Debug("Starting repository migration",
+				"sourceURL", sourceRepoURL,
+				"repository", repoName,
+			)
+
+			// Start repository migration
+			m.updateStatus(repoName, payload.StatusInProgress, "starting repository migration", time.Now(), startTime)
+			migrationID, err = githubAPI.StartRepositoryMigration(ctx, migrationSourceID, ownerID, repoName, sourceRepoURL, req.GHESToken, req.GHCloudToken)
+			if err != nil {
+				m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration: %v", err), time.Now(), startTime)
+				return fmt.Errorf("failed to start repository migration: %w", err)
+			}
+
+			// Update status with migration ID
+			m.updateStatus(
+				repoName,
+				payload.StatusInProgress,
+				fmt.Sprintf("migration created with ID: %s", migrationID),
+				time.Now(),
+				startTime,
+			)
+
+			// Store migration ID in the status object
+			m.mu.Lock()
+			if status, exists := m.migrations[repoName]; exists {
+				status.MigrationID = migrationID
+			}
+			m.mu.Unlock()
+
+			// Exit the polling loop and move on to monitoring the migration
+			break
+
 		case "failed":
 			failureMsg := fmt.Sprintf("migration archive export failed with state: %s", status)
 			m.updateStatus(repoName, payload.StatusFailed, failureMsg, time.Now(), startTime)
 			return fmt.Errorf("migration archive export failed: %s", failureMsg)
 		case "pending", "exporting":
 			// Continue polling - no additional logging needed as we already logged status above
+			continue
 		default:
 			m.logger.Warn("Unknown archive export status",
 				"status", status,
 				"repository", repoName,
 				"archiveID", archiveID,
 			)
+			continue
 		}
+
+		// If we get here, the archive is exported and the migration started, so exit the loop
+		break
 	}
 
-startRepositoryMigration:
-	// Construct the source repository URL from the base URL
-	sourceRepoURL := fmt.Sprintf("%s/%s", baseURL, sourceRepo)
-
-	m.logger.Debug("Starting repository migration",
-		"sourceURL", sourceRepoURL,
-		"repository", repoName,
-	)
-
-	// Start repository migration
-	m.updateStatus(repoName, payload.StatusInProgress, "starting repository migration", time.Now(), startTime)
-	migrationID, err := githubAPI.StartRepositoryMigration(ctx, migrationSourceID, ownerID, repoName, sourceRepoURL, req.GHESToken, req.GHCloudToken)
-	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration: %v", err), time.Now(), startTime)
-		return fmt.Errorf("failed to start repository migration: %w", err)
-	}
-
-	// Update status with migration ID
-	m.updateStatus(
-		repoName,
-		payload.StatusInProgress,
-		fmt.Sprintf("migration created with ID: %s", migrationID),
-		time.Now(),
-		startTime,
-	)
-
-	// Store migration ID in the status object
-	m.mu.Lock()
-	if status, exists := m.migrations[repoName]; exists {
-		status.MigrationID = migrationID
-	}
-	m.mu.Unlock()
-
-	// Wait for migration to complete
+	// Monitor the migration progress
 	m.updateStatus(repoName, payload.StatusInProgress, "waiting for migration to complete", time.Now(), startTime)
 
 	pollInterval = 15 * time.Second

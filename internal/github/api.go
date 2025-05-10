@@ -4,9 +4,14 @@
 package github
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -616,4 +621,279 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 	}
 
 	return state, nil
+}
+
+// UploadArchiveToGHOS uploads a migration archive to GitHub Owned Storage
+// This is used when customers use GitHub Owned Storage (GHOS) instead of Azure or S3
+// For archives >5GiB, it performs a chunked upload
+func (a *API) UploadArchiveToGHOS(ctx context.Context, organizationID, archiveURL, archiveName, ghCloudToken string) (string, error) {
+	// Log the start of the upload to GHOS
+	a.logger.Info("Starting archive upload to GitHub Owned Storage",
+		"api", "GHOS_Upload",
+		"organization_id", organizationID,
+		"archive_name", archiveName,
+	)
+
+	startTime := time.Now()
+
+	// Create a client for downloading the archive
+	client := &http.Client{
+		Timeout: 30 * time.Minute, // Long timeout for potentially large files
+	}
+
+	// Download the archive from GHES
+	a.logger.Debug("Downloading migration archive from GHES",
+		"url", archiveURL,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request for archive download: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to download archive from GHES: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to download archive, received status code: %d", resp.StatusCode)
+	}
+
+	// Get the total size of the archive
+	totalSize := resp.ContentLength
+	if totalSize == -1 {
+		return "", fmt.Errorf("could not determine archive size")
+	}
+
+	// Initialize chunked upload
+	initURL := fmt.Sprintf("https://uploads.github.com/organizations/%s/gei/archive/init?name=%s",
+		organizationID, url.QueryEscape(archiveName))
+
+	initReq, err := http.NewRequestWithContext(ctx, http.MethodPost, initURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create init request: %w", err)
+	}
+
+	initReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
+	initReq.Header.Set("Content-Type", "application/json")
+	initReq.Header.Set("Content-Length", fmt.Sprintf("%d", totalSize))
+
+	initResp, err := client.Do(initReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to initialize chunked upload: %w", err)
+	}
+	defer initResp.Body.Close()
+
+	if initResp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(initResp.Body)
+		return "", fmt.Errorf("failed to initialize chunked upload, received status code: %d, body: %s",
+			initResp.StatusCode, string(respBody))
+	}
+
+	var initResponse struct {
+		UploadID  string `json:"upload_id"`
+		ChunkSize int64  `json:"chunk_size"`
+	}
+
+	err = json.NewDecoder(initResp.Body).Decode(&initResponse)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse init response: %w", err)
+	}
+
+	// Calculate number of chunks
+	chunkSize := initResponse.ChunkSize
+	numChunks := (totalSize + chunkSize - 1) / chunkSize
+
+	// Create a buffered reader for the response body
+	reader := bufio.NewReaderSize(resp.Body, int(chunkSize))
+
+	// Upload chunks
+	for i := int64(0); i < numChunks; i++ {
+		chunkStart := i * chunkSize
+		chunkEnd := chunkStart + chunkSize
+		if chunkEnd > totalSize {
+			chunkEnd = totalSize
+		}
+
+		// Read chunk
+		chunk := make([]byte, chunkEnd-chunkStart)
+		_, err := io.ReadFull(reader, chunk)
+		if err != nil {
+			return "", fmt.Errorf("failed to read chunk %d: %w", i, err)
+		}
+
+		// Upload chunk
+		chunkURL := fmt.Sprintf("https://uploads.github.com/organizations/%s/gei/archive/chunk?upload_id=%s&chunk=%d",
+			organizationID, initResponse.UploadID, i)
+
+		chunkReq, err := http.NewRequestWithContext(ctx, http.MethodPut, chunkURL, bytes.NewReader(chunk))
+		if err != nil {
+			return "", fmt.Errorf("failed to create chunk request: %w", err)
+		}
+
+		chunkReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
+		chunkReq.Header.Set("Content-Type", "application/octet-stream")
+		chunkReq.Header.Set("Content-Length", fmt.Sprintf("%d", len(chunk)))
+
+		chunkResp, err := client.Do(chunkReq)
+		if err != nil {
+			return "", fmt.Errorf("failed to upload chunk %d: %w", i, err)
+		}
+		chunkResp.Body.Close()
+
+		if chunkResp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("failed to upload chunk %d, received status code: %d", i, chunkResp.StatusCode)
+		}
+
+		// Log progress
+		progress := float64(i+1) / float64(numChunks) * 100
+		a.logger.Debug("Upload progress",
+			"chunk", i+1,
+			"total_chunks", numChunks,
+			"progress", fmt.Sprintf("%.1f%%", progress),
+		)
+	}
+
+	// Complete the upload
+	completeURL := fmt.Sprintf("https://uploads.github.com/organizations/%s/gei/archive/complete?upload_id=%s",
+		organizationID, initResponse.UploadID)
+
+	completeReq, err := http.NewRequestWithContext(ctx, http.MethodPost, completeURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create complete request: %w", err)
+	}
+
+	completeReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
+
+	completeResp, err := client.Do(completeReq)
+	if err != nil {
+		return "", fmt.Errorf("failed to complete upload: %w", err)
+	}
+	defer completeResp.Body.Close()
+
+	if completeResp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(completeResp.Body)
+		return "", fmt.Errorf("failed to complete upload, received status code: %d, body: %s",
+			completeResp.StatusCode, string(respBody))
+	}
+
+	// Parse the response to get the GEI URI
+	var response struct {
+		GUID      string    `json:"guid"`
+		NodeID    string    `json:"node_id"`
+		Name      string    `json:"name"`
+		Size      int64     `json:"size"`
+		URI       string    `json:"uri"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+
+	err = json.NewDecoder(completeResp.Body).Decode(&response)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse complete response: %w", err)
+	}
+
+	duration := time.Since(startTime)
+
+	a.logger.Info("Successfully uploaded archive to GitHub Owned Storage",
+		"api", "GHOS_Upload",
+		"duration_ms", duration.Milliseconds(),
+		"uri", response.URI,
+		"guid", response.GUID,
+		"size", response.Size,
+	)
+
+	return response.URI, nil
+}
+
+// StartRepositoryMigrationWithGEIURI starts a repository migration in GHEC using a GEI URI from GitHub Owned Storage
+func (a *API) StartRepositoryMigrationWithGEIURI(ctx context.Context, sourceID, ownerID, repoName, geiURI, ghesToken, ghCloudToken string) (string, error) {
+	var mutation struct {
+		StartRepositoryMigration struct {
+			RepositoryMigration struct {
+				ID              string
+				MigrationSource struct {
+					ID   string
+					Name string
+					Type string
+				}
+				SourceURL string
+			}
+		} `graphql:"startRepositoryMigration(input: $input)"`
+	}
+
+	// Create input parameters for GraphQL mutation
+	continueOnError := githubv4.Boolean(true)
+	accessToken := githubv4.String(ghesToken)
+	gitHubPat := githubv4.String(ghCloudToken)
+	targetRepoVisibility := githubv4.String("private")
+
+	// Create variables map for the GraphQL mutation
+	variables := map[string]interface{}{
+		"input": map[string]interface{}{
+			"sourceId":             githubv4.ID(sourceID),
+			"ownerId":              githubv4.ID(ownerID),
+			"repositoryName":       githubv4.String(repoName),
+			"continueOnError":      continueOnError,
+			"accessToken":          accessToken,
+			"gitHubPat":            gitHubPat,
+			"targetRepoVisibility": targetRepoVisibility,
+			"githubArchiveId":      geiURI, // This is the key field for GHOS migrations
+		},
+	}
+
+	// Log the input parameters for debugging
+	a.logger.Debug("Starting repository migration with GHOS URI",
+		"api", "GHEC_GraphQL",
+		"method", "Mutate(startRepositoryMigration)",
+		"sourceId", sourceID,
+		"ownerId", ownerID,
+		"repositoryName", repoName,
+		"geiURI", geiURI,
+	)
+
+	startTime := time.Now()
+
+	err := a.retryableOperation(ctx, "start_repository_migration_ghos", func() error {
+		// Use the raw variables map rather than the typed input to include the githubArchiveId field
+		return a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, variables, nil)
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("Migration start failed with GHOS URI",
+			"api", "GHEC_GraphQL",
+			"method", "Mutate(startRepositoryMigration)",
+			"duration_ms", duration.Milliseconds(),
+			"error", err,
+			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
+			"repository", repoName,
+		)
+		return "", fmt.Errorf("failed to start repository migration with GHOS URI: %w", err)
+	}
+
+	// Check if the mutation response is valid
+	if mutation.StartRepositoryMigration.RepositoryMigration.ID == "" {
+		a.logger.Error("Empty migration ID returned",
+			"api", "GHEC_GraphQL",
+			"method", "Mutate(startRepositoryMigration)",
+			"duration_ms", duration.Milliseconds(),
+			"repository", repoName,
+		)
+		return "", fmt.Errorf("startRepositoryMigration returned empty migration ID")
+	}
+
+	migrationID := mutation.StartRepositoryMigration.RepositoryMigration.ID
+	a.logger.Info("Repository migration started with GHOS URI",
+		"api", "GHEC_GraphQL",
+		"method", "Mutate(startRepositoryMigration)",
+		"duration_ms", duration.Milliseconds(),
+		"migrationId", migrationID,
+		"repository", repoName,
+		"sourceId", mutation.StartRepositoryMigration.RepositoryMigration.MigrationSource.ID,
+	)
+
+	return migrationID, nil
 }
