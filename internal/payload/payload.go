@@ -79,12 +79,14 @@ func (r *MigrationRequest) GetGHESGraphQLURL() string {
 
 // MigrationStatus represents the status of a repository migration
 type MigrationStatus struct {
-	Repository string    `json:"repository"`
-	Status     string    `json:"status"`
-	Error      string    `json:"error,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	Stage      string    `json:"stage,omitempty"` // Current stage of the migration process
-	State      string    `json:"state,omitempty"` // Current state within the stage
+	Repository string        `json:"repository"`
+	Status     string        `json:"status"`
+	Error      string        `json:"error,omitempty"`
+	UpdatedAt  time.Time     `json:"updated_at"`
+	Stage      string        `json:"stage,omitempty"`            // Current stage of the migration process
+	State      string        `json:"state,omitempty"`            // Current state within the stage
+	StartedAt  time.Time     `json:"started_at,omitempty"`       // When the migration was started
+	Duration   time.Duration `json:"duration_seconds,omitempty"` // How long the migration took to complete
 }
 
 const (

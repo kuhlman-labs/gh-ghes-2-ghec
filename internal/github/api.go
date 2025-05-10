@@ -30,7 +30,7 @@ func New(clients *config.Clients, logger *slog.Logger) *API {
 // ValidateRepository checks if a repository exists in the source organization
 func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 	startTime := time.Now()
-	a.logger.Debug("API REQUEST: Validating repository existence",
+	a.logger.Debug("Validating repository",
 		"api", "GHES_REST",
 		"method", "Repositories.Get",
 		"org", org,
@@ -46,7 +46,7 @@ func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 			statusCode = resp.StatusCode
 		}
 
-		a.logger.Error("API RESPONSE: Repository validation failed",
+		a.logger.Error("Repository validation failed",
 			"api", "GHES_REST",
 			"method", "Repositories.Get",
 			"duration_ms", duration.Milliseconds(),
@@ -58,7 +58,7 @@ func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 		return fmt.Errorf("repository not found: %w", err)
 	}
 
-	a.logger.Debug("API RESPONSE: Repository validation successful",
+	a.logger.Debug("Repository validation successful",
 		"api", "GHES_REST",
 		"method", "Repositories.Get",
 		"duration_ms", duration.Milliseconds(),
@@ -81,11 +81,10 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error)
 		"login": githubv4.String(org),
 	}
 
-	a.logger.Debug("API REQUEST: Querying organization ID",
+	a.logger.Debug("Querying organization ID",
 		"api", "GHEC_GraphQL",
 		"method", "Query(organization)",
 		"org", org,
-		"variables", fmt.Sprintf("%+v", variables),
 	)
 
 	startTime := time.Now()
@@ -93,7 +92,7 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error)
 	duration := time.Since(startTime)
 
 	if err != nil {
-		a.logger.Error("API RESPONSE: Failed to get organization ID",
+		a.logger.Error("Failed to get organization ID",
 			"api", "GHEC_GraphQL",
 			"method", "Query(organization)",
 			"duration_ms", duration.Milliseconds(),
@@ -105,7 +104,7 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error)
 
 	// check if the organization ID is empty
 	if query.Organization.ID == "" {
-		a.logger.Error("API RESPONSE: Organization ID is empty",
+		a.logger.Error("Organization ID is empty",
 			"api", "GHEC_GraphQL",
 			"method", "Query(organization)",
 			"duration_ms", duration.Milliseconds(),
@@ -114,7 +113,7 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error)
 		return "", fmt.Errorf("organization ID is empty")
 	}
 
-	a.logger.Debug("API RESPONSE: Organization ID retrieved successfully",
+	a.logger.Debug("Organization ID retrieved",
 		"api", "GHEC_GraphQL",
 		"method", "Query(organization)",
 		"duration_ms", duration.Milliseconds(),
@@ -148,14 +147,12 @@ func (a *API) CreateMigrationSource(ctx context.Context, name, url, ownerID stri
 	}
 
 	// Log the input parameters
-	a.logger.Debug("API REQUEST: Creating migration source",
+	a.logger.Debug("Creating migration source",
 		"api", "GHEC_GraphQL",
 		"method", "Mutate(createMigrationSource)",
 		"name", name,
-		"url", &urlPtr,
 		"ownerId", githubv4.ID(ownerID),
 		"type", "GITHUB_ARCHIVE",
-		"input", fmt.Sprintf("%+v", input),
 	)
 
 	startTime := time.Now()
@@ -163,29 +160,27 @@ func (a *API) CreateMigrationSource(ctx context.Context, name, url, ownerID stri
 	duration := time.Since(startTime)
 
 	if err != nil {
-		a.logger.Error("API RESPONSE: Failed to create migration source",
+		a.logger.Error("Failed to create migration source",
 			"api", "GHEC_GraphQL",
 			"method", "Mutate(createMigrationSource)",
 			"duration_ms", duration.Milliseconds(),
 			"error", err,
 			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
-			"variables", fmt.Sprintf("%+v", input),
 		)
 		return "", fmt.Errorf("failed to create migration source: %w", err)
 	}
 
 	// Check if the migration source ID is empty
 	if mutation.CreateMigrationSource.MigrationSource.ID == "" {
-		a.logger.Error("API RESPONSE: Empty migration source ID returned",
+		a.logger.Error("Empty migration source ID returned",
 			"api", "GHEC_GraphQL",
 			"method", "Mutate(createMigrationSource)",
 			"duration_ms", duration.Milliseconds(),
-			"mutation_response", fmt.Sprintf("%+v", mutation),
 		)
 		return "", fmt.Errorf("createMigrationSource returned empty ID")
 	}
 
-	a.logger.Info("API RESPONSE: Migration source created successfully",
+	a.logger.Info("Migration source created",
 		"api", "GHEC_GraphQL",
 		"method", "Mutate(createMigrationSource)",
 		"duration_ms", duration.Milliseconds(),
@@ -204,12 +199,11 @@ func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName st
 		LockRepositories: false,
 	}
 
-	a.logger.Debug("API REQUEST: Generating migration archive",
+	a.logger.Debug("Generating migration archive",
 		"api", "GHES_REST",
 		"method", "Migrations.StartMigration",
 		"org", orgName,
-		"repos", strings.Join(repos, ","),
-		"options", fmt.Sprintf("%+v", opts),
+		"repo", repoName,
 	)
 
 	startTime := time.Now()
@@ -222,19 +216,20 @@ func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName st
 			statusCode = resp.StatusCode
 		}
 
-		a.logger.Error("API RESPONSE: Failed to create migration archive",
+		a.logger.Error("Failed to create migration archive",
 			"api", "GHES_REST",
 			"method", "Migrations.StartMigration",
 			"duration_ms", duration.Milliseconds(),
 			"status_code", statusCode,
 			"error", err,
-			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
+			"org", orgName,
+			"repo", repoName,
 		)
 		return 0, fmt.Errorf("failed to create migration archive: %w", err)
 	}
 
 	archiveID := archive.GetID()
-	a.logger.Debug("API RESPONSE: Migration archive created successfully",
+	a.logger.Debug("Migration archive created",
 		"api", "GHES_REST",
 		"method", "Migrations.StartMigration",
 		"duration_ms", duration.Milliseconds(),
@@ -249,7 +244,7 @@ func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName st
 
 // GetMigrationArchiveStatus gets the status of a migration archive export on GHES
 func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, orgName string) (string, error) {
-	a.logger.Debug("API REQUEST: Getting migration archive status",
+	a.logger.Debug("Getting archive status",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationStatus",
 		"migrationID", migrationID,
@@ -266,13 +261,12 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 			statusCode = resp.StatusCode
 		}
 
-		a.logger.Error("API RESPONSE: Failed to get migration archive status",
+		a.logger.Error("Failed to get archive status",
 			"api", "GHES_REST",
 			"method", "Migrations.MigrationStatus",
 			"duration_ms", duration.Milliseconds(),
 			"status_code", statusCode,
 			"error", err,
-			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
 			"migrationID", migrationID,
 			"org", orgName,
 		)
@@ -283,7 +277,7 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 
 	// Log additional details for failed migrations
 	if state == "failed" {
-		a.logger.Error("API RESPONSE: Migration archive export failed",
+		a.logger.Error("Archive export failed",
 			"api", "GHES_REST",
 			"method", "Migrations.MigrationStatus",
 			"duration_ms", duration.Milliseconds(),
@@ -294,7 +288,7 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 		)
 	}
 
-	a.logger.Debug("API RESPONSE: Migration archive status retrieved",
+	a.logger.Debug("Archive status retrieved",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationStatus",
 		"duration_ms", duration.Milliseconds(),
@@ -309,7 +303,7 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 
 // GetMigrationArchiveURL gets the archive URL of a migration source
 func (a *API) GetMigrationArchiveURL(ctx context.Context, migrationID int64, orgName string) (string, error) {
-	a.logger.Debug("API REQUEST: Getting migration archive URL",
+	a.logger.Debug("Getting migration archive URL",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationArchiveURL",
 		"migrationId", migrationID,
@@ -321,25 +315,23 @@ func (a *API) GetMigrationArchiveURL(ctx context.Context, migrationID int64, org
 	duration := time.Since(startTime)
 
 	if err != nil {
-		a.logger.Error("API RESPONSE: Failed to get migration archive URL",
+		a.logger.Error("Failed to get archive URL",
 			"api", "GHES_REST",
 			"method", "Migrations.MigrationArchiveURL",
 			"duration_ms", duration.Milliseconds(),
 			"error", err,
-			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
 			"migrationId", migrationID,
 			"org", orgName,
 		)
 		return "", fmt.Errorf("failed to create request for migration archive URL: %w", err)
 	}
 
-	a.logger.Debug("API RESPONSE: Migration archive URL retrieved",
+	a.logger.Debug("Archive URL retrieved",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationArchiveURL",
 		"duration_ms", duration.Milliseconds(),
 		"migrationId", migrationID,
 		"org", orgName,
-		"url", archiveURL,
 	)
 
 	return archiveURL, nil
@@ -393,14 +385,13 @@ func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, r
 	}
 
 	// Log the input parameters for debugging
-	a.logger.Debug("API REQUEST: Starting repository migration",
+	a.logger.Debug("Starting repository migration",
 		"api", "GHEC_GraphQL",
 		"method", "Mutate(startRepositoryMigration)",
 		"sourceId", sourceID,
 		"ownerId", ownerID,
 		"repositoryName", repoName,
 		"sourceRepositoryUrl", sourceRepoURL,
-		"input", fmt.Sprintf("%+v", input),
 	)
 
 	startTime := time.Now()
@@ -408,31 +399,30 @@ func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, r
 	duration := time.Since(startTime)
 
 	if err != nil {
-		a.logger.Error("API RESPONSE: GraphQL mutation error",
+		a.logger.Error("Migration start failed",
 			"api", "GHEC_GraphQL",
 			"method", "Mutate(startRepositoryMigration)",
 			"duration_ms", duration.Milliseconds(),
 			"error", err,
 			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
-			"variables", fmt.Sprintf("%+v", input),
+			"repository", repoName,
 		)
 		return "", fmt.Errorf("failed to start repository migration: %w", err)
 	}
 
 	// Check if the mutation response is valid
 	if mutation.StartRepositoryMigration.RepositoryMigration.ID == "" {
-		a.logger.Error("API RESPONSE: Empty migration ID returned",
+		a.logger.Error("Empty migration ID returned",
 			"api", "GHEC_GraphQL",
 			"method", "Mutate(startRepositoryMigration)",
 			"duration_ms", duration.Milliseconds(),
-			"mutation_response", fmt.Sprintf("%+v", mutation),
-			"variables", fmt.Sprintf("%+v", input),
+			"repository", repoName,
 		)
 		return "", fmt.Errorf("startRepositoryMigration returned empty migration ID")
 	}
 
 	migrationID := mutation.StartRepositoryMigration.RepositoryMigration.ID
-	a.logger.Info("API RESPONSE: Repository migration started successfully",
+	a.logger.Info("Repository migration started",
 		"api", "GHEC_GraphQL",
 		"method", "Mutate(startRepositoryMigration)",
 		"duration_ms", duration.Milliseconds(),
@@ -464,11 +454,10 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 		"id": githubv4.ID(migrationID),
 	}
 
-	a.logger.Debug("API REQUEST: Querying migration status",
+	a.logger.Debug("Checking migration status",
 		"api", "GHEC_GraphQL",
 		"method", "Query(node/Migration)",
 		"migrationId", migrationID,
-		"variables", fmt.Sprintf("%+v", variables),
 	)
 
 	startTime := time.Now()
@@ -476,12 +465,11 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 	duration := time.Since(startTime)
 
 	if err != nil {
-		a.logger.Error("API RESPONSE: Failed to get migration status",
+		a.logger.Error("Failed to get migration status",
 			"api", "GHEC_GraphQL",
 			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"error", err,
-			"error_details", strings.ReplaceAll(err.Error(), "\n", " "),
 			"migrationId", migrationID,
 		)
 		return "", fmt.Errorf("failed to get migration status: %w", err)
@@ -492,12 +480,11 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 
 	// Validate state and handle empty state
 	if state == "" {
-		a.logger.Error("API RESPONSE: Empty migration state returned",
+		a.logger.Error("Empty migration state returned",
 			"api", "GHEC_GraphQL",
 			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
-			"response", fmt.Sprintf("%+v", query.Node.Migration),
 		)
 		return "", fmt.Errorf("empty migration state returned")
 	}
@@ -505,63 +492,50 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 	// Log appropriate messages based on state
 	switch state {
 	case "PENDING":
-		a.logger.Debug("API RESPONSE: Migration is pending",
+		a.logger.Debug("Migration is pending",
 			"api", "GHEC_GraphQL",
-			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
-			"state", state,
 		)
 	case "IN_PROGRESS":
-		a.logger.Debug("API RESPONSE: Migration is in progress",
+		a.logger.Debug("Migration is in progress",
 			"api", "GHEC_GraphQL",
-			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
-			"state", state,
 		)
 	case "SUCCEEDED":
-		a.logger.Info("API RESPONSE: Migration succeeded",
+		a.logger.Info("Migration succeeded",
 			"api", "GHEC_GraphQL",
-			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
-			"state", state,
 		)
 	case "FAILED":
 		failureReason := query.Node.Migration.FailureReason
 		if failureReason != "" {
-			a.logger.Error("API RESPONSE: Migration failed",
+			a.logger.Error("Migration failed",
 				"api", "GHEC_GraphQL",
-				"method", "Query(node/Migration)",
 				"duration_ms", duration.Milliseconds(),
 				"migrationId", migrationID,
-				"state", state,
 				"failureReason", failureReason,
 			)
 			return state, fmt.Errorf("migration failed: %s", failureReason)
 		} else {
-			a.logger.Error("API RESPONSE: Migration failed with unknown reason",
+			a.logger.Error("Migration failed with unknown reason",
 				"api", "GHEC_GraphQL",
-				"method", "Query(node/Migration)",
 				"duration_ms", duration.Milliseconds(),
 				"migrationId", migrationID,
-				"state", state,
 			)
 			return state, fmt.Errorf("migration failed with unknown reason")
 		}
 	case "QUEUED":
-		a.logger.Debug("API RESPONSE: Migration is queued",
+		a.logger.Debug("Migration is queued",
 			"api", "GHEC_GraphQL",
-			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
-			"state", state,
 		)
 	default:
-		a.logger.Warn("API RESPONSE: Unknown migration state",
+		a.logger.Warn("Unknown migration state",
 			"api", "GHEC_GraphQL",
-			"method", "Query(node/Migration)",
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
 			"state", state,

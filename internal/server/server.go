@@ -50,7 +50,6 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 func (s *Server) Start() error {
 	s.logger.Info("Starting server",
 		"port", s.config.Server.Port,
-		"addr", s.server.Addr,
 	)
 	return s.server.ListenAndServe()
 }
@@ -69,11 +68,10 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 
 		// Log request
 		start := time.Now()
-		s.logger.Info("Incoming request",
+		s.logger.Debug("Incoming request",
 			"request_id", requestID,
 			"method", r.Method,
 			"path", r.URL.Path,
-			"remote_addr", r.RemoteAddr,
 		)
 
 		// Add security headers
@@ -86,9 +84,9 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 
 		// Log response time
-		s.logger.Info("Request completed",
+		s.logger.Debug("Request completed",
 			"request_id", requestID,
-			"duration", time.Since(start),
+			"duration_ms", time.Since(start).Milliseconds(),
 			"path", r.URL.Path,
 		)
 	})
@@ -158,14 +156,12 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log the URLs for debugging
-	s.logger.Info("Starting migration",
+	// Log the migration request details
+	s.logger.Info("Migration request received",
 		"source_org", req.SourceOrg,
 		"target_org", req.TargetOrg,
 		"repositories", req.Repositories,
 		"ghes_base_url", req.GHESBaseURL,
-		"ghes_api_url", req.GetGHESAPIURL(),
-		"ghes_graphql_url", req.GetGHESGraphQLURL(),
 	)
 
 	// Start migration in background
@@ -177,24 +173,22 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		if req.MaxDuration != "" {
 			// We already validated the duration in the request validation
 			maxDuration := req.GetMaxDuration()
-			s.logger.Info("Using custom migration timeout",
+			s.logger.Info("Using custom timeout",
 				"max_duration", req.MaxDuration,
-				"repositories", req.Repositories,
+				"repositories", len(req.Repositories),
 			)
 			ctx, cancel = context.WithTimeout(context.Background(), maxDuration)
 		} else {
 			// No timeout - for very large repositories
-			s.logger.Info("Using no timeout for migration",
-				"repositories", req.Repositories,
+			s.logger.Info("No timeout configured",
+				"repositories", len(req.Repositories),
 			)
 			ctx, cancel = context.WithCancel(context.Background())
 		}
 
-		// Don't cancel immediately after StartMigration returns
-		// Migrator will now take ownership of the context and handle its lifecycle
-
+		// Migrator will take ownership of the context and handle its lifecycle
 		if err := s.migrator.StartMigration(ctx, &req, cancel); err != nil {
-			s.logger.Error("Migration failed",
+			s.logger.Error("Failed to start migration",
 				"error", err,
 				"source_org", req.SourceOrg,
 				"target_org", req.TargetOrg,
@@ -229,7 +223,6 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 		"status_code", statusCode,
 		"message", message,
 		"path", r.URL.Path,
-		"request_id", r.Context().Value("request_id"),
 	)
 
 	w.Header().Set("Content-Type", "application/json")

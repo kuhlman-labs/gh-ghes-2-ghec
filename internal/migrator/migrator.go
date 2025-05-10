@@ -86,7 +86,7 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 	// Start a goroutine to wait for all migrations to complete and then cancel the context
 	go func() {
 		wg.Wait()
-		m.logger.Info("All repository migrations completed, cancelling context")
+		m.logger.Info("Finished all migrations in queue")
 		cancel()
 	}()
 
@@ -94,20 +94,19 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 }
 
 func (m *Migrator) migrateRepository(ctx context.Context, req *payload.MigrationRequest, repoName string) error {
+	// Record start time for this repository migration
+	startTime := time.Now()
+
 	// Initialize clients for this migration
 	clients, err := config.NewClients(req.GHESToken, req.GHCloudToken)
 	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to initialize clients: %v", err), time.Now())
-		// Send webhook notification for failure
-		go m.sendWebhookNotification(repoName, req)
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to initialize clients: %v", err), time.Now(), startTime)
 		return fmt.Errorf("failed to initialize clients: %w", err)
 	}
 
 	// Update GHES base URL
 	if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to update GHES base URL: %v", err), time.Now())
-		// Send webhook notification for failure
-		go m.sendWebhookNotification(repoName, req)
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to update GHES base URL: %v", err), time.Now(), startTime)
 		return fmt.Errorf("failed to update GHES base URL: %w", err)
 	}
 
@@ -115,50 +114,50 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 	githubAPI := github.New(clients, m.logger)
 
 	// Update status to in progress with initial stage
-	m.updateStatus(repoName, payload.StatusInProgress, "starting migration process - this may take hours for large repositories", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "starting migration process", time.Now(), startTime)
 
 	// Validate that source repository exists
 	sourceRepo := fmt.Sprintf("%s/%s", req.SourceOrg, repoName)
-	m.updateStatus(repoName, payload.StatusInProgress, "validating source repository", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "validating source repository", time.Now(), startTime)
 	err = githubAPI.ValidateRepository(ctx, req.SourceOrg, repoName)
 	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("source repository not found: %v", err), time.Now())
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("source repository not found: %v", err), time.Now(), startTime)
 		return fmt.Errorf("source repository not found: %w", err)
 	}
 
 	// Get the owner ID for the destination organization
-	m.updateStatus(repoName, payload.StatusInProgress, "getting target organization ID", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "getting target organization ID", time.Now(), startTime)
 	ownerID, err := githubAPI.GetOrganizationID(ctx, req.TargetOrg)
 	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get owner ID: %v", err), time.Now())
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get owner ID: %v", err), time.Now(), startTime)
 		return fmt.Errorf("failed to get owner ID: %w", err)
 	}
-	m.logger.Debug("Owner ID", "ownerID", ownerID)
+	m.logger.Debug("Target organization details", "org", req.TargetOrg, "ownerID", ownerID)
 
 	// Get the base URL for the source organization
 	baseURL := req.GHESBaseURL
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	// Create migration source in destination organization
-	m.updateStatus(repoName, payload.StatusInProgress, "creating migration source in GHEC", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "creating migration source in GHEC", time.Now(), startTime)
 	migrationSourceID, err := githubAPI.CreateMigrationSource(ctx, repoName, baseURL, ownerID)
 	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to create migration source: %v", err), time.Now())
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to create migration source: %v", err), time.Now(), startTime)
 		return fmt.Errorf("failed to create migration source: %w", err)
 	}
-	m.logger.Debug("Migration source ID", "migrationSourceID", migrationSourceID)
+	m.logger.Debug("Migration source created", "sourceID", migrationSourceID)
 
 	// Generate migration archive on Source GHES
-	m.updateStatus(repoName, payload.StatusInProgress, "generating migration archive on GHES...", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "generating migration archive", time.Now(), startTime)
 	archiveID, err := githubAPI.GenerateMigrationArchive(ctx, req.SourceOrg, repoName)
 	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to generate migration archive: %v", err), time.Now())
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to generate migration archive: %v", err), time.Now(), startTime)
 		return fmt.Errorf("failed to generate migration archive: %w", err)
 	}
-	m.logger.Debug("Migration archive ID", "archiveID", archiveID)
+	m.logger.Debug("Archive generation initiated", "archiveID", archiveID, "repository", repoName)
 
 	// Wait for migration archive export to complete
-	m.updateStatus(repoName, payload.StatusInProgress, "waiting for archive export to complete...", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "waiting for archive export", time.Now(), startTime)
 
 	// Use longer polling intervals for archive export status checks
 	// Start with 15 seconds between checks to avoid unnecessary API load
@@ -175,6 +174,7 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 				payload.StatusFailed,
 				fmt.Sprintf("archive export cancelled: %v", ctx.Err()),
 				time.Now(),
+				startTime,
 			)
 			return ctx.Err()
 		case <-time.After(pollInterval):
@@ -184,7 +184,7 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 		// Check status of migration source
 		status, err := githubAPI.GetMigrationArchiveStatus(ctx, archiveID, req.SourceOrg)
 		if err != nil {
-			m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get migration source status: %v", err), time.Now())
+			m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get migration source status: %v", err), time.Now(), startTime)
 			return fmt.Errorf("failed to get migration source status: %w", err)
 		}
 
@@ -194,68 +194,64 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 			payload.StatusInProgress,
 			fmt.Sprintf("archive export state: %s", status),
 			time.Now(),
+			startTime,
 		)
 
 		exportDuration := time.Since(exportStartTime)
-		m.logger.Info("Migration archive export status",
+		m.logger.Debug("Archive export status",
 			"status", status,
 			"archiveID", archiveID,
 			"repository", repoName,
-			"waiting_time", fmt.Sprintf("%dm%ds", int(exportDuration.Minutes()), int(exportDuration.Seconds())%60),
+			"duration", fmt.Sprintf("%dm%ds", int(exportDuration.Minutes()), int(exportDuration.Seconds())%60),
 		)
 
 		// Handle different states of migration export
 		switch status {
 		case "exported":
 			// Export completed successfully, proceed to next step
-			m.logger.Info("Migration archive export completed successfully",
-				"archiveID", archiveID,
+			m.logger.Info("Archive export completed",
 				"repository", repoName,
+				"archiveID", archiveID,
 			)
 
 			// Get the migration archive URL
 			archiveURL, err := githubAPI.GetMigrationArchiveURL(ctx, archiveID, req.SourceOrg)
 			if err != nil {
-				m.logger.Error("Failed to get migration archive URL",
-					"error", err,
-					"archiveID", archiveID,
+				m.logger.Error("Failed to get archive URL",
 					"repository", repoName,
+					"archiveID", archiveID,
+					"error", err,
 				)
-				m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get migration archive URL: %v", err), time.Now())
+				m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to get migration archive URL: %v", err), time.Now(), startTime)
 				return fmt.Errorf("failed to get migration archive URL: %w", err)
 			}
 
-			m.logger.Info("Migration archive URL retrieved",
-				"url", archiveURL,
-				"archiveID", archiveID,
+			m.logger.Debug("Archive URL retrieved",
 				"repository", repoName,
+				"archiveID", archiveID,
 			)
 
 			// Update status with archive URL
 			m.updateStatus(
 				repoName,
 				payload.StatusInProgress,
-				fmt.Sprintf("archive URL: %s", archiveURL),
+				fmt.Sprintf("archive ready for migration: %s", archiveURL),
 				time.Now(),
+				startTime,
 			)
 
 			goto startRepositoryMigration
 		case "failed":
 			failureMsg := fmt.Sprintf("migration archive export failed with state: %s", status)
-			m.updateStatus(repoName, payload.StatusFailed, failureMsg, time.Now())
+			m.updateStatus(repoName, payload.StatusFailed, failureMsg, time.Now(), startTime)
 			return fmt.Errorf("migration archive export failed: %s", failureMsg)
 		case "pending", "exporting":
-			// Continue polling
-			m.logger.Debug("Waiting for migration archive export to complete",
-				"status", status,
-				"archiveID", archiveID,
-				"repository", repoName,
-			)
+			// Continue polling - no additional logging needed as we already logged status above
 		default:
-			m.logger.Warn("Unknown migration archive export status",
+			m.logger.Warn("Unknown archive export status",
 				"status", status,
-				"archiveID", archiveID,
 				"repository", repoName,
+				"archiveID", archiveID,
 			)
 		}
 	}
@@ -264,16 +260,16 @@ startRepositoryMigration:
 	// Construct the source repository URL from the base URL
 	sourceRepoURL := fmt.Sprintf("%s/%s", baseURL, sourceRepo)
 
-	m.logger.Debug("Using source repository URL",
-		"url", sourceRepoURL,
-		"base_url", baseURL,
+	m.logger.Debug("Starting repository migration",
+		"sourceURL", sourceRepoURL,
+		"repository", repoName,
 	)
 
 	// Start repository migration
-	m.updateStatus(repoName, payload.StatusInProgress, "starting repository migration to GHEC", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "starting repository migration", time.Now(), startTime)
 	migrationID, err := githubAPI.StartRepositoryMigration(ctx, migrationSourceID, ownerID, repoName, sourceRepoURL, req.GHESToken, req.GHCloudToken)
 	if err != nil {
-		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration: %v", err), time.Now())
+		m.updateStatus(repoName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration: %v", err), time.Now(), startTime)
 		return fmt.Errorf("failed to start repository migration: %w", err)
 	}
 
@@ -281,12 +277,13 @@ startRepositoryMigration:
 	m.updateStatus(
 		repoName,
 		payload.StatusInProgress,
-		fmt.Sprintf("migration ID: %s", migrationID),
+		fmt.Sprintf("migration created with ID: %s", migrationID),
 		time.Now(),
+		startTime,
 	)
 
 	// Wait for migration to complete
-	m.updateStatus(repoName, payload.StatusInProgress, "waiting for migration to complete - this can take several hours for large repositories", time.Now())
+	m.updateStatus(repoName, payload.StatusInProgress, "waiting for migration to complete", time.Now(), startTime)
 
 	pollInterval = 15 * time.Second
 
@@ -305,6 +302,7 @@ startRepositoryMigration:
 				payload.StatusFailed,
 				fmt.Sprintf("migration cancelled: %v", ctx.Err()),
 				time.Now(),
+				startTime,
 			)
 			return ctx.Err()
 		case <-time.After(pollInterval):
@@ -313,7 +311,7 @@ startRepositoryMigration:
 
 		state, err := githubAPI.GetMigrationStatus(ctx, migrationID)
 		if err != nil {
-			m.updateStatus(repoName, payload.StatusFailed, err.Error(), time.Now())
+			m.updateStatus(repoName, payload.StatusFailed, err.Error(), time.Now(), startTime)
 			return fmt.Errorf("failed to get migration status: %w", err)
 		}
 
@@ -323,19 +321,30 @@ startRepositoryMigration:
 			payload.StatusInProgress,
 			fmt.Sprintf("migration state: %s", state),
 			time.Now(),
+			startTime,
 		)
 
 		migrationDuration := time.Since(migrationStartTime)
-		m.logger.Info("Repository migration status",
-			"state", state,
-			"migrationId", migrationID,
-			"repository", repoName,
-			"waiting_time", fmt.Sprintf("%dh%dm%ds",
-				int(migrationDuration.Hours()),
-				int(migrationDuration.Minutes())%60,
-				int(migrationDuration.Seconds())%60,
-			),
+		durationStr := fmt.Sprintf("%dh%dm%ds",
+			int(migrationDuration.Hours()),
+			int(migrationDuration.Minutes())%60,
+			int(migrationDuration.Seconds())%60,
 		)
+
+		// Only log at INFO level for significant changes or every 5 minutes
+		if state != lastState || consecutiveNoChanges%20 == 0 { // Log after ~5 min (15s * 20) when no change
+			m.logger.Info("Migration status",
+				"repository", repoName,
+				"state", state,
+				"duration", durationStr,
+			)
+		} else {
+			m.logger.Debug("Migration status check",
+				"repository", repoName,
+				"state", state,
+				"duration", durationStr,
+			)
+		}
 
 		// Implement adaptive polling - increase polling interval if state doesn't change
 		if state == lastState {
@@ -343,9 +352,9 @@ startRepositoryMigration:
 			// Max out at 1 minute between polls for long-running migrations
 			if consecutiveNoChanges > 5 && pollInterval < 1*time.Minute {
 				pollInterval = time.Duration(math.Min(float64(pollInterval*2), float64(1*time.Minute)))
-				m.logger.Debug("Increasing polling interval due to stable state",
+				m.logger.Debug("Increasing polling interval",
 					"repository", repoName,
-					"new_interval_seconds", pollInterval.Seconds(),
+					"interval_seconds", int(pollInterval.Seconds()),
 					"state", state,
 				)
 			}
@@ -359,74 +368,99 @@ startRepositoryMigration:
 		switch state {
 		case "SUCCEEDED":
 			// Migration completed successfully
-			m.logger.Info("Repository migration completed successfully",
-				"migrationId", migrationID,
+			totalDuration := time.Since(startTime)
+			durationStr := formatDuration(totalDuration)
+
+			m.logger.Info("Migration successful",
 				"repository", repoName,
+				"duration", durationStr,
+				"started_at", startTime.Format(time.RFC3339),
 			)
-			m.updateStatus(repoName, payload.StatusSucceeded, "migration completed successfully", time.Now())
-			// Send webhook notification for success
-			go m.sendWebhookNotification(repoName, req)
+			m.updateStatus(repoName, payload.StatusSucceeded, "migration completed successfully", time.Now(), startTime)
 			return nil
 		case "FAILED":
 			failureMsg := fmt.Sprintf("migration failed with state: %s", state)
-			m.updateStatus(repoName, payload.StatusFailed, failureMsg, time.Now())
-			// Send webhook notification for failure
-			go m.sendWebhookNotification(repoName, req)
+			m.updateStatus(repoName, payload.StatusFailed, failureMsg, time.Now(), startTime)
 			return fmt.Errorf("migration failed: %s", failureMsg)
 		case "PENDING", "IN_PROGRESS", "QUEUED":
-			// Continue polling
+			// Continue polling - already logged status above
 		}
 	}
 }
 
-func (m *Migrator) updateStatus(repoName, status, message string, timestamp time.Time) {
+// formatDuration returns a human-readable duration string
+func formatDuration(d time.Duration) string {
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	return fmt.Sprintf("%dh%dm%ds", hours, minutes, seconds)
+}
+
+func (m *Migrator) updateStatus(repoName, status, message string, timestamp time.Time, startTime time.Time) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	// Parse the message to determine stage and state
 	var stage, state string
 
-	// Extract stage information from message
-	if strings.Contains(message, "starting migration process") {
+	// Extract stage information from message (with improved mapping)
+	switch {
+	case strings.Contains(message, "starting migration process"):
 		stage = "init"
 		state = "starting"
-	} else if strings.Contains(message, "validating source repository") {
+	case strings.Contains(message, "validating source repository"):
 		stage = "validation"
 		state = "checking_source"
-	} else if strings.Contains(message, "getting target organization ID") {
+	case strings.Contains(message, "getting target organization ID"):
 		stage = "validation"
 		state = "checking_target"
-	} else if strings.Contains(message, "creating migration source") {
+	case strings.Contains(message, "creating migration source"):
 		stage = "setup"
 		state = "creating_source"
-	} else if strings.Contains(message, "generating migration archive") {
+	case strings.Contains(message, "generating migration archive"):
 		stage = "archive"
 		state = "generating"
-	} else if strings.Contains(message, "checking migration archive status") {
+	case strings.Contains(message, "waiting for archive export"):
 		stage = "archive"
-		state = "checking"
-	} else if strings.Contains(message, "migration archive is ready") {
+		state = "waiting"
+	case strings.Contains(message, "archive export state:"):
+		stage = "archive"
+		state = strings.TrimSpace(strings.TrimPrefix(message, "archive export state:"))
+	case strings.Contains(message, "archive ready for migration"):
 		stage = "archive"
 		state = "ready"
-	} else if strings.Contains(message, "starting repository migration") {
+	case strings.Contains(message, "starting repository migration"):
 		stage = "migration"
 		state = "starting"
-	} else if strings.Contains(message, "checking migration status") {
+	case strings.Contains(message, "migration created with ID:"):
 		stage = "migration"
-		state = "checking"
-	} else if strings.Contains(message, "migration is in progress") {
+		state = "created"
+	case strings.Contains(message, "waiting for migration to complete"):
 		stage = "migration"
-		state = "in_progress"
-	} else if strings.Contains(message, "migration completed successfully") {
+		state = "waiting"
+	case strings.Contains(message, "migration state:"):
+		stage = "migration"
+		state = strings.TrimSpace(strings.TrimPrefix(message, "migration state:"))
+	case strings.Contains(message, "migration completed successfully"):
 		stage = "migration"
 		state = "completed"
-	} else if status == payload.StatusFailed {
+	case status == payload.StatusFailed:
 		stage = "error"
 		state = "failed"
+	default:
+		// Default values if no matching pattern is found
+		stage = "unknown"
+		state = "unknown"
 	}
 
-	// Create a new status or update existing
-	if _, ok := m.migrations[repoName]; !ok {
+	// Check if this is a new status or a change in stage/state
+	var isNewOrChanged bool
+	var oldStatus *payload.MigrationStatus
+
+	if existing, ok := m.migrations[repoName]; !ok {
+		// New status
+		isNewOrChanged = true
+
 		m.migrations[repoName] = &payload.MigrationStatus{
 			Repository: repoName,
 			Status:     status,
@@ -434,27 +468,84 @@ func (m *Migrator) updateStatus(repoName, status, message string, timestamp time
 			UpdatedAt:  timestamp,
 			Stage:      stage,
 			State:      state,
+			StartedAt:  startTime,
 		}
 	} else {
-		m.migrations[repoName].Status = status
-		m.migrations[repoName].UpdatedAt = timestamp
-		m.migrations[repoName].Stage = stage
-		m.migrations[repoName].State = state
+		// Save old status for comparison
+		oldStatus = &payload.MigrationStatus{
+			Repository: existing.Repository,
+			Status:     existing.Status,
+			Error:      existing.Error,
+			UpdatedAt:  existing.UpdatedAt,
+			Stage:      existing.Stage,
+			State:      existing.State,
+			StartedAt:  existing.StartedAt,
+		}
+
+		// Update existing status
+		existing.Status = status
+		existing.UpdatedAt = timestamp
+		existing.Stage = stage
+		existing.State = state
 
 		// Only update error message if there's an error
 		if status == payload.StatusFailed {
-			m.migrations[repoName].Error = message
+			existing.Error = message
+		}
+
+		// Keep the original start time
+		if existing.StartedAt.IsZero() {
+			existing.StartedAt = startTime
+		}
+
+		// Check if stage or state changed
+		isNewOrChanged = (oldStatus.Status != status ||
+			oldStatus.Stage != stage ||
+			oldStatus.State != state)
+	}
+
+	// Calculate duration for completed or failed migrations
+	if status == payload.StatusSucceeded || status == payload.StatusFailed {
+		if migStatus, ok := m.migrations[repoName]; ok && !migStatus.StartedAt.IsZero() {
+			migStatus.Duration = timestamp.Sub(migStatus.StartedAt)
 		}
 	}
 
-	// Log status update
-	m.logger.Info("Migration status updated",
-		"repository", repoName,
-		"status", status,
-		"message", message,
-		"stage", stage,
-		"state", state,
-	)
+	// Release lock before logging and sending webhook
+	m.mu.Unlock()
+
+	// Log status update (only for significant changes to reduce noise)
+	if isNewOrChanged {
+		if status == payload.StatusSucceeded {
+			duration := timestamp.Sub(startTime)
+			m.logger.Info("Status updated",
+				"repository", repoName,
+				"status", status,
+				"stage", stage,
+				"state", state,
+				"total_duration", formatDuration(duration),
+			)
+		} else {
+			m.logger.Info("Status updated",
+				"repository", repoName,
+				"status", status,
+				"stage", stage,
+				"state", state,
+			)
+		}
+	} else {
+		m.logger.Debug("Status refreshed",
+			"repository", repoName,
+			"status", status,
+			"stage", stage,
+			"state", state,
+		)
+	}
+
+	// Send webhook notification if the status changed
+	if isNewOrChanged && m.webhookURL != "" {
+		go m.sendWebhookNotification(repoName, nil)
+	}
 }
 
 func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payload.MigrationRequest) {
@@ -474,15 +565,47 @@ func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payloa
 	// Validate webhook URL
 	_, err := url.Parse(m.webhookURL)
 	if err != nil {
-		m.logger.Error("Invalid webhook URL, skipping notification",
+		m.logger.Error("Invalid webhook URL",
 			"repository", repoName,
-			"webhook_url", m.webhookURL,
 			"error", err,
 		)
 		return
 	}
 
-	webhookPayload, err := json.Marshal(status)
+	// Create a payload with the migration details
+	webhookPayload := map[string]interface{}{
+		"repository": repoName,
+		"status":     status.Status,
+		"stage":      status.Stage,
+		"state":      status.State,
+		"timestamp":  status.UpdatedAt,
+		"details": map[string]interface{}{
+			"stage_description": getStageDescription(status.Stage),
+			"state_description": getStateDescription(status.Stage, status.State),
+		},
+	}
+
+	// Add duration if migration is complete
+	if status.Status == payload.StatusSucceeded || status.Status == payload.StatusFailed {
+		if !status.StartedAt.IsZero() && status.Duration > 0 {
+			webhookPayload["started_at"] = status.StartedAt.Format(time.RFC3339)
+			webhookPayload["duration_seconds"] = int(status.Duration.Seconds())
+			webhookPayload["duration_string"] = formatDuration(status.Duration)
+		}
+	}
+
+	// Add error details if present
+	if status.Error != "" {
+		webhookPayload["error"] = status.Error
+	}
+
+	// Add source and target org if available from the request
+	if migrationReq != nil {
+		webhookPayload["source_org"] = migrationReq.SourceOrg
+		webhookPayload["target_org"] = migrationReq.TargetOrg
+	}
+
+	payloadBytes, err := json.Marshal(webhookPayload)
 	if err != nil {
 		m.logger.Error("Failed to marshal webhook payload",
 			"repository", repoName,
@@ -496,7 +619,7 @@ func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payloa
 		Timeout: 10 * time.Second,
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, m.webhookURL, bytes.NewBuffer(webhookPayload))
+	httpReq, err := http.NewRequest(http.MethodPost, m.webhookURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		m.logger.Error("Failed to create webhook request",
 			"repository", repoName,
@@ -507,20 +630,17 @@ func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payloa
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("User-Agent", "ghes-2-ghec")
 
-	m.logger.Debug("Sending webhook notification",
+	m.logger.Debug("Sending webhook",
 		"repository", repoName,
-		"webhook_url", m.webhookURL,
 		"status", status.Status,
 		"stage", status.Stage,
 		"state", status.State,
-		"payload", string(webhookPayload),
 	)
 
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		m.logger.Error("Failed to send webhook notification",
+		m.logger.Error("Webhook send failed",
 			"repository", repoName,
-			"webhook_url", m.webhookURL,
 			"error", err,
 		)
 		return
@@ -530,22 +650,102 @@ func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payloa
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Read the response body for more details
 		body, _ := io.ReadAll(resp.Body)
-		m.logger.Error("Webhook notification failed",
+		m.logger.Error("Webhook rejected",
 			"repository", repoName,
-			"webhook_url", m.webhookURL,
 			"status_code", resp.StatusCode,
-			"response_body", string(body),
-			"stage", status.Stage,
-			"state", status.State,
-			"payload", string(webhookPayload),
+			"response", string(body),
 		)
 	} else {
-		m.logger.Debug("Webhook notification sent successfully",
+		m.logger.Debug("Webhook delivered",
 			"repository", repoName,
 			"status_code", resp.StatusCode,
-			"stage", status.Stage,
-			"state", status.State,
 		)
+	}
+}
+
+// getStageDescription returns a human-readable description of a migration stage
+func getStageDescription(stage string) string {
+	switch stage {
+	case "init":
+		return "Migration initialization"
+	case "validation":
+		return "Repository validation"
+	case "setup":
+		return "Migration setup"
+	case "archive":
+		return "Archive management"
+	case "migration":
+		return "Repository migration"
+	case "error":
+		return "Error occurred"
+	default:
+		return "Unknown stage"
+	}
+}
+
+// getStateDescription returns a human-readable description of a migration state
+func getStateDescription(stage, state string) string {
+	// First handle common states across stages
+	if state == "failed" {
+		return "The operation has failed"
+	}
+
+	// Then handle stage-specific states
+	switch stage {
+	case "validation":
+		switch state {
+		case "checking_source":
+			return "Validating source repository exists"
+		case "checking_target":
+			return "Validating target organization"
+		default:
+			return state
+		}
+	case "setup":
+		switch state {
+		case "creating_source":
+			return "Creating migration source"
+		default:
+			return state
+		}
+	case "archive":
+		switch state {
+		case "generating":
+			return "Generating migration archive"
+		case "waiting":
+			return "Waiting for archive to be created"
+		case "exported":
+			return "Archive has been exported"
+		case "ready":
+			return "Archive is ready for migration"
+		default:
+			return state
+		}
+	case "migration":
+		switch state {
+		case "starting":
+			return "Starting repository migration"
+		case "created":
+			return "Migration has been created"
+		case "waiting":
+			return "Waiting for migration to complete"
+		case "IN_PROGRESS":
+			return "Migration is in progress"
+		case "PENDING":
+			return "Migration is pending"
+		case "QUEUED":
+			return "Migration is queued"
+		case "SUCCEEDED":
+			return "Migration has succeeded"
+		case "FAILED":
+			return "Migration has failed"
+		case "completed":
+			return "Migration completed successfully"
+		default:
+			return state
+		}
+	default:
+		return state
 	}
 }
 
