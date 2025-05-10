@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// configCmd represents the config command for managing configuration.
+// It serves as a parent command for configuration-related subcommands.
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage configuration",
@@ -18,6 +20,8 @@ var configCmd = &cobra.Command{
 	},
 }
 
+// configInitCmd represents the config init command for creating a new configuration file.
+// It creates a configuration file with default values that can be customized by the user.
 var configInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize configuration file",
@@ -69,6 +73,8 @@ You can then edit this file to customize your settings.`,
 	},
 }
 
+// init registers the config commands with the root command.
+// It adds the config and config init subcommands to the command hierarchy.
 func init() {
 	// Add config commands
 	rootCmd.AddCommand(configCmd)

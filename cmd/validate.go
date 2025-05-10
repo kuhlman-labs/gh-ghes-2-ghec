@@ -1,3 +1,4 @@
+// Package cmd provides command-line commands for the repository migration tool.
 package cmd
 
 import (
@@ -12,6 +13,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// validateCmd represents the command to validate a migration request JSON file.
+// It checks the JSON format, required fields, and values without actually
+// performing the migration, allowing users to verify their request is valid
+// before submitting it to the server.
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "Validate a migration request JSON file",
@@ -83,6 +88,8 @@ This helps to check if your migration parameters are valid before submitting the
 	},
 }
 
+// init registers the validate command with the root command and
+// adds any command-specific flags.
 func init() {
 	rootCmd.AddCommand(validateCmd)
 	validateCmd.Flags().Bool("test-connections", false, "Test connections to both GHES and GHEC instances")

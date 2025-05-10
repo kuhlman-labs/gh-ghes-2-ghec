@@ -1,3 +1,5 @@
+// Package payload defines the data structures for migration requests and status responses,
+// including validation and utility methods for handling these structures.
 package payload
 
 import (
@@ -8,7 +10,9 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
-// MigrationRequest represents a request to migrate repositories
+// MigrationRequest represents a request to migrate repositories from GHES to GHEC.
+// It contains all the necessary information to perform the migration, including
+// source and target organizations, repository list, API URLs, and authentication tokens.
 type MigrationRequest struct {
 	SourceOrg    string   `json:"source_org"`
 	TargetOrg    string   `json:"target_org"`
@@ -19,7 +23,14 @@ type MigrationRequest struct {
 	MaxDuration  string   `json:"max_duration,omitempty"` // Optional maximum duration for the migration (e.g., "24h", "48h")
 }
 
-// Validate validates the migration request
+// Validate performs comprehensive validation of the migration request.
+// It checks that all required fields are present and valid, including:
+// - Organization names
+// - Repository names
+// - URLs
+// - Tokens
+// - Duration format
+// Returns an error if any validation fails.
 func (r *MigrationRequest) Validate() error {
 	// Validate organization names
 	if err := validation.ValidateOrganizationName(r.SourceOrg); err != nil {
@@ -65,7 +76,9 @@ func (r *MigrationRequest) Validate() error {
 	return nil
 }
 
-// GetMaxDuration returns the parsed maximum duration or a default value
+// GetMaxDuration returns the parsed maximum duration for the migration.
+// If no duration is specified or validation fails, it returns a default duration.
+// The default duration is defined in the validation package.
 func (r *MigrationRequest) GetMaxDuration() time.Duration {
 	duration, err := validation.ValidateDuration(r.MaxDuration)
 	if err != nil {
@@ -76,19 +89,23 @@ func (r *MigrationRequest) GetMaxDuration() time.Duration {
 	return duration
 }
 
-// GetGHESAPIURL returns the REST API URL for the GHES instance
+// GetGHESAPIURL returns the REST API URL for the GHES instance.
+// It ensures the base URL has no trailing slash and appends the API path.
 func (r *MigrationRequest) GetGHESAPIURL() string {
 	baseURL := strings.TrimSuffix(r.GHESBaseURL, "/")
 	return baseURL + "/api/v3/"
 }
 
-// GetGHESGraphQLURL returns the GraphQL API URL for the GHES instance
+// GetGHESGraphQLURL returns the GraphQL API URL for the GHES instance.
+// It ensures the base URL has no trailing slash and appends the GraphQL endpoint path.
 func (r *MigrationRequest) GetGHESGraphQLURL() string {
 	baseURL := strings.TrimSuffix(r.GHESBaseURL, "/")
 	return baseURL + "/api/graphql"
 }
 
-// MigrationStatus represents the status of a repository migration
+// MigrationStatus represents the status of a repository migration process.
+// It contains detailed information about the migration progress, including
+// current stage, state, timing, and progress metrics.
 type MigrationStatus struct {
 	Repository        string        `json:"repository"`
 	Status            string        `json:"status"`
@@ -106,7 +123,8 @@ type MigrationStatus struct {
 	CurrentStageIndex int           `json:"current_stage_index,omitempty"` // Index of current stage (1-based)
 }
 
-// Migration stages in the order they occur
+// MigrationStages defines the sequential stages in the migration process.
+// These stages are processed in order during a repository migration.
 var MigrationStages = []string{
 	"validation", // Repository validation
 	"setup",      // Migration setup and source creation
@@ -114,8 +132,9 @@ var MigrationStages = []string{
 	"migration",  // Repository migration to target
 }
 
+// Status constants for migration state.
 const (
-	StatusInProgress = "in_progress"
-	StatusSucceeded  = "succeeded"
-	StatusFailed     = "failed"
+	StatusInProgress = "in_progress" // Migration is currently in progress
+	StatusSucceeded  = "succeeded"   // Migration completed successfully
+	StatusFailed     = "failed"      // Migration failed
 )

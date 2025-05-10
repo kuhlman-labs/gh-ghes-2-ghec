@@ -1,3 +1,6 @@
+// Package server provides HTTP server functionality for the migration API,
+// including request handlers, middleware, and server configuration.
+// It implements a RESTful API for initiating and monitoring repository migrations.
 package server
 
 import (
@@ -17,7 +20,9 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
-// Server handles HTTP requests for repository migrations
+// Server handles HTTP requests for repository migrations.
+// It routes requests, applies middleware, manages authentication,
+// and interacts with the migrator package to handle actual migrations.
 type Server struct {
 	migrator   *migrator.Migrator
 	logger     *slog.Logger
@@ -26,7 +31,15 @@ type Server struct {
 	middleware *Middleware
 }
 
-// New creates a new server instance
+// New creates a new server instance with the provided configuration and migrator.
+// It sets up routes, applies middleware, and configures server timeouts.
+//
+// Parameters:
+//   - cfg: Server configuration including port, timeouts, and rate limits.
+//   - m: The migrator instance that will handle repository migrations.
+//
+// Returns:
+//   - *Server: A configured server ready to handle HTTP requests.
 func New(cfg *config.Config, m *migrator.Migrator) *Server {
 	s := &Server{
 		migrator:   m,
@@ -60,7 +73,14 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 	return s
 }
 
-// withBaseMiddleware applies the base middleware stack (used for all endpoints)
+// withBaseMiddleware applies the base middleware stack (used for all endpoints).
+// The base middleware includes request logging and security headers.
+//
+// Parameters:
+//   - next: The handler to wrap with middleware.
+//
+// Returns:
+//   - http.Handler: The handler wrapped with base middleware.
 func (s *Server) withBaseMiddleware(next http.Handler) http.Handler {
 	return CombineMiddleware(next,
 		s.middleware.LogRequest,
@@ -68,7 +88,15 @@ func (s *Server) withBaseMiddleware(next http.Handler) http.Handler {
 	)
 }
 
-// withAPIMiddleware applies the full middleware stack (used for API endpoints)
+// withAPIMiddleware applies the full middleware stack used for API endpoints.
+// This includes all base middleware plus JSON validation, request size limiting,
+// and optional rate limiting based on configuration.
+//
+// Parameters:
+//   - next: The handler to wrap with middleware.
+//
+// Returns:
+//   - http.Handler: The handler wrapped with API middleware.
 func (s *Server) withAPIMiddleware(next http.Handler) http.Handler {
 	// Apply rate limiter only if configured
 	middlewareStack := []func(http.Handler) http.Handler{
@@ -87,7 +115,11 @@ func (s *Server) withAPIMiddleware(next http.Handler) http.Handler {
 	return CombineMiddleware(next, middlewareStack...)
 }
 
-// Start starts the HTTP server
+// Start starts the HTTP server and begins listening for requests.
+// It blocks until the server shuts down or encounters an error.
+//
+// Returns:
+//   - error: An error if the server fails to start or encounters a fatal error.
 func (s *Server) Start() error {
 	s.logger.Info("Starting server",
 		"port", s.config.Server.Port,
@@ -97,12 +129,22 @@ func (s *Server) Start() error {
 	return s.server.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server
+// Shutdown gracefully shuts down the server with a timeout context.
+// It attempts to complete all in-flight requests before shutting down.
+//
+// Parameters:
+//   - ctx: Context for shutdown timeout.
+//
+// Returns:
+//   - error: An error if the server fails to shut down gracefully.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Shutting down server")
 	return s.server.Shutdown(ctx)
 }
 
+// handleHealth handles requests to the /health endpoint.
+// It returns a simple status response indicating if the server is running.
+// This endpoint is useful for load balancers and monitoring systems.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
@@ -114,6 +156,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleStatus handles requests to the /status endpoint.
+// It returns the status of migrations for all repositories
+// or for a specific repository if a "repository" query parameter is provided.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
@@ -139,6 +184,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, r, http.StatusOK, statuses)
 }
 
+// handleMigration handles requests to the /migrate endpoint.
+// It validates the request, starts the migration process in the background,
+// and returns an acceptance response. The actual migration happens asynchronously.
 func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
@@ -241,7 +289,14 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Helper function to sanitize token for logging
+// sanitizeToken masks a token for secure logging, showing only the first and last few characters.
+// This prevents accidental exposure of sensitive credentials in logs.
+//
+// Parameters:
+//   - token: The token to sanitize.
+//
+// Returns:
+//   - string: The sanitized token with middle characters replaced by "...".
 func sanitizeToken(token string) string {
 	if len(token) <= 8 {
 		return "***"
@@ -249,31 +304,45 @@ func sanitizeToken(token string) string {
 	return token[:4] + "..." + token[len(token)-4:]
 }
 
-// writeJSON writes a JSON response with the given status code
+// writeJSON writes a JSON response with the given status code and data.
+// It handles serialization of the data and sets appropriate headers.
+//
+// Parameters:
+//   - w: HTTP response writer.
+//   - r: HTTP request.
+//   - statusCode: HTTP status code to return.
+//   - data: Data to serialize as JSON.
 func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		s.logger.Error("Failed to encode response",
-			"error", err,
-			"path", r.URL.Path,
-			"request_id", r.Context().Value("request_id"),
-		)
+	if data != nil {
+		if err := json.NewEncoder(w).Encode(data); err != nil {
+			s.logger.Error("Failed to encode JSON response",
+				"error", err,
+				"path", r.URL.Path,
+			)
+		}
 	}
 }
 
-// writeError writes an error response with the given status code and message
+// writeError writes a JSON error response with the given status code and message.
+// It also logs the error for monitoring and debugging.
+//
+// Parameters:
+//   - w: HTTP response writer.
+//   - r: HTTP request.
+//   - statusCode: HTTP status code to return.
+//   - message: Error message to include in the response.
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode int, message string) {
 	s.logger.Error("Request error",
-		"status_code", statusCode,
-		"message", message,
+		"status", statusCode,
 		"path", r.URL.Path,
+		"method", r.Method,
+		"error", message,
 	)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{
-		"error": message,
-	})
+	fmt.Fprintf(w, `{"error": %q}`, message)
 }

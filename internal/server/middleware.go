@@ -1,3 +1,6 @@
+// Package server provides HTTP server functionality for the migration API,
+// including request handlers, middleware, and server configuration.
+// It implements a RESTful API for initiating and monitoring repository migrations.
 package server
 
 import (
@@ -12,19 +15,23 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
-// Middleware struct for holding middleware functions
+// Middleware struct for holding middleware functions and their dependencies.
+// It provides various HTTP middleware functions for security, logging, and rate limiting.
 type Middleware struct {
 	logger *slog.Logger
 }
 
-// NewMiddleware creates a new middleware instance
+// NewMiddleware creates a new middleware instance with the provided dependencies.
+// It initializes the middleware with a logger.
 func NewMiddleware() *Middleware {
 	return &Middleware{
 		logger: logging.Get(),
 	}
 }
 
-// LogRequest logs details about each request
+// LogRequest logs details about each HTTP request and response.
+// It adds a request ID to the context, records timing information,
+// and logs details such as method, path, remote address, and user agent.
 func (m *Middleware) LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add request ID to context
@@ -53,7 +60,9 @@ func (m *Middleware) LogRequest(next http.Handler) http.Handler {
 	})
 }
 
-// SecurityHeaders adds security headers to responses
+// SecurityHeaders adds standard security headers to HTTP responses.
+// These headers help protect against XSS, clickjacking, MIME sniffing,
+// and other common web vulnerabilities.
 func (m *Middleware) SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Security headers
@@ -68,7 +77,9 @@ func (m *Middleware) SecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// JSONOnly ensures that Content-Type is application/json for endpoints that require it
+// JSONOnly ensures that HTTP requests that modify data (POST, PUT, PATCH)
+// have the correct Content-Type set to application/json.
+// It returns a 415 Unsupported Media Type status if the content type is incorrect.
 func (m *Middleware) JSONOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only validate POST requests
@@ -90,7 +101,9 @@ func (m *Middleware) JSONOnly(next http.Handler) http.Handler {
 	})
 }
 
-// RequestSizeLimit limits the size of request bodies
+// RequestSizeLimit limits the size of request bodies to prevent resource exhaustion attacks.
+// It applies limits only to HTTP methods that typically contain request bodies.
+// The maximum size is defined in the validation package constants.
 func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only apply to requests with bodies
@@ -102,8 +115,9 @@ func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
 	})
 }
 
-// RateLimiter implements a basic rate limiter per IP address
-// This is a simple implementation; consider using a more robust solution for production
+// RateLimiter implements a basic rate limiter per IP address to prevent abuse.
+// It limits each IP to a configurable number of requests per minute.
+// When the rate limit is exceeded, it returns a 429 Too Many Requests status.
 func (m *Middleware) RateLimiter(requestsPerMinute int) func(http.Handler) http.Handler {
 	// Map to track requests by IP
 	requests := make(map[string][]time.Time)
@@ -145,7 +159,9 @@ func (m *Middleware) RateLimiter(requestsPerMinute int) func(http.Handler) http.
 	}
 }
 
-// CombineMiddleware combines multiple middleware functions into one
+// CombineMiddleware combines multiple middleware functions into one.
+// This allows multiple middleware functions to be applied to a handler
+// in a clean and readable way.
 func CombineMiddleware(h http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
 	for _, middleware := range middlewares {
 		h = middleware(h)

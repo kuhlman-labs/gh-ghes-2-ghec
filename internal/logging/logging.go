@@ -1,3 +1,6 @@
+// Package logging provides a structured logging system for the application.
+// It supports multiple output destinations (console with colors and JSON file logs),
+// log rotation, and runtime log level adjustment.
 package logging
 
 import (
@@ -19,7 +22,9 @@ var (
 	levelLock sync.RWMutex
 )
 
-// Init initializes the logging system
+// Init initializes the logging system with file and terminal output.
+// It creates a rotating file logger and a colorized terminal logger.
+// This function ensures the logger is only initialized once.
 func Init() error {
 	var err error
 	once.Do(func() {
@@ -28,7 +33,9 @@ func Init() error {
 	return err
 }
 
-// Get returns the logger instance
+// Get returns the singleton logger instance.
+// If the logger hasn't been initialized yet, it will initialize it.
+// In case of initialization failure, it falls back to a console-only logger.
 func Get() *slog.Logger {
 	if logger == nil {
 		if err := Init(); err != nil {
@@ -42,7 +49,9 @@ func Get() *slog.Logger {
 	return logger
 }
 
-// SetLevel sets the logging level
+// SetLevel changes the logging level at runtime.
+// It safely updates the global log level and recreates the logger
+// with the new level if the logger already exists.
 func SetLevel(level slog.Level) {
 	levelLock.Lock()
 	defer levelLock.Unlock()
@@ -72,7 +81,9 @@ func SetLevel(level slog.Level) {
 	}
 }
 
-// setupFileLogger creates and returns the file logger
+// setupFileLogger creates and configures a rotating file logger.
+// It creates the necessary directory structure and returns a lumberjack logger
+// configured with size and age-based rotation.
 func setupFileLogger() *lumberjack.Logger {
 	// Create logs directory
 	logDir := filepath.Join(os.TempDir(), "gh-ghes-2-ghec", "logs")
@@ -90,14 +101,17 @@ func setupFileLogger() *lumberjack.Logger {
 	}
 }
 
-// getLogLevel safely returns the current log level
+// getLogLevel safely returns the current log level using a read lock
+// to prevent race conditions with SetLevel.
 func getLogLevel() slog.Level {
 	levelLock.RLock()
 	defer levelLock.RUnlock()
 	return logLevel
 }
 
-// ParseLevel converts a string level to slog.Level
+// ParseLevel converts a string level name to the corresponding slog.Level value.
+// Supported level names are: "debug", "info", "warn", and "error".
+// If an unknown level name is provided, it defaults to info.
 func ParseLevel(level string) slog.Level {
 	switch level {
 	case "debug":
@@ -113,6 +127,8 @@ func ParseLevel(level string) slog.Level {
 	}
 }
 
+// setupLogger creates and configures the main logger instance.
+// It sets up both file and terminal handlers with the appropriate log level.
 func setupLogger() error {
 	// Setup file logger
 	fileLogger := setupFileLogger()
@@ -142,19 +158,22 @@ func setupLogger() error {
 	return nil
 }
 
-// MultiHandler combines multiple slog.Handler interfaces
+// MultiHandler is a custom slog.Handler implementation that distributes
+// log records to multiple underlying handlers.
 type MultiHandler struct {
 	handlers []slog.Handler
 }
 
-// NewMultiHandler creates a new MultiHandler
+// NewMultiHandler creates a new MultiHandler with the provided handlers.
+// Each handler will receive all log records that pass their individual level checks.
 func NewMultiHandler(handlers ...slog.Handler) *MultiHandler {
 	return &MultiHandler{
 		handlers: handlers,
 	}
 }
 
-// Enabled implements slog.Handler
+// Enabled implements slog.Handler.Enabled.
+// It returns true if any of the contained handlers are enabled for the given level.
 func (h *MultiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	for _, handler := range h.handlers {
 		if handler.Enabled(ctx, level) {
@@ -164,7 +183,8 @@ func (h *MultiHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return false
 }
 
-// Handle implements slog.Handler
+// Handle implements slog.Handler.Handle.
+// It dispatches the log record to all handlers and returns the first error encountered.
 func (h *MultiHandler) Handle(ctx context.Context, record slog.Record) error {
 	var errs []error
 	for _, handler := range h.handlers {
@@ -178,7 +198,8 @@ func (h *MultiHandler) Handle(ctx context.Context, record slog.Record) error {
 	return nil
 }
 
-// WithAttrs implements slog.Handler
+// WithAttrs implements slog.Handler.WithAttrs.
+// It creates a new MultiHandler with the attributes added to each underlying handler.
 func (h *MultiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	handlers := make([]slog.Handler, len(h.handlers))
 	for i, handler := range h.handlers {
@@ -187,7 +208,8 @@ func (h *MultiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return NewMultiHandler(handlers...)
 }
 
-// WithGroup implements slog.Handler
+// WithGroup implements slog.Handler.WithGroup.
+// It creates a new MultiHandler with the group added to each underlying handler.
 func (h *MultiHandler) WithGroup(name string) slog.Handler {
 	handlers := make([]slog.Handler, len(h.handlers))
 	for i, handler := range h.handlers {

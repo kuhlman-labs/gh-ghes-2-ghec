@@ -1,3 +1,6 @@
+// Package utils provides utility functions and helpers for the migration tool.
+// It includes reusable components like retry mechanisms, error handling, and
+// other common operations used throughout the application.
 package utils
 
 import (
@@ -9,16 +12,30 @@ import (
 	"time"
 )
 
-// RetryConfig holds the configuration for retry operations
+// RetryConfig holds the configuration for retry operations.
+// It defines the retry behavior including intervals, backoff strategy,
+// maximum attempts, and logging.
 type RetryConfig struct {
-	MaxRetries      int           // Maximum number of retry attempts
-	InitialInterval time.Duration // Initial backoff interval
-	MaxInterval     time.Duration // Maximum backoff interval
-	Factor          float64       // Multiplier for backoff interval after each retry
-	Logger          *slog.Logger  // Logger for retry operations
+	// MaxRetries is the maximum number of retry attempts after initial failure.
+	MaxRetries int
+	// InitialInterval is the delay before the first retry.
+	InitialInterval time.Duration
+	// MaxInterval is the upper limit for the backoff delay.
+	MaxInterval time.Duration
+	// Factor is the multiplier for the backoff interval after each retry.
+	Factor float64
+	// Logger is used for logging retry attempts and results.
+	Logger *slog.Logger
 }
 
-// DefaultRetryConfig returns a default retry configuration
+// DefaultRetryConfig returns a default retry configuration with reasonable values.
+// It configures exponential backoff with jitter for robustness in distributed systems.
+//
+// Parameters:
+//   - logger: A structured logger for recording retry operations.
+//
+// Returns:
+//   - *RetryConfig: A configured retry policy ready for use or customization.
 func DefaultRetryConfig(logger *slog.Logger) *RetryConfig {
 	return &RetryConfig{
 		MaxRetries:      3,                // Retry 3 times by default
@@ -29,31 +46,72 @@ func DefaultRetryConfig(logger *slog.Logger) *RetryConfig {
 	}
 }
 
-// WithMaxRetries sets the maximum number of retries
+// WithMaxRetries sets the maximum number of retries.
+// It returns the modified config to allow for method chaining.
+//
+// Parameters:
+//   - maxRetries: The maximum number of retry attempts after the initial attempt.
+//
+// Returns:
+//   - *RetryConfig: The updated retry configuration.
 func (c *RetryConfig) WithMaxRetries(maxRetries int) *RetryConfig {
 	c.MaxRetries = maxRetries
 	return c
 }
 
-// WithInitialInterval sets the initial backoff interval
+// WithInitialInterval sets the initial backoff interval.
+// It returns the modified config to allow for method chaining.
+//
+// Parameters:
+//   - initialInterval: The delay before the first retry attempt.
+//
+// Returns:
+//   - *RetryConfig: The updated retry configuration.
 func (c *RetryConfig) WithInitialInterval(initialInterval time.Duration) *RetryConfig {
 	c.InitialInterval = initialInterval
 	return c
 }
 
-// WithMaxInterval sets the maximum backoff interval
+// WithMaxInterval sets the maximum backoff interval.
+// This caps the exponential growth of the backoff to avoid extremely long delays.
+// It returns the modified config to allow for method chaining.
+//
+// Parameters:
+//   - maxInterval: The maximum delay between retry attempts.
+//
+// Returns:
+//   - *RetryConfig: The updated retry configuration.
 func (c *RetryConfig) WithMaxInterval(maxInterval time.Duration) *RetryConfig {
 	c.MaxInterval = maxInterval
 	return c
 }
 
-// WithFactor sets the backoff multiplier
+// WithFactor sets the backoff multiplier.
+// This determines how quickly the backoff time increases between retries.
+// It returns the modified config to allow for method chaining.
+//
+// Parameters:
+//   - factor: The multiplier applied to the backoff interval after each retry.
+//
+// Returns:
+//   - *RetryConfig: The updated retry configuration.
 func (c *RetryConfig) WithFactor(factor float64) *RetryConfig {
 	c.Factor = factor
 	return c
 }
 
-// Retry executes the provided function with retries according to the config
+// Retry executes the provided function with retries according to the config.
+// It implements exponential backoff with jitter, and respects context cancellation.
+// Operation failures and retries are logged based on the config's logger.
+//
+// Parameters:
+//   - ctx: Context for cancellation control.
+//   - config: The retry configuration to use.
+//   - operation: A name for the operation being retried (for logging).
+//   - fn: The function to execute with retries.
+//
+// Returns:
+//   - error: The last error returned by the function, or nil if successful.
 func Retry(ctx context.Context, config *RetryConfig, operation string, fn func() error) error {
 	var err error
 

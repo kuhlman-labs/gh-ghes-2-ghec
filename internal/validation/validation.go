@@ -1,3 +1,5 @@
+// Package validation provides utilities for validating GitHub migration requests,
+// including organization names, repository names, URLs, tokens, and durations.
 package validation
 
 import (
@@ -22,18 +24,25 @@ const (
 
 // Regex patterns
 var (
-	// GitHub org name pattern (alphanumeric and hyphens, can't start with hyphen)
+	// OrgNamePattern validates GitHub organization names.
+	// GitHub org names must be alphanumeric and can contain hyphens,
+	// but cannot start with a hyphen.
 	OrgNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][\w.-]*$`)
 
-	// GitHub repo name pattern (alphanumeric, periods, hyphens, underscores)
+	// RepoNamePattern validates GitHub repository names.
+	// Repository names should be alphanumeric and can contain periods,
+	// hyphens, and underscores.
 	RepoNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][\w.-]*$`)
 
-	// GitHub token format (40 characters, hexadecimal for classic PATs)
-	// Also supports GitHub App token format
+	// TokenPattern matches valid GitHub token formats.
+	// Includes both classic PATs (40 hex characters) and
+	// GitHub App tokens (ghs_ or ghp_ prefix with 36 characters).
 	TokenPattern = regexp.MustCompile(`^(gh[ps]_[A-Za-z0-9_]{36}|[a-f0-9]{40})$`)
 )
 
-// ValidateURL validates a URL string
+// ValidateURL checks if a URL is valid for GitHub Enterprise Server.
+// It validates that the URL is non-empty, properly formatted, uses http or https,
+// and contains a valid hostname.
 func ValidateURL(urlStr string) error {
 	if urlStr == "" {
 		return fmt.Errorf("URL is required")
@@ -58,7 +67,9 @@ func ValidateURL(urlStr string) error {
 	return nil
 }
 
-// ValidateGitHubToken validates a GitHub token
+// ValidateGitHubToken checks if a GitHub token is valid.
+// It verifies that the token is non-empty and meets the minimum length requirements.
+// Optionally can check for strict token format patterns.
 func ValidateGitHubToken(token string) error {
 	if token == "" {
 		return fmt.Errorf("token is required")
@@ -76,7 +87,9 @@ func ValidateGitHubToken(token string) error {
 	return nil
 }
 
-// ValidateOrganizationName validates a GitHub organization name
+// ValidateOrganizationName checks if a GitHub organization name is valid.
+// It verifies that the name is non-empty, doesn't exceed the maximum length,
+// and follows GitHub's naming pattern requirements.
 func ValidateOrganizationName(org string) error {
 	if org == "" {
 		return fmt.Errorf("organization name is required")
@@ -93,7 +106,9 @@ func ValidateOrganizationName(org string) error {
 	return nil
 }
 
-// ValidateRepositoryName validates a GitHub repository name
+// ValidateRepositoryName checks if a GitHub repository name is valid.
+// It verifies that the name is non-empty, doesn't exceed the maximum length,
+// and follows GitHub's repository naming pattern requirements.
 func ValidateRepositoryName(repo string) error {
 	if repo == "" {
 		return fmt.Errorf("repository name is required")
@@ -110,7 +125,9 @@ func ValidateRepositoryName(repo string) error {
 	return nil
 }
 
-// ValidateRepositoryList validates a list of repository names
+// ValidateRepositoryList checks a list of repository names.
+// It verifies that the list is non-empty, doesn't exceed the maximum allowed count,
+// validates each repository name, and checks for duplicates (case-insensitive).
 func ValidateRepositoryList(repos []string) error {
 	if len(repos) == 0 {
 		return fmt.Errorf("repository list cannot be empty")
@@ -138,7 +155,11 @@ func ValidateRepositoryList(repos []string) error {
 	return nil
 }
 
-// ValidateDuration validates a duration string
+// ValidateDuration checks if a duration string is valid for migration timeouts.
+// It parses the duration string, or returns the default duration if empty.
+// It also verifies that the duration doesn't exceed the maximum allowed limit
+// and is positive.
+// Returns the parsed duration and any validation errors.
 func ValidateDuration(durationStr string) (time.Duration, error) {
 	if durationStr == "" {
 		// Return default duration
@@ -163,7 +184,10 @@ func ValidateDuration(durationStr string) (time.Duration, error) {
 	return duration, nil
 }
 
-// TestGHESURL attempts to connect to the GHES URL to validate it
+// TestGHESURL attempts to connect to a GitHub Enterprise Server instance
+// to validate connectivity and authentication.
+// It makes a request to the /api/v3/meta endpoint with the provided token
+// and checks for a successful response.
 func TestGHESURL(baseURL string, token string) error {
 	if err := ValidateURL(baseURL); err != nil {
 		return err

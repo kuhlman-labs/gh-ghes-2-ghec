@@ -1,3 +1,6 @@
+// Package cmd provides the command-line interface for the GHES to GHEC migration tool.
+// It defines the root command and subcommands for migration operations, configuration,
+// and utility functions.
 package cmd
 
 import (
@@ -25,6 +28,8 @@ var (
 	logLevelFlagSet bool
 )
 
+// rootCmd is the root command for the CLI application.
+// It runs the migration server and provides an HTTP API for repository migrations.
 var rootCmd = &cobra.Command{
 	Use:   "ghes-2-ghec",
 	Short: "GitHub repository migration tool",
@@ -54,7 +59,8 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
+// Execute adds all child commands to the root command and runs the CLI application.
+// It handles errors and exits with a non-zero code if the command fails.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
@@ -62,6 +68,8 @@ func Execute() {
 	}
 }
 
+// init sets up the command-line flags and adds subcommands to the root command.
+// This is called automatically by the Go runtime during package initialization.
 func init() {
 	// Add flags
 	rootCmd.Flags().StringVar(&webhookURL, "webhook-url", "", "Global webhook URL for all migration notifications")
@@ -72,7 +80,9 @@ func init() {
 	// We'll validate these in the RunE functions where needed
 }
 
-// initializeLogging sets up the logging system with the specified level
+// initializeLogging sets up the logging system with the specified level.
+// It initializes basic configuration to get the log level from config if not set by flag.
+// Returns an error if logging initialization fails.
 func initializeLogging() error {
 	// Initialize logging
 	if err := logging.Init(); err != nil {
@@ -107,7 +117,9 @@ func initializeLogging() error {
 	return nil
 }
 
-// initializeConfig initializes and validates the configuration
+// initializeConfig initializes and validates the configuration.
+// It updates the configuration with command-line flag values if provided.
+// Returns an error if configuration validation fails.
 func initializeConfig() error {
 	// Get the logger
 	logger := logging.Get()
@@ -142,7 +154,9 @@ func initializeConfig() error {
 	return nil
 }
 
-// setupServer creates and configures the server
+// setupServer creates and configures the HTTP server for handling migration requests.
+// It creates a migrator instance and a server instance with the current configuration.
+// Returns the configured server or an error if setup fails.
 func setupServer() (*server.Server, error) {
 	cfg := config.Get()
 
@@ -155,7 +169,9 @@ func setupServer() (*server.Server, error) {
 	return s, nil
 }
 
-// runServerWithGracefulShutdown starts the server and handles graceful shutdown
+// runServerWithGracefulShutdown starts the server and handles graceful shutdown.
+// It sets up signal handling for clean termination on SIGINT or SIGTERM.
+// Returns an error if the server encounters an error during startup or shutdown.
 func runServerWithGracefulShutdown(s *server.Server) error {
 	logger := logging.Get()
 	cfg := config.Get()

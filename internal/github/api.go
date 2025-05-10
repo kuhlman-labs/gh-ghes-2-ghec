@@ -1,3 +1,6 @@
+// Package github provides functionality for interacting with GitHub APIs,
+// both for GitHub Enterprise Server (GHES) and GitHub Enterprise Cloud (GHEC).
+// It handles authentication, API requests, retries, and migration-specific operations.
 package github
 
 import (
@@ -14,14 +17,17 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-// API handles GitHub API operations
+// API handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.
+// It provides methods for repository validation, organization management,
+// migration source creation, and migration operations.
 type API struct {
 	clients     *config.Clients
 	logger      *slog.Logger
 	retryConfig *utils.RetryConfig
 }
 
-// New creates a new GitHub API handler
+// New creates a new GitHub API handler with the provided clients and logger.
+// It configures default retry policies appropriate for GitHub API interactions.
 func New(clients *config.Clients, logger *slog.Logger) *API {
 	// Create a retry configuration suitable for GitHub API calls
 	retryConfig := utils.DefaultRetryConfig(logger).
@@ -36,12 +42,16 @@ func New(clients *config.Clients, logger *slog.Logger) *API {
 	}
 }
 
-// retryableOperation executes a function with retries based on the API's retry configuration
+// retryableOperation executes a function with retries based on the API's retry configuration.
+// It logs attempts and results, and backs off exponentially between retry attempts.
+// The operation name is used for logging and observability.
 func (a *API) retryableOperation(ctx context.Context, operation string, fn func() error) error {
 	return utils.Retry(ctx, a.retryConfig, operation, fn)
 }
 
-// ValidateRepository checks if a repository exists in the source organization
+// ValidateRepository checks if a repository exists in the source organization.
+// It makes a REST API call to the GHES instance and verifies the repository's existence.
+// Returns an error if the repository doesn't exist or can't be accessed.
 func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 	startTime := time.Now()
 	a.logger.Debug("Validating repository",
@@ -86,7 +96,10 @@ func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 	return nil
 }
 
-// GetOrganizationID retrieves the organization ID from GitHub Enterprise Cloud
+// GetOrganizationID retrieves the organization node ID from GitHub Enterprise Cloud.
+// It makes a GraphQL API call to fetch the organization's unique identifier,
+// which is needed for migration operations.
+// Returns the organization ID as a string and any errors encountered.
 func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error) {
 	var query struct {
 		Organization struct {
@@ -144,7 +157,10 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error)
 	return query.Organization.ID, nil
 }
 
-// CreateMigrationSource creates a migration source in GitHub Enterprise Cloud
+// CreateMigrationSource creates a migration source in GitHub Enterprise Cloud.
+// A migration source defines where repositories will be migrated from.
+// This function uses the GraphQL API to create a GITHUB_ARCHIVE type source
+// and returns the created source's ID.
 func (a *API) CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error) {
 	var mutation struct {
 		CreateMigrationSource struct {

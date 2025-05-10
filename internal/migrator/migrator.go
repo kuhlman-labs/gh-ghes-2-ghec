@@ -1,3 +1,6 @@
+// Package migrator provides functionality for migrating repositories from
+// GitHub Enterprise Server (GHES) to GitHub Enterprise Cloud (GHEC).
+// It handles the entire migration process, status tracking, and webhook notifications.
 package migrator
 
 import (
@@ -21,7 +24,9 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/utils"
 )
 
-// Migrator handles repository migrations
+// Migrator handles repository migrations from GHES to GHEC.
+// It tracks migration status, manages concurrent migrations,
+// and sends webhook notifications for status updates.
 type Migrator struct {
 	webhookURL string
 	logger     *slog.Logger
@@ -29,7 +34,9 @@ type Migrator struct {
 	migrations map[string]*payload.MigrationStatus
 }
 
-// New creates a new migrator instance
+// New creates a new migrator instance with the provided webhook URL.
+// If the webhook URL is invalid, webhook notifications will be disabled.
+// Returns a configured Migrator ready to handle repository migrations.
 func New(webhookURL string) *Migrator {
 	logger := logging.Get()
 
@@ -52,7 +59,14 @@ func New(webhookURL string) *Migrator {
 	}
 }
 
-// StartMigration starts the migration process for the given request
+// StartMigration starts the migration process for the given request.
+// It handles multiple repositories concurrently, tracking their status,
+// and coordinates the overall migration process.
+//
+// The provided context can be used to cancel all migrations, and the cancel function
+// will be called when all migrations are complete or have failed.
+//
+// Returns an error if the migration setup fails.
 func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationRequest, cancel context.CancelFunc) error {
 	// Initialize clients for this migration using tokens from the request
 	clients, err := config.NewClients(req.GHESToken, req.GHCloudToken)
@@ -94,6 +108,11 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 	return nil
 }
 
+// migrateRepository handles the migration of a single repository.
+// It executes all migration stages: validation, setup, archive, and migration.
+// Updates the status throughout the process and sends webhook notifications.
+//
+// Returns an error if any stage of the migration fails.
 func (m *Migrator) migrateRepository(ctx context.Context, req *payload.MigrationRequest, repoName string) error {
 	// Record start time for this repository migration
 	startTime := time.Now()

@@ -1,3 +1,5 @@
+// Package config handles loading, validating, and managing application configuration.
+// It supports configuration from files, environment variables, and default values.
 package config
 
 import (
@@ -11,7 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds all configuration for the application
+// Config holds all configuration for the application.
+// It contains server settings, webhook configuration, logging preferences,
+// and client configurations for connecting to GitHub APIs.
 type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	Webhook WebhookConfig `mapstructure:"webhook"`
@@ -19,7 +23,8 @@ type Config struct {
 	Clients *Clients      // GitHub API clients
 }
 
-// ServerConfig holds server-specific configuration
+// ServerConfig holds server-specific configuration options.
+// It defines network settings, timeouts, and rate limits for the HTTP server.
 type ServerConfig struct {
 	Port            int           `mapstructure:"port"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
@@ -28,22 +33,26 @@ type ServerConfig struct {
 	RateLimit       int           `mapstructure:"rate_limit"` // Requests per minute, 0 means unlimited
 }
 
-// GitHubConfig holds GitHub-specific configuration
-// Not used for tokens anymore as they come from payload
+// GitHubConfig holds GitHub-specific configuration.
+// Not used for tokens anymore as they come from payload.
 type GitHubConfig struct {
 }
 
-// WebhookConfig holds webhook-specific configuration
+// WebhookConfig holds webhook-specific configuration.
+// It defines the URL for webhook notifications about migration status changes.
 type WebhookConfig struct {
 	URL string `mapstructure:"url"`
 }
 
-// LoggingConfig holds logging-specific configuration
+// LoggingConfig holds logging-specific configuration.
+// It defines the verbosity level for application logs.
 type LoggingConfig struct {
 	Level string `mapstructure:"level"`
 }
 
-// ConfigForWriting is used to serialize config to YAML
+// ConfigForWriting is used to serialize config to YAML.
+// It contains a simplified representation of the Config struct
+// suitable for writing to a configuration file.
 type ConfigForWriting struct {
 	Server struct {
 		Port            int `yaml:"port"`
@@ -60,6 +69,7 @@ type ConfigForWriting struct {
 	} `yaml:"logging"`
 }
 
+// Default configuration constants
 const (
 	configFileName   = "config.yaml"
 	defaultPort      = 8080
@@ -73,7 +83,8 @@ var (
 	once sync.Once
 )
 
-// GetConfigPath returns the path to the configuration file
+// GetConfigPath returns the path to the configuration file.
+// It uses the current working directory to determine where the config file should be.
 func GetConfigPath() (string, error) {
 	currentDir, err := os.Getwd()
 	if err != nil {
@@ -82,7 +93,9 @@ func GetConfigPath() (string, error) {
 	return filepath.Join(currentDir, configFileName), nil
 }
 
-// Init initializes the configuration
+// Init initializes the configuration by setting up default values
+// and loading values from config file and environment variables.
+// It ensures the configuration is only initialized once.
 func Init() error {
 	var err error
 	once.Do(func() {
@@ -92,7 +105,8 @@ func Init() error {
 	return err
 }
 
-// Get returns the configuration instance
+// Get returns the configuration instance.
+// It panics if the configuration has not been initialized.
 func Get() *Config {
 	if cfg == nil {
 		panic("config not initialized")
@@ -100,7 +114,8 @@ func Get() *Config {
 	return cfg
 }
 
-// Validate checks if the configuration is valid for running the application
+// Validate checks if the configuration is valid for running the application.
+// It verifies that required fields have appropriate values.
 func Validate() error {
 	if cfg.Server.Port <= 0 {
 		return fmt.Errorf("invalid port number")
@@ -108,6 +123,9 @@ func Validate() error {
 	return nil
 }
 
+// loadConfig loads configuration from environment variables and config file.
+// It sets default values, then overrides them with configuration from the file
+// and environment variables. If the config file doesn't exist, it uses the defaults.
 func loadConfig() error {
 	// Set default values
 	viper.SetDefault("server.port", defaultPort)
@@ -147,7 +165,9 @@ func loadConfig() error {
 	return nil
 }
 
-// WriteConfig writes the configuration to a file
+// WriteConfig writes the configuration to a file.
+// It converts the Config to a format suitable for writing to YAML
+// and writes it to the provided file with proper indentation.
 func WriteConfig(cfg *Config, file *os.File) error {
 	// Convert config to writable format
 	writeCfg := convertToWritable(cfg)
@@ -164,7 +184,9 @@ func WriteConfig(cfg *Config, file *os.File) error {
 	return nil
 }
 
-// CreateDefaultConfig creates a new Config instance with default values
+// CreateDefaultConfig creates a new Config instance with default values.
+// This provides a baseline configuration that can be used when no
+// configuration file exists or when creating a new configuration.
 func CreateDefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -181,7 +203,9 @@ func CreateDefaultConfig() *Config {
 	}
 }
 
-// convertToWritable converts a Config to ConfigForWriting
+// convertToWritable converts a Config to ConfigForWriting format.
+// This transformation is needed to properly serialize the configuration
+// to YAML with the correct field names and types.
 func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg := ConfigForWriting{}
 	writeCfg.Server.Port = cfg.Server.Port
