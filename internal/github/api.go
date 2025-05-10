@@ -10,21 +10,35 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/utils"
 	"github.com/shurcooL/githubv4"
 )
 
 // API handles GitHub API operations
 type API struct {
-	clients *config.Clients
-	logger  *slog.Logger
+	clients     *config.Clients
+	logger      *slog.Logger
+	retryConfig *utils.RetryConfig
 }
 
 // New creates a new GitHub API handler
 func New(clients *config.Clients, logger *slog.Logger) *API {
+	// Create a retry configuration suitable for GitHub API calls
+	retryConfig := utils.DefaultRetryConfig(logger).
+		WithMaxRetries(2).                    // 3 total attempts
+		WithInitialInterval(1 * time.Second). // Start with 1s backoff
+		WithMaxInterval(5 * time.Second)      // Cap at 5s
+
 	return &API{
-		clients: clients,
-		logger:  logger,
+		clients:     clients,
+		logger:      logger,
+		retryConfig: retryConfig,
 	}
+}
+
+// retryableOperation executes a function with retries based on the API's retry configuration
+func (a *API) retryableOperation(ctx context.Context, operation string, fn func() error) error {
+	return utils.Retry(ctx, a.retryConfig, operation, fn)
 }
 
 // ValidateRepository checks if a repository exists in the source organization
@@ -37,20 +51,23 @@ func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 		"repo", repo,
 	)
 
-	_, resp, err := a.clients.GHESClient.Repositories.Get(ctx, org, repo)
+	var respStatus int
+	err := a.retryableOperation(ctx, "validate_repository", func() error {
+		_, resp, err := a.clients.GHESClient.Repositories.Get(ctx, org, repo)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
-		statusCode := 0
-		if resp != nil {
-			statusCode = resp.StatusCode
-		}
-
 		a.logger.Error("Repository validation failed",
 			"api", "GHES_REST",
 			"method", "Repositories.Get",
 			"duration_ms", duration.Milliseconds(),
-			"status_code", statusCode,
+			"status_code", respStatus,
 			"org", org,
 			"repo", repo,
 			"error", err,
@@ -62,7 +79,7 @@ func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 		"api", "GHES_REST",
 		"method", "Repositories.Get",
 		"duration_ms", duration.Milliseconds(),
-		"status_code", resp.StatusCode,
+		"status_code", respStatus,
 		"org", org,
 		"repo", repo,
 	)
@@ -88,7 +105,11 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, error)
 	)
 
 	startTime := time.Now()
-	err := a.clients.GHCloudGraphQL.Query(ctx, &query, variables)
+
+	err := a.retryableOperation(ctx, "get_organization_id", func() error {
+		return a.clients.GHCloudGraphQL.Query(ctx, &query, variables)
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
@@ -156,7 +177,11 @@ func (a *API) CreateMigrationSource(ctx context.Context, name, url, ownerID stri
 	)
 
 	startTime := time.Now()
-	err := a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, input, nil)
+
+	err := a.retryableOperation(ctx, "create_migration_source", func() error {
+		return a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, input, nil)
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
@@ -207,20 +232,28 @@ func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName st
 	)
 
 	startTime := time.Now()
-	archive, resp, err := a.clients.GHESClient.Migrations.StartMigration(ctx, orgName, repos, opts)
+
+	var archive *github.Migration
+	var respStatus int
+
+	err := a.retryableOperation(ctx, "generate_migration_archive", func() error {
+		var resp *github.Response
+		var err error
+		archive, resp, err = a.clients.GHESClient.Migrations.StartMigration(ctx, orgName, repos, opts)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
-		statusCode := 0
-		if resp != nil {
-			statusCode = resp.StatusCode
-		}
-
 		a.logger.Error("Failed to create migration archive",
 			"api", "GHES_REST",
 			"method", "Migrations.StartMigration",
 			"duration_ms", duration.Milliseconds(),
-			"status_code", statusCode,
+			"status_code", respStatus,
 			"error", err,
 			"org", orgName,
 			"repo", repoName,
@@ -233,7 +266,7 @@ func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName st
 		"api", "GHES_REST",
 		"method", "Migrations.StartMigration",
 		"duration_ms", duration.Milliseconds(),
-		"status_code", resp.StatusCode,
+		"status_code", respStatus,
 		"archive_id", archiveID,
 		"org", orgName,
 		"repo", repoName,
@@ -252,20 +285,28 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 	)
 
 	startTime := time.Now()
-	status, resp, err := a.clients.GHESClient.Migrations.MigrationStatus(ctx, orgName, migrationID)
+
+	var status *github.Migration
+	var respStatus int
+
+	err := a.retryableOperation(ctx, "get_migration_archive_status", func() error {
+		var resp *github.Response
+		var err error
+		status, resp, err = a.clients.GHESClient.Migrations.MigrationStatus(ctx, orgName, migrationID)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
-		statusCode := 0
-		if resp != nil {
-			statusCode = resp.StatusCode
-		}
-
 		a.logger.Error("Failed to get archive status",
 			"api", "GHES_REST",
 			"method", "Migrations.MigrationStatus",
 			"duration_ms", duration.Milliseconds(),
-			"status_code", statusCode,
+			"status_code", respStatus,
 			"error", err,
 			"migrationID", migrationID,
 			"org", orgName,
@@ -281,7 +322,7 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 			"api", "GHES_REST",
 			"method", "Migrations.MigrationStatus",
 			"duration_ms", duration.Milliseconds(),
-			"status_code", resp.StatusCode,
+			"status_code", respStatus,
 			"migrationID", migrationID,
 			"org", orgName,
 			"state", state,
@@ -292,7 +333,7 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationStatus",
 		"duration_ms", duration.Milliseconds(),
-		"status_code", resp.StatusCode,
+		"status_code", respStatus,
 		"migrationID", migrationID,
 		"org", orgName,
 		"state", state,
@@ -302,16 +343,24 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 }
 
 // GetMigrationArchiveURL gets the archive URL of a migration source
-func (a *API) GetMigrationArchiveURL(ctx context.Context, migrationID int64, orgName string) (string, error) {
+func (a *API) GetMigrationArchiveURL(ctx context.Context, archiveID int64, orgName string) (string, error) {
 	a.logger.Debug("Getting migration archive URL",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationArchiveURL",
-		"migrationId", migrationID,
+		"migrationId", archiveID,
 		"org", orgName,
 	)
 
 	startTime := time.Now()
-	archiveURL, err := a.clients.GHESClient.Migrations.MigrationArchiveURL(ctx, orgName, migrationID)
+
+	var archiveURL string
+
+	err := a.retryableOperation(ctx, "get_migration_archive_url", func() error {
+		var err error
+		archiveURL, err = a.clients.GHESClient.Migrations.MigrationArchiveURL(ctx, orgName, archiveID)
+		return err
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
@@ -320,7 +369,7 @@ func (a *API) GetMigrationArchiveURL(ctx context.Context, migrationID int64, org
 			"method", "Migrations.MigrationArchiveURL",
 			"duration_ms", duration.Milliseconds(),
 			"error", err,
-			"migrationId", migrationID,
+			"archiveId", archiveID,
 			"org", orgName,
 		)
 		return "", fmt.Errorf("failed to create request for migration archive URL: %w", err)
@@ -330,7 +379,7 @@ func (a *API) GetMigrationArchiveURL(ctx context.Context, migrationID int64, org
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationArchiveURL",
 		"duration_ms", duration.Milliseconds(),
-		"migrationId", migrationID,
+		"archiveId", archiveID,
 		"org", orgName,
 	)
 
@@ -395,7 +444,11 @@ func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, r
 	)
 
 	startTime := time.Now()
-	err = a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, input, nil)
+
+	err = a.retryableOperation(ctx, "start_repository_migration", func() error {
+		return a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, input, nil)
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {
@@ -461,7 +514,11 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 	)
 
 	startTime := time.Now()
-	err := a.clients.GHCloudGraphQL.Query(ctx, &query, variables)
+
+	err := a.retryableOperation(ctx, "get_migration_status", func() error {
+		return a.clients.GHCloudGraphQL.Query(ctx, &query, variables)
+	})
+
 	duration := time.Since(startTime)
 
 	if err != nil {

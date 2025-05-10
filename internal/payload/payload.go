@@ -79,14 +79,28 @@ func (r *MigrationRequest) GetGHESGraphQLURL() string {
 
 // MigrationStatus represents the status of a repository migration
 type MigrationStatus struct {
-	Repository string        `json:"repository"`
-	Status     string        `json:"status"`
-	Error      string        `json:"error,omitempty"`
-	UpdatedAt  time.Time     `json:"updated_at"`
-	Stage      string        `json:"stage,omitempty"`            // Current stage of the migration process
-	State      string        `json:"state,omitempty"`            // Current state within the stage
-	StartedAt  time.Time     `json:"started_at,omitempty"`       // When the migration was started
-	Duration   time.Duration `json:"duration_seconds,omitempty"` // How long the migration took to complete
+	Repository        string        `json:"repository"`
+	Status            string        `json:"status"`
+	Error             string        `json:"error,omitempty"`
+	UpdatedAt         time.Time     `json:"updated_at"`
+	Stage             string        `json:"stage,omitempty"`               // Current stage of the migration process
+	State             string        `json:"state,omitempty"`               // Current state within the stage
+	StartedAt         time.Time     `json:"started_at,omitempty"`          // When the migration was started
+	Duration          time.Duration `json:"duration_seconds,omitempty"`    // How long the migration took to complete
+	MigrationID       string        `json:"migration_id,omitempty"`        // GitHub migration ID when available
+	Progress          int           `json:"progress,omitempty"`            // Overall progress percentage (0-100)
+	StageProgress     int           `json:"stage_progress,omitempty"`      // Progress percentage within current stage (0-100)
+	CompletedStages   []string      `json:"completed_stages,omitempty"`    // List of completed stages
+	TotalStages       int           `json:"total_stages,omitempty"`        // Total number of stages in the migration process
+	CurrentStageIndex int           `json:"current_stage_index,omitempty"` // Index of current stage (1-based)
+}
+
+// Migration stages in the order they occur
+var MigrationStages = []string{
+	"validation", // Repository validation
+	"setup",      // Migration setup and source creation
+	"archive",    // Archive generation and export
+	"migration",  // Repository migration to target
 }
 
 const (
