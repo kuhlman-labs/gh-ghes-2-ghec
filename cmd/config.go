@@ -42,12 +42,6 @@ You can then edit this file to customize your settings.`,
 		defaultConfig := config.CreateDefaultConfig()
 
 		// Update config with flag values if provided
-		if ghesToken != "" {
-			defaultConfig.GitHub.GHESToken = ghesToken
-		}
-		if ghCloudToken != "" {
-			defaultConfig.GitHub.GHCloudToken = ghCloudToken
-		}
 		if webhookURL != "" {
 			defaultConfig.Webhook.URL = webhookURL
 		}

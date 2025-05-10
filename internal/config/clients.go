@@ -53,18 +53,3 @@ func (c *Clients) UpdateGHESBaseURL(baseURL string) error {
 	c.GHESClient.BaseURL = parsedURL
 	return nil
 }
-
-// GetClients returns the clients instance
-func GetClients() *Clients {
-	return cfg.Clients
-}
-
-// InitClients initializes the GitHub API clients
-func InitClients(ghesToken, ghCloudToken string) error {
-	clients, err := NewClients(ghesToken, ghCloudToken)
-	if err != nil {
-		return err
-	}
-	cfg.Clients = clients
-	return nil
-}

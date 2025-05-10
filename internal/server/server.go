@@ -189,14 +189,18 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 			)
 			ctx, cancel = context.WithCancel(context.Background())
 		}
-		defer cancel()
 
-		if err := s.migrator.StartMigration(ctx, &req); err != nil {
+		// Don't cancel immediately after StartMigration returns
+		// Migrator will now take ownership of the context and handle its lifecycle
+
+		if err := s.migrator.StartMigration(ctx, &req, cancel); err != nil {
 			s.logger.Error("Migration failed",
 				"error", err,
 				"source_org", req.SourceOrg,
 				"target_org", req.TargetOrg,
 			)
+			// Only cancel if there was an error starting the migration
+			cancel()
 		}
 	}()
 

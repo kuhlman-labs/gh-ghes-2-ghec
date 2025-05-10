@@ -17,11 +17,9 @@ import (
 
 var (
 	// Flag variables
-	ghesToken    string
-	ghCloudToken string
-	webhookURL   string
-	port         int
-	logLevel     string
+	webhookURL string
+	port       int
+	logLevel   string
 
 	// Flag state tracking
 	logLevelFlagSet bool
@@ -66,9 +64,7 @@ func Execute() {
 
 func init() {
 	// Add flags
-	rootCmd.Flags().StringVar(&ghesToken, "ghes-token", "", "GitHub Enterprise Server token")
-	rootCmd.Flags().StringVar(&ghCloudToken, "gh-cloud-token", "", "GitHub Enterprise Cloud token")
-	rootCmd.Flags().StringVar(&webhookURL, "webhook-url", "", "Webhook URL for notifications")
+	rootCmd.Flags().StringVar(&webhookURL, "webhook-url", "", "Global webhook URL for all migration notifications")
 	rootCmd.Flags().IntVar(&port, "port", 8080, "Port to listen on")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "Logging level (debug, info, warn, error)")
 
@@ -120,12 +116,6 @@ func initializeConfig() error {
 	cfg := config.Get()
 
 	// Update config with flag values if provided
-	if ghesToken != "" {
-		cfg.GitHub.GHESToken = ghesToken
-	}
-	if ghCloudToken != "" {
-		cfg.GitHub.GHCloudToken = ghCloudToken
-	}
 	if webhookURL != "" {
 		cfg.Webhook.URL = webhookURL
 	}
@@ -137,7 +127,7 @@ func initializeConfig() error {
 		cfg.Logging.Level = logLevel
 	}
 
-	// Log config (without tokens)
+	// Log config
 	logger.Debug("Configuration loaded",
 		"port", cfg.Server.Port,
 		"webhook_configured", cfg.Webhook.URL != "",
@@ -147,11 +137,6 @@ func initializeConfig() error {
 	// Validate configuration
 	if err := config.Validate(); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
-	}
-
-	// Initialize clients
-	if err := config.InitClients(cfg.GitHub.GHESToken, cfg.GitHub.GHCloudToken); err != nil {
-		return fmt.Errorf("failed to initialize clients: %w", err)
 	}
 
 	return nil

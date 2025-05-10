@@ -14,7 +14,6 @@ import (
 // Config holds all configuration for the application
 type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
-	GitHub  GitHubConfig  `mapstructure:"github"`
 	Webhook WebhookConfig `mapstructure:"webhook"`
 	Logging LoggingConfig `mapstructure:"logging"`
 	Clients *Clients      // GitHub API clients
@@ -29,9 +28,8 @@ type ServerConfig struct {
 }
 
 // GitHubConfig holds GitHub-specific configuration
+// Not used for tokens anymore as they come from payload
 type GitHubConfig struct {
-	GHESToken    string `mapstructure:"ghes_token"`
-	GHCloudToken string `mapstructure:"gh_cloud_token"`
 }
 
 // WebhookConfig holds webhook-specific configuration
@@ -52,10 +50,6 @@ type ConfigForWriting struct {
 		ReadTimeout     int `yaml:"read_timeout"`
 		WriteTimeout    int `yaml:"write_timeout"`
 	} `yaml:"server"`
-	GitHub struct {
-		GHESToken    string `yaml:"ghes_token"`
-		GHCloudToken string `yaml:"gh_cloud_token"`
-	} `yaml:"github"`
 	Webhook struct {
 		URL string `yaml:"url"`
 	} `yaml:"webhook"`
@@ -105,12 +99,6 @@ func Get() *Config {
 
 // Validate checks if the configuration is valid for running the application
 func Validate() error {
-	if cfg.GitHub.GHESToken == "" {
-		return fmt.Errorf("ghes_token is required")
-	}
-	if cfg.GitHub.GHCloudToken == "" {
-		return fmt.Errorf("gh_cloud_token is required")
-	}
 	if cfg.Server.Port <= 0 {
 		return fmt.Errorf("invalid port number")
 	}
@@ -181,7 +169,6 @@ func CreateDefaultConfig() *Config {
 			ReadTimeout:     defaultIOTimeout,
 			WriteTimeout:    defaultIOTimeout,
 		},
-		GitHub:  GitHubConfig{},
 		Webhook: WebhookConfig{},
 		Logging: LoggingConfig{
 			Level: "info",
@@ -196,8 +183,6 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Server.ShutdownTimeout = int(cfg.Server.ShutdownTimeout.Seconds())
 	writeCfg.Server.ReadTimeout = int(cfg.Server.ReadTimeout.Seconds())
 	writeCfg.Server.WriteTimeout = int(cfg.Server.WriteTimeout.Seconds())
-	writeCfg.GitHub.GHESToken = cfg.GitHub.GHESToken
-	writeCfg.GitHub.GHCloudToken = cfg.GitHub.GHCloudToken
 	writeCfg.Webhook.URL = cfg.Webhook.URL
 	writeCfg.Logging.Level = cfg.Logging.Level
 

@@ -12,6 +12,8 @@ type MigrationRequest struct {
 	TargetOrg    string   `json:"target_org"`
 	Repositories []string `json:"repositories"`
 	GHESBaseURL  string   `json:"ghes_base_url"`          // Base URL of GHES instance (e.g., https://github.example.com)
+	GHESToken    string   `json:"ghes_token"`             // Token for GitHub Enterprise Server
+	GHCloudToken string   `json:"gh_cloud_token"`         // Token for GitHub Enterprise Cloud
 	MaxDuration  string   `json:"max_duration,omitempty"` // Optional maximum duration for the migration (e.g., "24h", "48h")
 }
 
@@ -28,6 +30,12 @@ func (r *MigrationRequest) Validate() error {
 	}
 	if r.GHESBaseURL == "" {
 		return fmt.Errorf("ghes_base_url is required")
+	}
+	if r.GHESToken == "" {
+		return fmt.Errorf("ghes_token is required")
+	}
+	if r.GHCloudToken == "" {
+		return fmt.Errorf("gh_cloud_token is required")
 	}
 
 	// Validate max duration if provided

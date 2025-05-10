@@ -346,7 +346,7 @@ func (a *API) GetMigrationArchiveURL(ctx context.Context, migrationID int64, org
 }
 
 // StartRepositoryMigration starts a repository migration in GHEC
-func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, repoName, sourceRepoURL string) (string, error) {
+func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, repoName, sourceRepoURL, ghesToken, ghCloudToken string) (string, error) {
 	var mutation struct {
 		StartRepositoryMigration struct {
 			RepositoryMigration struct {
@@ -360,9 +360,6 @@ func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, r
 			}
 		} `graphql:"startRepositoryMigration(input: $input)"`
 	}
-
-	// Get the access tokens from the config
-	cfg := config.Get()
 
 	// Parse the source repository URL
 	parsedURL, err := url.Parse(sourceRepoURL)
@@ -379,8 +376,8 @@ func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, r
 
 	// Create input parameters for GraphQL mutation
 	continueOnError := githubv4.Boolean(true)
-	accessToken := githubv4.String(cfg.GitHub.GHESToken)
-	gitHubPat := githubv4.String(cfg.GitHub.GHCloudToken)
+	accessToken := githubv4.String(ghesToken)
+	gitHubPat := githubv4.String(ghCloudToken)
 	targetRepoVisibility := githubv4.String("private")
 
 	// Create the input variable
