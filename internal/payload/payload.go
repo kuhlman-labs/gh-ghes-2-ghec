@@ -11,7 +11,8 @@ type MigrationRequest struct {
 	SourceOrg    string   `json:"source_org"`
 	TargetOrg    string   `json:"target_org"`
 	Repositories []string `json:"repositories"`
-	GHESBaseURL  string   `json:"ghes_base_url"` // Base URL of GHES instance (e.g., https://github.example.com)
+	GHESBaseURL  string   `json:"ghes_base_url"`          // Base URL of GHES instance (e.g., https://github.example.com)
+	MaxDuration  string   `json:"max_duration,omitempty"` // Optional maximum duration for the migration (e.g., "24h", "48h")
 }
 
 // Validate validates the migration request
@@ -28,7 +29,32 @@ func (r *MigrationRequest) Validate() error {
 	if r.GHESBaseURL == "" {
 		return fmt.Errorf("ghes_base_url is required")
 	}
+
+	// Validate max duration if provided
+	if r.MaxDuration != "" {
+		_, err := time.ParseDuration(r.MaxDuration)
+		if err != nil {
+			return fmt.Errorf("invalid max_duration format: %w", err)
+		}
+	}
+
 	return nil
+}
+
+// GetMaxDuration returns the parsed maximum duration or a default value
+func (r *MigrationRequest) GetMaxDuration() time.Duration {
+	if r.MaxDuration == "" {
+		// Default to 24 hours if not specified
+		return 24 * time.Hour
+	}
+
+	duration, err := time.ParseDuration(r.MaxDuration)
+	if err != nil {
+		// Should not happen due to validation, but return default if it does
+		return 24 * time.Hour
+	}
+
+	return duration
 }
 
 // GetGHESAPIURL returns the REST API URL for the GHES instance
@@ -49,6 +75,8 @@ type MigrationStatus struct {
 	Status     string    `json:"status"`
 	Error      string    `json:"error,omitempty"`
 	UpdatedAt  time.Time `json:"updated_at"`
+	Stage      string    `json:"stage,omitempty"` // Current stage of the migration process
+	State      string    `json:"state,omitempty"` // Current state within the stage
 }
 
 const (

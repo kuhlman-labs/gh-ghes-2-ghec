@@ -170,7 +170,25 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 
 	// Start migration in background
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		var ctx context.Context
+		var cancel context.CancelFunc
+
+		// Use the custom timeout from the request if provided, otherwise use no timeout
+		if req.MaxDuration != "" {
+			// We already validated the duration in the request validation
+			maxDuration := req.GetMaxDuration()
+			s.logger.Info("Using custom migration timeout",
+				"max_duration", req.MaxDuration,
+				"repositories", req.Repositories,
+			)
+			ctx, cancel = context.WithTimeout(context.Background(), maxDuration)
+		} else {
+			// No timeout - for very large repositories
+			s.logger.Info("Using no timeout for migration",
+				"repositories", req.Repositories,
+			)
+			ctx, cancel = context.WithCancel(context.Background())
+		}
 		defer cancel()
 
 		if err := s.migrator.StartMigration(ctx, &req); err != nil {
