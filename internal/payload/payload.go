@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
 // MigrationRequest represents a request to migrate repositories
@@ -19,30 +21,44 @@ type MigrationRequest struct {
 
 // Validate validates the migration request
 func (r *MigrationRequest) Validate() error {
-	if r.SourceOrg == "" {
-		return fmt.Errorf("source_org is required")
+	// Validate organization names
+	if err := validation.ValidateOrganizationName(r.SourceOrg); err != nil {
+		return fmt.Errorf("source_org: %w", err)
 	}
-	if r.TargetOrg == "" {
-		return fmt.Errorf("target_org is required")
+
+	if err := validation.ValidateOrganizationName(r.TargetOrg); err != nil {
+		return fmt.Errorf("target_org: %w", err)
 	}
-	if len(r.Repositories) == 0 {
-		return fmt.Errorf("repositories is required")
+
+	// Validate source and target are different
+	if strings.EqualFold(r.SourceOrg, r.TargetOrg) {
+		return fmt.Errorf("source_org and target_org must be different")
 	}
-	if r.GHESBaseURL == "" {
-		return fmt.Errorf("ghes_base_url is required")
+
+	// Validate repositories
+	if err := validation.ValidateRepositoryList(r.Repositories); err != nil {
+		return fmt.Errorf("repositories: %w", err)
 	}
-	if r.GHESToken == "" {
-		return fmt.Errorf("ghes_token is required")
+
+	// Validate GHES base URL
+	if err := validation.ValidateURL(r.GHESBaseURL); err != nil {
+		return fmt.Errorf("ghes_base_url: %w", err)
 	}
-	if r.GHCloudToken == "" {
-		return fmt.Errorf("gh_cloud_token is required")
+
+	// Validate tokens
+	if err := validation.ValidateGitHubToken(r.GHESToken); err != nil {
+		return fmt.Errorf("ghes_token: %w", err)
+	}
+
+	if err := validation.ValidateGitHubToken(r.GHCloudToken); err != nil {
+		return fmt.Errorf("gh_cloud_token: %w", err)
 	}
 
 	// Validate max duration if provided
 	if r.MaxDuration != "" {
-		_, err := time.ParseDuration(r.MaxDuration)
+		_, err := validation.ValidateDuration(r.MaxDuration)
 		if err != nil {
-			return fmt.Errorf("invalid max_duration format: %w", err)
+			return fmt.Errorf("max_duration: %w", err)
 		}
 	}
 
@@ -51,15 +67,10 @@ func (r *MigrationRequest) Validate() error {
 
 // GetMaxDuration returns the parsed maximum duration or a default value
 func (r *MigrationRequest) GetMaxDuration() time.Duration {
-	if r.MaxDuration == "" {
-		// Default to 24 hours if not specified
-		return 24 * time.Hour
-	}
-
-	duration, err := time.ParseDuration(r.MaxDuration)
+	duration, err := validation.ValidateDuration(r.MaxDuration)
 	if err != nil {
 		// Should not happen due to validation, but return default if it does
-		return 24 * time.Hour
+		return time.Duration(validation.DefaultMaxDuration) * time.Hour
 	}
 
 	return duration

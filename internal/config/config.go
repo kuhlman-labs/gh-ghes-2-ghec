@@ -25,6 +25,7 @@ type ServerConfig struct {
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
 	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
+	RateLimit       int           `mapstructure:"rate_limit"` // Requests per minute, 0 means unlimited
 }
 
 // GitHubConfig holds GitHub-specific configuration
@@ -49,6 +50,7 @@ type ConfigForWriting struct {
 		ShutdownTimeout int `yaml:"shutdown_timeout"`
 		ReadTimeout     int `yaml:"read_timeout"`
 		WriteTimeout    int `yaml:"write_timeout"`
+		RateLimit       int `yaml:"rate_limit"` // Requests per minute, 0 means unlimited
 	} `yaml:"server"`
 	Webhook struct {
 		URL string `yaml:"url"`
@@ -63,6 +65,7 @@ const (
 	defaultPort      = 8080
 	defaultTimeout   = 30 * time.Second
 	defaultIOTimeout = 15 * time.Second
+	defaultRateLimit = 60 // 60 requests per minute
 )
 
 var (
@@ -111,6 +114,7 @@ func loadConfig() error {
 	viper.SetDefault("server.shutdown_timeout", defaultTimeout)
 	viper.SetDefault("server.read_timeout", defaultIOTimeout)
 	viper.SetDefault("server.write_timeout", defaultIOTimeout)
+	viper.SetDefault("server.rate_limit", defaultRateLimit)
 	viper.SetDefault("logging.level", "info")
 
 	// Read from environment variables
@@ -168,6 +172,7 @@ func CreateDefaultConfig() *Config {
 			ShutdownTimeout: defaultTimeout,
 			ReadTimeout:     defaultIOTimeout,
 			WriteTimeout:    defaultIOTimeout,
+			RateLimit:       defaultRateLimit,
 		},
 		Webhook: WebhookConfig{},
 		Logging: LoggingConfig{
@@ -183,6 +188,7 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Server.ShutdownTimeout = int(cfg.Server.ShutdownTimeout.Seconds())
 	writeCfg.Server.ReadTimeout = int(cfg.Server.ReadTimeout.Seconds())
 	writeCfg.Server.WriteTimeout = int(cfg.Server.WriteTimeout.Seconds())
+	writeCfg.Server.RateLimit = cfg.Server.RateLimit
 	writeCfg.Webhook.URL = cfg.Webhook.URL
 	writeCfg.Logging.Level = cfg.Logging.Level
 

@@ -7,49 +7,92 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
 // Server handles HTTP requests for repository migrations
 type Server struct {
-	migrator *migrator.Migrator
-	logger   *slog.Logger
-	config   *config.Config
-	server   *http.Server
+	migrator   *migrator.Migrator
+	logger     *slog.Logger
+	config     *config.Config
+	server     *http.Server
+	middleware *Middleware
 }
 
 // New creates a new server instance
 func New(cfg *config.Config, m *migrator.Migrator) *Server {
 	s := &Server{
-		migrator: m,
-		logger:   logging.Get(),
-		config:   cfg,
+		migrator:   m,
+		logger:     logging.Get(),
+		config:     cfg,
+		middleware: NewMiddleware(),
 	}
 
-	// Create router with middleware
+	// Create router with routes
 	mux := http.NewServeMux()
-	mux.HandleFunc("/migrate", s.handleMigration)
-	mux.HandleFunc("/status", s.handleStatus)
-	mux.HandleFunc("/health", s.handleHealth)
 
-	// Create server with basic config
+	// API routes with appropriate middleware
+	migrateHandler := http.HandlerFunc(s.handleMigration)
+	statusHandler := http.HandlerFunc(s.handleStatus)
+	healthHandler := http.HandlerFunc(s.handleHealth)
+
+	// Apply middleware stacks to routes based on their needs
+	mux.Handle("/migrate", s.withAPIMiddleware(migrateHandler))
+	mux.Handle("/status", s.withBaseMiddleware(statusHandler))
+	mux.Handle("/health", s.withBaseMiddleware(healthHandler))
+
+	// Create server with timeouts
 	s.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler: mux,
+		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:      mux,
+		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	return s
+}
+
+// withBaseMiddleware applies the base middleware stack (used for all endpoints)
+func (s *Server) withBaseMiddleware(next http.Handler) http.Handler {
+	return CombineMiddleware(next,
+		s.middleware.LogRequest,
+		s.middleware.SecurityHeaders,
+	)
+}
+
+// withAPIMiddleware applies the full middleware stack (used for API endpoints)
+func (s *Server) withAPIMiddleware(next http.Handler) http.Handler {
+	// Apply rate limiter only if configured
+	middlewareStack := []func(http.Handler) http.Handler{
+		s.middleware.LogRequest,
+		s.middleware.SecurityHeaders,
+		s.middleware.JSONOnly,
+		s.middleware.RequestSizeLimit,
+	}
+
+	// Add rate limiting if configured (default 60 requests per minute)
+	if s.config.Server.RateLimit > 0 {
+		middlewareStack = append(middlewareStack,
+			s.middleware.RateLimiter(s.config.Server.RateLimit))
+	}
+
+	return CombineMiddleware(next, middlewareStack...)
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	s.logger.Info("Starting server",
 		"port", s.config.Server.Port,
+		"read_timeout", s.config.Server.ReadTimeout,
+		"write_timeout", s.config.Server.WriteTimeout,
 	)
 	return s.server.ListenAndServe()
 }
@@ -58,38 +101,6 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Shutting down server")
 	return s.server.Shutdown(ctx)
-}
-
-func (s *Server) withMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add request ID to context
-		requestID := fmt.Sprintf("%d", time.Now().UnixNano())
-		ctx := context.WithValue(r.Context(), "request_id", requestID)
-
-		// Log request
-		start := time.Now()
-		s.logger.Debug("Incoming request",
-			"request_id", requestID,
-			"method", r.Method,
-			"path", r.URL.Path,
-		)
-
-		// Add security headers
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("X-XSS-Protection", "1; mode=block")
-
-		// Call next handler
-		next.ServeHTTP(w, r.WithContext(ctx))
-
-		// Log response time
-		s.logger.Debug("Request completed",
-			"request_id", requestID,
-			"duration_ms", time.Since(start).Milliseconds(),
-			"path", r.URL.Path,
-		)
-	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -134,13 +145,26 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check Content-Type
+	contentType := r.Header.Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		s.writeError(w, r, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		return
+	}
+
 	// Limit request body size to 1MB
-	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySizeBytes)
 
 	// Read and decode the request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("Failed to read request body: %v", err))
+		return
+	}
+
+	// Check if request body is empty
+	if len(body) == 0 {
+		s.writeError(w, r, http.StatusBadRequest, "Request body is empty")
 		return
 	}
 
@@ -156,12 +180,26 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log the migration request details
+	// Test connection to GHES if needed (optional, can be resource-intensive)
+	// if r.URL.Query().Get("test_connection") == "true" {
+	//    if err := validation.TestGHESURL(req.GHESBaseURL, req.GHESToken); err != nil {
+	//        s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("GHES connection test failed: %v", err))
+	//        return
+	//    }
+	// }
+
+	// Sanitize tokens for logging (only show first/last few characters)
+	sanitizedGHESToken := sanitizeToken(req.GHESToken)
+	sanitizedGHCloudToken := sanitizeToken(req.GHCloudToken)
+
+	// Log the migration request details with sanitized tokens
 	s.logger.Info("Migration request received",
 		"source_org", req.SourceOrg,
 		"target_org", req.TargetOrg,
-		"repositories", req.Repositories,
+		"repositories", len(req.Repositories),
 		"ghes_base_url", req.GHESBaseURL,
+		"ghes_token", sanitizedGHESToken,
+		"gh_cloud_token", sanitizedGHCloudToken,
 	)
 
 	// Start migration in background
@@ -201,6 +239,14 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, r, http.StatusAccepted, map[string]string{
 		"status": "migration started",
 	})
+}
+
+// Helper function to sanitize token for logging
+func sanitizeToken(token string) string {
+	if len(token) <= 8 {
+		return "***"
+	}
+	return token[:4] + "..." + token[len(token)-4:]
 }
 
 // writeJSON writes a JSON response with the given status code

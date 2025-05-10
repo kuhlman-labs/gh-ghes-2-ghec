@@ -1,4 +1,4 @@
-# GitHub GHES to GHEC Migration Tool
+# GitHub GHES to GHEC Migration Server
 
 A server application that provides an HTTP API for migrating repositories from GitHub Enterprise Server (GHES) to GitHub Enterprise Cloud (GHEC). The server handles repository migrations asynchronously, provides real-time status updates, and supports webhook notifications for migration progress.
 
@@ -93,6 +93,39 @@ Flags:
   --webhook-url string Global webhook URL for all migration notifications
   --log-level string   Logging level (debug, info, warn, error) (default "info")
 ```
+
+### Input Validation and Security
+
+You can validate migration requests before submitting them:
+
+```bash
+./gh-ghes-2-ghec validate migration.json
+
+# With connection testing
+./gh-ghes-2-ghec validate migration.json --test-connections
+```
+
+A successful validation will show:
+
+```
+✅ Migration request is valid!
+
+Summary:
+  Source Organization: source-org
+  Target Organization: target-org
+  GHES Instance: https://github.example.com
+  Repositories: 5
+  Maximum Duration: Default (24h)
+
+To run this migration, start the server and submit this JSON to the /migrate endpoint.
+```
+
+#### Security Features
+
+- **Token Protection**: Tokens are sanitized in logs
+- **Security Headers**: Standard security headers on all responses
+- **Request Throttling**: Per-IP rate limiting to prevent abuse
+- **Timeouts**: Configurable connection timeouts to prevent resource exhaustion
 
 ### Starting the Server
 

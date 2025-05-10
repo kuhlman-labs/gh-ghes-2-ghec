@@ -1,0 +1,154 @@
+package server
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
+)
+
+// Middleware struct for holding middleware functions
+type Middleware struct {
+	logger *slog.Logger
+}
+
+// NewMiddleware creates a new middleware instance
+func NewMiddleware() *Middleware {
+	return &Middleware{
+		logger: logging.Get(),
+	}
+}
+
+// LogRequest logs details about each request
+func (m *Middleware) LogRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add request ID to context
+		requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+		ctx := context.WithValue(r.Context(), "request_id", requestID)
+
+		// Log request
+		start := time.Now()
+		m.logger.Debug("Incoming request",
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"remote_addr", r.RemoteAddr,
+			"user_agent", r.UserAgent(),
+		)
+
+		// Call next handler
+		next.ServeHTTP(w, r.WithContext(ctx))
+
+		// Log response time
+		m.logger.Debug("Request completed",
+			"request_id", requestID,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"path", r.URL.Path,
+		)
+	})
+}
+
+// SecurityHeaders adds security headers to responses
+func (m *Middleware) SecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Security headers
+		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// JSONOnly ensures that Content-Type is application/json for endpoints that require it
+func (m *Middleware) JSONOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only validate POST requests
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			contentType := r.Header.Get("Content-Type")
+			if !strings.Contains(contentType, "application/json") {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnsupportedMediaType)
+				fmt.Fprintf(w, `{"error": "Content-Type must be application/json"}`)
+				m.logger.Error("Request error: invalid content type",
+					"content_type", contentType,
+					"path", r.URL.Path,
+				)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequestSizeLimit limits the size of request bodies
+func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only apply to requests with bodies
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySizeBytes)
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RateLimiter implements a basic rate limiter per IP address
+// This is a simple implementation; consider using a more robust solution for production
+func (m *Middleware) RateLimiter(requestsPerMinute int) func(http.Handler) http.Handler {
+	// Map to track requests by IP
+	requests := make(map[string][]time.Time)
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Get client IP
+			ip := r.RemoteAddr
+			now := time.Now()
+
+			// Clean up old requests (older than 1 minute)
+			var recent []time.Time
+			for _, t := range requests[ip] {
+				if now.Sub(t) < time.Minute {
+					recent = append(recent, t)
+				}
+			}
+			requests[ip] = recent
+
+			// Check if rate limit exceeded
+			if len(requests[ip]) >= requestsPerMinute {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusTooManyRequests)
+				fmt.Fprintf(w, `{"error": "Rate limit exceeded. Try again in 1 minute."}`)
+				m.logger.Warn("Rate limit exceeded",
+					"ip", ip,
+					"path", r.URL.Path,
+				)
+				return
+			}
+
+			// Add current request to the tracking
+			requests[ip] = append(requests[ip], now)
+
+			// Serve the request
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// CombineMiddleware combines multiple middleware functions into one
+func CombineMiddleware(h http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
+	for _, middleware := range middlewares {
+		h = middleware(h)
+	}
+	return h
+}
