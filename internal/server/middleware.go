@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -106,11 +107,16 @@ func (m *Middleware) JSONOnly(next http.Handler) http.Handler {
 // The maximum size is defined in the validation package constants.
 func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only apply to requests with bodies
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
 			r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySizeBytes)
+			// Attempt to read and discard the entire body to trigger the error if it's too large
+			_, err := io.Copy(io.Discard, r.Body)
+			if err != nil && err.Error() == "http: request body too large" {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				w.Write([]byte(`{"error": "Request body too large"}`))
+				return
+			}
 		}
-
 		next.ServeHTTP(w, r)
 	})
 }

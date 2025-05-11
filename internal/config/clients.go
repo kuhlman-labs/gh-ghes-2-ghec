@@ -5,6 +5,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"strings"
 
@@ -65,6 +66,11 @@ func NewClients(ghesToken, ghCloudToken string) (*Clients, error) {
 // Returns:
 //   - error: An error if the URL is invalid or cannot be parsed.
 func (c *Clients) UpdateGHESBaseURL(baseURL string) error {
+	// check if baseURL is empty
+	if baseURL == "" {
+		return errors.New("base URL is empty")
+	}
+
 	// Ensure the URL has a trailing slash as required by go-github
 	if !strings.HasSuffix(baseURL, "/") {
 		baseURL += "/"
@@ -74,6 +80,17 @@ func (c *Clients) UpdateGHESBaseURL(baseURL string) error {
 	if err != nil {
 		return err
 	}
+
+	// Validate that the URL has a scheme and host
+	if parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return errors.New("invalid URL: must include scheme (http/https) and host")
+	}
+
+	// Validate that the scheme is either http or https
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return errors.New("invalid URL scheme: must be http or https")
+	}
+
 	c.GHESClient.BaseURL = parsedURL
 	return nil
 }

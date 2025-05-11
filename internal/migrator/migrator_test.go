@@ -1,0 +1,384 @@
+package migrator
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name       string
+		webhookURL string
+		wantURL    string
+	}{
+		{
+			name:       "valid webhook URL",
+			webhookURL: "https://example.com/webhook",
+			wantURL:    "https://example.com/webhook",
+		},
+		{
+			name:       "invalid webhook URL",
+			webhookURL: "not-a-url",
+			wantURL:    "not-a-url",
+		},
+		{
+			name:       "empty webhook URL",
+			webhookURL: "",
+			wantURL:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := New(tt.webhookURL)
+			assert.NotNil(t, m)
+			assert.Equal(t, tt.wantURL, m.webhookURL)
+			assert.NotNil(t, m.logger)
+			assert.NotNil(t, m.migrations)
+		})
+	}
+}
+
+func TestMigrator_GetMigrationStatus(t *testing.T) {
+	m := New("")
+	repoName := "test-repo"
+	status := &payload.MigrationStatus{
+		Repository: repoName,
+		Status:     payload.StatusInProgress,
+	}
+
+	// Set status
+	m.mu.Lock()
+	m.migrations[repoName] = status
+	m.mu.Unlock()
+
+	// Test getting status
+	got := m.GetMigrationStatus(repoName)
+	assert.Equal(t, status, got)
+
+	// Test getting non-existent status
+	got = m.GetMigrationStatus("non-existent")
+	assert.Nil(t, got)
+}
+
+func TestMigrator_GetAllMigrationStatuses(t *testing.T) {
+	m := New("")
+	statuses := map[string]*payload.MigrationStatus{
+		"repo1": {
+			Repository: "repo1",
+			Status:     payload.StatusInProgress,
+		},
+		"repo2": {
+			Repository: "repo2",
+			Status:     payload.StatusSucceeded,
+		},
+	}
+
+	// Set statuses
+	m.mu.Lock()
+	m.migrations = statuses
+	m.mu.Unlock()
+
+	// Test getting all statuses
+	got := m.GetAllMigrationStatuses()
+	assert.Equal(t, statuses, got)
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		duration time.Duration
+		want     string
+	}{
+		{
+			name:     "zero duration",
+			duration: 0,
+			want:     "0h0m0s",
+		},
+		{
+			name:     "seconds only",
+			duration: 45 * time.Second,
+			want:     "0h0m45s",
+		},
+		{
+			name:     "minutes and seconds",
+			duration: 2*time.Minute + 30*time.Second,
+			want:     "0h2m30s",
+		},
+		{
+			name:     "hours, minutes and seconds",
+			duration: 1*time.Hour + 30*time.Minute + 45*time.Second,
+			want:     "1h30m45s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatDuration(tt.duration)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCalculateProgressData(t *testing.T) {
+	tests := []struct {
+		name     string
+		stage    string
+		state    string
+		existing *payload.MigrationStatus
+		want     progressData
+	}{
+		{
+			name:  "validation stage",
+			stage: "validation",
+			state: "checking",
+			want: progressData{
+				progress:          5,
+				stageProgress:     50,
+				completedStages:   []string{},
+				currentStageIndex: 1,
+			},
+		},
+		{
+			name:  "setup stage",
+			stage: "setup",
+			state: "creating",
+			want: progressData{
+				progress:          12,
+				stageProgress:     25,
+				completedStages:   []string{"validation"},
+				currentStageIndex: 2,
+			},
+		},
+		{
+			name:  "archive stage",
+			stage: "archive",
+			state: "exporting",
+			want: progressData{
+				progress:          35,
+				stageProgress:     50,
+				completedStages:   []string{"validation", "setup"},
+				currentStageIndex: 3,
+			},
+		},
+		{
+			name:  "migration stage",
+			stage: "migration",
+			state: "importing",
+			want: progressData{
+				progress:          75,
+				stageProgress:     50,
+				completedStages:   []string{"validation", "setup", "archive"},
+				currentStageIndex: 4,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calculateProgressData(tt.stage, tt.state, tt.existing)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCalculateStageProgress(t *testing.T) {
+	tests := []struct {
+		name  string
+		stage string
+		state string
+		want  int
+	}{
+		{
+			name:  "validation checking",
+			stage: "validation",
+			state: "checking",
+			want:  50,
+		},
+		{
+			name:  "setup creating",
+			stage: "setup",
+			state: "creating",
+			want:  25,
+		},
+		{
+			name:  "archive exporting",
+			stage: "archive",
+			state: "exporting",
+			want:  50,
+		},
+		{
+			name:  "migration importing",
+			stage: "migration",
+			state: "importing",
+			want:  50,
+		},
+		{
+			name:  "unknown stage",
+			stage: "unknown",
+			state: "unknown",
+			want:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calculateStageProgress(tt.stage, tt.state)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetStageDescription(t *testing.T) {
+	tests := []struct {
+		name  string
+		stage string
+		want  string
+	}{
+		{
+			name:  "validation stage",
+			stage: "validation",
+			want:  "Repository validation",
+		},
+		{
+			name:  "setup stage",
+			stage: "setup",
+			want:  "Migration setup",
+		},
+		{
+			name:  "archive stage",
+			stage: "archive",
+			want:  "Archive management",
+		},
+		{
+			name:  "migration stage",
+			stage: "migration",
+			want:  "Repository migration",
+		},
+		{
+			name:  "unknown stage",
+			stage: "unknown",
+			want:  "Unknown stage",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getStageDescription(tt.stage)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetStateDescription(t *testing.T) {
+	tests := []struct {
+		name  string
+		stage string
+		state string
+		want  string
+	}{
+		{
+			name:  "validation checking",
+			stage: "validation",
+			state: "checking",
+			want:  "checking",
+		},
+		{
+			name:  "setup creating",
+			stage: "setup",
+			state: "creating",
+			want:  "creating",
+		},
+		{
+			name:  "archive exporting",
+			stage: "archive",
+			state: "exporting",
+			want:  "exporting",
+		},
+		{
+			name:  "migration importing",
+			stage: "migration",
+			state: "importing",
+			want:  "importing",
+		},
+		{
+			name:  "unknown state",
+			stage: "unknown",
+			state: "unknown",
+			want:  "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getStateDescription(tt.stage, tt.state)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestMigrator_UpdateStatus(t *testing.T) {
+	// Create a test server for webhook notifications
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	m := New(server.URL)
+	repoName := "test-repo"
+	status := payload.StatusInProgress
+	message := "test message"
+	timestamp := time.Now()
+	startTime := timestamp.Add(-time.Hour)
+
+	// Test updating status
+	m.updateStatus(repoName, status, message, timestamp, startTime)
+
+	// Verify status was updated
+	got := m.GetMigrationStatus(repoName)
+	require.NotNil(t, got)
+	assert.Equal(t, repoName, got.Repository)
+	assert.Equal(t, status, got.Status)
+	assert.Equal(t, message, got.Error)
+	assert.Equal(t, timestamp, got.UpdatedAt)
+	assert.Equal(t, startTime, got.StartedAt)
+	assert.Equal(t, time.Duration(0), got.Duration) // Duration is only set for completed/failed migrations
+}
+
+func TestMigrator_SendWebhookNotification(t *testing.T) {
+	// Create a test server for webhook notifications
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	m := New(server.URL)
+	repoName := "test-repo"
+	req := &payload.MigrationRequest{
+		SourceOrg:    "source-org",
+		TargetOrg:    "target-org",
+		Repositories: []string{repoName},
+	}
+
+	// Set up status
+	m.mu.Lock()
+	m.migrations[repoName] = &payload.MigrationStatus{
+		Repository: repoName,
+		Status:     payload.StatusInProgress,
+	}
+	m.mu.Unlock()
+
+	// Test sending webhook notification
+	m.sendWebhookNotification(repoName, req)
+	// Note: We can't easily test the actual webhook payload without mocking the HTTP client
+}

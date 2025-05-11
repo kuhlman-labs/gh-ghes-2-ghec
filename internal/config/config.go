@@ -5,9 +5,10 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"errors"
 
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -86,11 +87,7 @@ var (
 // GetConfigPath returns the path to the configuration file.
 // It uses the current working directory to determine where the config file should be.
 func GetConfigPath() (string, error) {
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current directory: %w", err)
-	}
-	return filepath.Join(currentDir, configFileName), nil
+	return configFileName, nil
 }
 
 // Init initializes the configuration by setting up default values
@@ -101,6 +98,14 @@ func Init() error {
 	once.Do(func() {
 		cfg = CreateDefaultConfig()
 		err = loadConfig()
+		if err != nil {
+			var notFoundErr viper.ConfigFileNotFoundError
+			if errors.As(err, &notFoundErr) {
+				err = nil
+			} else {
+				err = fmt.Errorf("failed to load config: %w", err)
+			}
+		}
 	})
 	return err
 }
@@ -151,6 +156,11 @@ func loadConfig() error {
 
 	// Try to read config, but don't error if it doesn't exist
 	if err := viper.ReadInConfig(); err != nil {
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) && pathErr.Err != nil && pathErr.Err.Error() == "no such file or directory" {
+			// If config doesn't exist, keep using defaults that were set in Init()
+			return nil
+		}
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
