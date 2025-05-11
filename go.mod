@@ -4,7 +4,7 @@ go 1.24.2
 
 require (
 	github.com/google/go-github/v70 v70.0.0
-	github.com/lmittmann/tint v1.0.0
+	github.com/lmittmann/tint v1.0.7
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
