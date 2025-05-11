@@ -6,7 +6,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -108,14 +107,16 @@ func (m *Middleware) JSONOnly(next http.Handler) http.Handler {
 func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
-			r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySizeBytes)
-			// Attempt to read and discard the entire body to trigger the error if it's too large
-			_, err := io.Copy(io.Discard, r.Body)
-			if err != nil && err.Error() == "http: request body too large" {
+			// Check Content-Length header first for a quick rejection of obviously large requests
+			if r.ContentLength > validation.MaxRequestBodySizeBytes {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusRequestEntityTooLarge)
 				w.Write([]byte(`{"error": "Request body too large"}`))
 				return
 			}
+
+			// Set the max bytes reader for streaming requests or when Content-Length is not reliable
+			r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySizeBytes)
 		}
 		next.ServeHTTP(w, r)
 	})
