@@ -11,8 +11,15 @@ import (
 func TestConfigInitCmd_CreatesFile(t *testing.T) {
 	tempDir := t.TempDir()
 	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
-	os.Chdir(tempDir)
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Errorf("Failed to change back to original directory: %v", err)
+		}
+	}()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
 
 	// Remove config.yaml if it exists
 	_ = os.Remove("config.yaml")
@@ -30,12 +37,23 @@ func TestConfigInitCmd_CreatesFile(t *testing.T) {
 func TestConfigInitCmd_AlreadyExists(t *testing.T) {
 	tempDir := t.TempDir()
 	oldWd, _ := os.Getwd()
-	defer os.Chdir(oldWd)
-	os.Chdir(tempDir)
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Errorf("Failed to change back to original directory: %v", err)
+		}
+	}()
+
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
 
 	// Create a dummy config.yaml
 	f, _ := os.Create("config.yaml")
-	f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("Failed to close file: %v", err)
+		}
+	}()
 
 	rootCmd.SetArgs([]string{"config", "init"})
 	err := rootCmd.Execute()

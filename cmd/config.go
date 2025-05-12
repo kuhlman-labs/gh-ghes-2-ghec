@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -58,12 +59,18 @@ You can then edit this file to customize your settings.`,
 		if err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				logging.Get().Warn("Failed to close config file", "error", err)
+			}
+		}()
 
 		// Write config
 		if err := config.WriteConfig(defaultConfig, file); err != nil {
 			// Clean up the file if we failed to write
-			os.Remove(configPath)
+			if err := os.Remove(configPath); err != nil {
+				logging.Get().Warn("Failed to remove temporary config file", "error", err)
+			}
 			return fmt.Errorf("failed to write config: %w", err)
 		}
 

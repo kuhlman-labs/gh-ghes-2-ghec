@@ -655,7 +655,11 @@ func (a *API) UploadArchiveToGHOS(ctx context.Context, organizationID, archiveUR
 	if err != nil {
 		return "", fmt.Errorf("failed to download archive from GHES: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			a.logger.Warn("Failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download archive, received status code: %d", resp.StatusCode)
@@ -684,7 +688,11 @@ func (a *API) UploadArchiveToGHOS(ctx context.Context, organizationID, archiveUR
 	if err != nil {
 		return "", fmt.Errorf("failed to initialize chunked upload: %w", err)
 	}
-	defer initResp.Body.Close()
+	defer func() {
+		if err := initResp.Body.Close(); err != nil {
+			a.logger.Warn("Failed to close init response body", "error", err)
+		}
+	}()
 
 	if initResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(initResp.Body)
@@ -741,7 +749,11 @@ func (a *API) UploadArchiveToGHOS(ctx context.Context, organizationID, archiveUR
 		if err != nil {
 			return "", fmt.Errorf("failed to upload chunk %d: %w", i, err)
 		}
-		chunkResp.Body.Close()
+		defer func() {
+			if err := chunkResp.Body.Close(); err != nil {
+				a.logger.Warn("Failed to close chunk response body", "error", err)
+			}
+		}()
 
 		if chunkResp.StatusCode != http.StatusOK {
 			return "", fmt.Errorf("failed to upload chunk %d, received status code: %d", i, chunkResp.StatusCode)
@@ -771,7 +783,11 @@ func (a *API) UploadArchiveToGHOS(ctx context.Context, organizationID, archiveUR
 	if err != nil {
 		return "", fmt.Errorf("failed to complete upload: %w", err)
 	}
-	defer completeResp.Body.Close()
+	defer func() {
+		if err := completeResp.Body.Close(); err != nil {
+			a.logger.Warn("Failed to close complete response body", "error", err)
+		}
+	}()
 
 	if completeResp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(completeResp.Body)

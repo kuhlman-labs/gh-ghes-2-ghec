@@ -129,7 +129,9 @@ func TestSetupFileLogger(t *testing.T) {
 	assert.FileExists(t, logFile)
 
 	// Clean up
-	os.RemoveAll(logDir)
+	if err := os.RemoveAll(logDir); err != nil {
+		t.Errorf("Failed to remove log directory: %v", err)
+	}
 }
 
 func TestGetLogLevel(t *testing.T) {

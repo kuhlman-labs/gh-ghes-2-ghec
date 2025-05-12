@@ -193,6 +193,7 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 	var migrationID string
 
 	// Simplify control flow and avoid goto statements that may cross variable declarations
+pollLoop:
 	for {
 		select {
 		case <-ctx.Done():
@@ -329,7 +330,7 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 				m.mu.Unlock()
 
 				// Skip directly to monitoring migration progress
-				break
+				break pollLoop
 			}
 
 			// Regular non-GHOS flow
@@ -366,7 +367,7 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 			m.mu.Unlock()
 
 			// Exit the polling loop and move on to monitoring the migration
-			break
+			break pollLoop
 
 		case "failed":
 			failureMsg := fmt.Sprintf("migration archive export failed with state: %s", status)
@@ -383,9 +384,6 @@ func (m *Migrator) migrateRepository(ctx context.Context, req *payload.Migration
 			)
 			continue
 		}
-
-		// If we get here, the archive is exported and the migration started, so exit the loop
-		break
 	}
 
 	// Monitor the migration progress
@@ -965,7 +963,11 @@ func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payloa
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				m.logger.Warn("Failed to close response body", "error", err)
+			}
+		}()
 
 		// Check for non-success status codes
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

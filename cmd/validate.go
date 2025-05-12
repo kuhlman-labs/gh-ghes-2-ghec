@@ -34,7 +34,11 @@ This helps to check if your migration parameters are valid before submitting the
 			fmt.Printf("Error: Failed to open file %s: %v\n", filePath, err)
 			os.Exit(1)
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				logging.Get().Warn("Failed to close file", "error", err)
+			}
+		}()
 
 		// Read file contents
 		data, err := io.ReadAll(file)

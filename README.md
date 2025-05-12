@@ -14,6 +14,7 @@ A server application that provides an HTTP API for migrating repositories from G
 - [Troubleshooting](#troubleshooting)
 - [Architecture](#architecture)
 - [Contributing](#contributing)
+- [CI/CD](#ci-cd)
 - [License](#license)
 
 ## Features
@@ -58,6 +59,33 @@ cd gh-ghes-2-ghec
 go build -o gh-ghes-2-ghec
 ```
 
+### Using the Makefile
+
+The project includes a Makefile to simplify building and testing:
+
+```bash
+# Build the application
+make build
+
+# Run tests
+make test
+
+# Format the code
+make fmt
+
+# Run linter
+make lint
+
+# Build Docker image
+make docker
+
+# Run Docker container
+make docker-run
+
+# Show all available commands
+make help
+```
+
 ### Using the GitHub CLI
 
 ```bash
@@ -67,8 +95,15 @@ gh extension install kuhlman-labs/gh-ghes-2-ghec
 ### Docker Installation
 
 ```bash
+# Pull from GitHub Container Registry
 docker pull ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+
+# Run the container
 docker run -p 8080:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+
+# Or use a specific version
+docker pull ghcr.io/kuhlman-labs/gh-ghes-2-ghec:v1.0.0
+docker run -p 8080:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:v1.0.0
 ```
 
 ## Configuration
@@ -119,6 +154,94 @@ Flags:
 ```
 
 The server will start on the configured port and begin listening for migration requests.
+
+### Running with Docker
+
+The application can be run as a Docker container, which provides isolation and simplified deployment:
+
+#### Basic Usage
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+
+# Run with default configuration
+docker run -p 8080:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Custom Port Mapping
+
+You can map the container's port 8080 to any port on your host:
+
+```bash
+# Map to port 9000 on the host
+docker run -p 9000:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Using a Custom Configuration File
+
+To use your own configuration file:
+
+```bash
+# Mount your config.yaml into the container
+docker run -p 8080:8080 \
+  -v /path/to/your/config.yaml:/app/config.yaml \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Persistent Storage for Logs and Temporary Files
+
+For persistent storage of logs and migration temporary files:
+
+```bash
+docker run -p 8080:8080 \
+  -v /path/to/logs:/var/log \
+  -v /path/to/temp:/tmp/migrations \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Running in Background
+
+```bash
+docker run -d --name ghes-migration-server \
+  -p 8080:8080 \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Environment Variables
+
+You can pass configuration via environment variables:
+
+```bash
+docker run -p 8080:8080 \
+  -e LOG_LEVEL=debug \
+  -e WEBHOOK_URL=https://your-webhook-url \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Docker Compose Example
+
+Create a `docker-compose.yml` file:
+
+```yaml
+version: '3'
+services:
+  migration-server:
+    image: ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./logs:/var/log
+      - ./temp:/tmp/migrations
+    restart: unless-stopped
+```
+
+Run with Docker Compose:
+
+```bash
+docker-compose up -d
+```
 
 ### Validating Migration Requests
 
@@ -363,27 +486,34 @@ Log files are automatically rotated when they reach 10MB, with up to 5 backup fi
 
 ## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+Please see the [CONTRIBUTING.md](CONTRIBUTING.md) guide for details on how to contribute to this project.
 
-### Development Setup
+## CI/CD
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `go test ./...`
-5. Submit a pull request
+This project uses GitHub Actions for continuous integration and delivery:
 
-### Testing
+### Docker Image Publishing
+
+The repository is configured to automatically build and publish Docker images to GitHub Container Registry (GHCR) when a new tag is pushed. The workflow:
+
+1. Builds the Docker image with proper version information
+2. Tags the image with both the specific version (e.g., v1.2.3) and the major.minor version (e.g., 1.2)
+3. Pushes the tagged images to GitHub Container Registry
+
+To create a new release:
 
 ```bash
-# Run all tests
-go test ./...
+# Tag a new version
+git tag v1.2.3
 
-# Run specific test
-go test ./internal/migrator -run TestMigration
+# Push the tag to trigger the workflow
+git push origin v1.2.3
+```
 
-# Run with coverage
-go test ./... -cover
+Once the workflow completes, the image will be available at:
+```
+ghcr.io/kuhlman-labs/gh-ghes-2-ghec:1.2.3
+ghcr.io/kuhlman-labs/gh-ghes-2-ghec:1.2
 ```
 
 ## License

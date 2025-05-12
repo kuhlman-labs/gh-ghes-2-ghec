@@ -4,6 +4,7 @@ package validation
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -196,28 +197,38 @@ func TestGHESURL(baseURL string, token string) error {
 	// Ensure URL ends with no trailing slash
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	// Test connectivity to GHES API
-	apiURL := baseURL + "/api/v3/meta"
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+	// Build request URL
+	requestURL := fmt.Sprintf("%s/api/v3/meta", baseURL)
 
-	req.Header.Set("Authorization", "token "+token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
+	// Create the HTTP client
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
+	// Create the request
+	req, err := http.NewRequest("GET", requestURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Add headers
+	req.Header.Add("Authorization", fmt.Sprintf("token %s", token))
+	req.Header.Add("Accept", "application/vnd.github.v3+json")
+
+	// Send the request
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to connect to GHES instance: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			// Use slog.Default instead of an undefined logger
+			slog.Default().Warn("Failed to close response body", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to authenticate with GHES instance: status code %d", resp.StatusCode)
+		return fmt.Errorf("GHES connection test failed with status: %d", resp.StatusCode)
 	}
 
 	return nil

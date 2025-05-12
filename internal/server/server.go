@@ -344,5 +344,7 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	fmt.Fprintf(w, `{"error": %q}`, message)
+	if _, err := fmt.Fprintf(w, `{"error": %q}`, message); err != nil {
+		s.logger.Warn("Failed to write error response", "error", err)
+	}
 }

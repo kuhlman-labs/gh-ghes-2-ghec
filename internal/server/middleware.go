@@ -15,6 +15,14 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
+// Define a custom type for context keys to avoid collisions
+type contextKey string
+
+// Define constants for context keys
+const (
+	requestIDKey contextKey = "request_id"
+)
+
 // Middleware struct for holding middleware functions and their dependencies.
 // It provides various HTTP middleware functions for security, logging, and rate limiting.
 type Middleware struct {
@@ -36,7 +44,7 @@ func (m *Middleware) LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Add request ID to context
 		requestID := fmt.Sprintf("%d", time.Now().UnixNano())
-		ctx := context.WithValue(r.Context(), "request_id", requestID)
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
 
 		// Log request
 		start := time.Now()
@@ -88,11 +96,12 @@ func (m *Middleware) JSONOnly(next http.Handler) http.Handler {
 			if !strings.Contains(contentType, "application/json") {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnsupportedMediaType)
-				fmt.Fprintf(w, `{"error": "Content-Type must be application/json"}`)
-				m.logger.Error("Request error: invalid content type",
-					"content_type", contentType,
-					"path", r.URL.Path,
-				)
+				n, err := fmt.Fprintf(w, `{"error": "Content-Type must be application/json"}`)
+				if err != nil {
+					m.logger.Warn("Failed to write response", "error", err)
+				} else if n == 0 {
+					m.logger.Warn("Zero bytes written in response")
+				}
 				return
 			}
 		}
@@ -111,7 +120,12 @@ func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
 			if r.ContentLength > validation.MaxRequestBodySizeBytes {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusRequestEntityTooLarge)
-				w.Write([]byte(`{"error": "Request body too large"}`))
+				n, err := w.Write([]byte(`{"error": "Request body too large"}`))
+				if err != nil {
+					m.logger.Warn("Failed to write response", "error", err)
+				} else if n == 0 {
+					m.logger.Warn("Zero bytes written in response")
+				}
 				return
 			}
 
@@ -149,7 +163,12 @@ func (m *Middleware) RateLimiter(requestsPerMinute int) func(http.Handler) http.
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintf(w, `{"error": "Rate limit exceeded. Try again in 1 minute."}`)
+				n, err := fmt.Fprintf(w, `{"error": "Rate limit exceeded. Try again in 1 minute."}`)
+				if err != nil {
+					m.logger.Warn("Failed to write response", "error", err)
+				} else if n == 0 {
+					m.logger.Warn("Zero bytes written in response")
+				}
 				m.logger.Warn("Rate limit exceeded",
 					"ip", ip,
 					"path", r.URL.Path,

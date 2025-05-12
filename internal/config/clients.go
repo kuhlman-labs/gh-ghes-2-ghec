@@ -107,7 +107,7 @@ func ExtractOrgDatabaseID(nodeID string) string {
 	parts := strings.Split(nodeID, ":")
 	if len(parts) > 1 {
 		// Extract numeric part from the second portion (after "Organization")
-		return strings.TrimLeft(parts[1], "Organization")
+		return strings.TrimPrefix(parts[1], "Organization")
 	}
 	return ""
 }

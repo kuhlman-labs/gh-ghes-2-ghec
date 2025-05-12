@@ -130,8 +130,16 @@ func TestWriteConfig(t *testing.T) {
 	// Create a temporary file for testing
 	tmpFile, err := os.CreateTemp("", "config-*.yaml")
 	require.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() {
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			t.Errorf("Failed to remove temporary file: %v", err)
+		}
+	}()
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			t.Errorf("Failed to close temporary file: %v", err)
+		}
+	}()
 
 	// Test writing config
 	err = WriteConfig(cfg, tmpFile)
