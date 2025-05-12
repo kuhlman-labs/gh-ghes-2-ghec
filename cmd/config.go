@@ -76,7 +76,7 @@ You can then edit this file to customize your settings.`,
 		}
 
 		// Create file
-		file, err := os.Create(absPath)
+		file, err := os.Create(absPath) // #nosec G304 -- path is validated above with multiple checks
 		if err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
 		}

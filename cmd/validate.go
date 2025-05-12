@@ -56,7 +56,7 @@ This helps to check if your migration parameters are valid before submitting the
 		}
 
 		// Check if file exists
-		file, err := os.Open(absPath)
+		file, err := os.Open(absPath) // #nosec G304 -- path is validated above with multiple checks
 		if err != nil {
 			logger.Error("Failed to open file", "error", err, "path", absPath)
 			fmt.Printf("Error: Failed to open file %s: %v\n", absPath, err)
