@@ -127,16 +127,16 @@ func Retry(ctx context.Context, config *RetryConfig, operation string, fn func()
 			backoff = float64(config.MaxInterval)
 		}
 
-		// Add some jitter (±10%)
+		// Add some jitter (0-10% extra) - ensure we never go below the calculated backoff
 		jitter := 0.1 * backoff
 		randomValue, err := rand.Int(rand.Reader, big.NewInt(1000))
 		if err != nil {
 			// Fall back to a simpler approach if crypto/rand fails
 			backoff = backoff + jitter/2
 		} else {
-			// Convert to float64 between 0 and 1
+			// Convert to float64 between 0 and 1, and only add jitter (don't subtract)
 			randFloat := float64(randomValue.Int64()) / 1000.0
-			backoff = backoff - jitter/2 + jitter*randFloat
+			backoff = backoff + jitter*randFloat
 		}
 
 		return time.Duration(backoff)
