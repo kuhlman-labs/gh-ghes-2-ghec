@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
@@ -36,6 +37,11 @@ You can then edit this file to customize your settings.`,
 		configPath, err := config.GetConfigPath()
 		if err != nil {
 			return fmt.Errorf("failed to get config path: %w", err)
+		}
+
+		// Validate the config path to prevent path traversal
+		if strings.Contains(configPath, "..") || strings.Contains(configPath, "\x00") {
+			return fmt.Errorf("invalid config path: path contains forbidden characters")
 		}
 
 		// Check if file already exists

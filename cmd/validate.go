@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
@@ -26,6 +27,14 @@ This helps to check if your migration parameters are valid before submitting the
 	Run: func(cmd *cobra.Command, args []string) {
 		filePath := args[0]
 		logger := logging.Get()
+
+		// Add path validation to prevent path traversal
+		// Check if file path contains suspicious patterns
+		if strings.Contains(filePath, "..") || strings.Contains(filePath, "\x00") {
+			logger.Error("Invalid file path", "path", filePath)
+			fmt.Printf("Error: Invalid file path %s. Path contains forbidden characters.\n", filePath)
+			os.Exit(1)
+		}
 
 		// Check if file exists
 		file, err := os.Open(filePath)

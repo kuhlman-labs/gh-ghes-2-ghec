@@ -5,10 +5,11 @@ package utils
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"math"
-	"math/rand"
+	"math/big"
 	"time"
 )
 
@@ -128,7 +129,15 @@ func Retry(ctx context.Context, config *RetryConfig, operation string, fn func()
 
 		// Add some jitter (±10%)
 		jitter := 0.1 * backoff
-		backoff = backoff - jitter/2 + jitter*rand.Float64()
+		randomValue, err := rand.Int(rand.Reader, big.NewInt(1000))
+		if err != nil {
+			// Fall back to a simpler approach if crypto/rand fails
+			backoff = backoff + jitter/2
+		} else {
+			// Convert to float64 between 0 and 1
+			randFloat := float64(randomValue.Int64()) / 1000.0
+			backoff = backoff - jitter/2 + jitter*randFloat
+		}
 
 		return time.Duration(backoff)
 	}

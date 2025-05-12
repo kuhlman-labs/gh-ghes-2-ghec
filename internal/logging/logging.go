@@ -87,7 +87,7 @@ func SetLevel(level slog.Level) {
 func setupFileLogger() *lumberjack.Logger {
 	// Create logs directory
 	logDir := filepath.Join(os.TempDir(), "gh-ghes-2-ghec", "logs")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0750); err != nil {
 		return nil
 	}
 
