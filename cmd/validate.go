@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
@@ -28,19 +29,37 @@ This helps to check if your migration parameters are valid before submitting the
 		filePath := args[0]
 		logger := logging.Get()
 
+		// Clean the file path to prevent path traversal
+		cleanPath := filepath.Clean(filePath)
+
+		// Check if the path was modified after cleaning (potential attack)
+		if cleanPath != filePath {
+			logger.Error("Path modification detected", "original", filePath, "cleaned", cleanPath)
+			fmt.Printf("Error: Suspicious file path detected: %s\n", filePath)
+			os.Exit(1)
+		}
+
+		// Get absolute path to validate it's in an acceptable location
+		absPath, err := filepath.Abs(cleanPath)
+		if err != nil {
+			logger.Error("Failed to get absolute path", "error", err, "path", cleanPath)
+			fmt.Printf("Error: Invalid file path: %v\n", err)
+			os.Exit(1)
+		}
+
 		// Add path validation to prevent path traversal
 		// Check if file path contains suspicious patterns
-		if strings.Contains(filePath, "..") || strings.Contains(filePath, "\x00") {
-			logger.Error("Invalid file path", "path", filePath)
-			fmt.Printf("Error: Invalid file path %s. Path contains forbidden characters.\n", filePath)
+		if strings.Contains(absPath, "..") || strings.Contains(absPath, "\x00") {
+			logger.Error("Invalid file path", "path", absPath)
+			fmt.Printf("Error: Invalid file path %s. Path contains forbidden characters.\n", absPath)
 			os.Exit(1)
 		}
 
 		// Check if file exists
-		file, err := os.Open(filePath)
+		file, err := os.Open(absPath)
 		if err != nil {
-			logger.Error("Failed to open file", "error", err, "path", filePath)
-			fmt.Printf("Error: Failed to open file %s: %v\n", filePath, err)
+			logger.Error("Failed to open file", "error", err, "path", absPath)
+			fmt.Printf("Error: Failed to open file %s: %v\n", absPath, err)
 			os.Exit(1)
 		}
 		defer func() {
@@ -52,22 +71,22 @@ This helps to check if your migration parameters are valid before submitting the
 		// Read file contents
 		data, err := io.ReadAll(file)
 		if err != nil {
-			logger.Error("Failed to read file", "error", err, "path", filePath)
-			fmt.Printf("Error: Failed to read file %s: %v\n", filePath, err)
+			logger.Error("Failed to read file", "error", err, "path", absPath)
+			fmt.Printf("Error: Failed to read file %s: %v\n", absPath, err)
 			os.Exit(1)
 		}
 
 		// Decode JSON
 		var req payload.MigrationRequest
 		if err := json.Unmarshal(data, &req); err != nil {
-			logger.Error("Failed to parse JSON", "error", err, "path", filePath)
+			logger.Error("Failed to parse JSON", "error", err, "path", absPath)
 			fmt.Printf("Error: Invalid JSON format: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Validate request
 		if err := req.Validate(); err != nil {
-			logger.Error("Validation failed", "error", err, "path", filePath)
+			logger.Error("Validation failed", "error", err, "path", absPath)
 			fmt.Printf("Error: Validation failed: %v\n", err)
 			os.Exit(1)
 		}

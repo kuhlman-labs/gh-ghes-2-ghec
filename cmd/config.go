@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
@@ -39,14 +40,28 @@ You can then edit this file to customize your settings.`,
 			return fmt.Errorf("failed to get config path: %w", err)
 		}
 
+		// Clean the path to prevent path traversal
+		cleanPath := filepath.Clean(configPath)
+
+		// Check if the path was modified after cleaning (potential attack)
+		if cleanPath != configPath {
+			return fmt.Errorf("suspicious config path detected: %s", configPath)
+		}
+
+		// Get absolute path to validate it's in an acceptable location
+		absPath, err := filepath.Abs(cleanPath)
+		if err != nil {
+			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+
 		// Validate the config path to prevent path traversal
-		if strings.Contains(configPath, "..") || strings.Contains(configPath, "\x00") {
+		if strings.Contains(absPath, "..") || strings.Contains(absPath, "\x00") {
 			return fmt.Errorf("invalid config path: path contains forbidden characters")
 		}
 
 		// Check if file already exists
-		if _, err := os.Stat(configPath); err == nil {
-			return fmt.Errorf("config file already exists at %s", configPath)
+		if _, err := os.Stat(absPath); err == nil {
+			return fmt.Errorf("config file already exists at %s", absPath)
 		}
 
 		// Create default config
@@ -61,7 +76,7 @@ You can then edit this file to customize your settings.`,
 		}
 
 		// Create file
-		file, err := os.Create(configPath)
+		file, err := os.Create(absPath)
 		if err != nil {
 			return fmt.Errorf("failed to create config file: %w", err)
 		}
@@ -74,13 +89,13 @@ You can then edit this file to customize your settings.`,
 		// Write config
 		if err := config.WriteConfig(defaultConfig, file); err != nil {
 			// Clean up the file if we failed to write
-			if err := os.Remove(configPath); err != nil {
+			if err := os.Remove(absPath); err != nil {
 				logging.Get().Warn("Failed to remove temporary config file", "error", err)
 			}
 			return fmt.Errorf("failed to write config: %w", err)
 		}
 
-		fmt.Printf("Configuration file created at: %s\n", configPath)
+		fmt.Printf("Configuration file created at: %s\n", absPath)
 		fmt.Println("You can now edit this file to customize your settings.")
 		return nil
 	},
