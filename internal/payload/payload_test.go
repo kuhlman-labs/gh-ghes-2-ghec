@@ -243,6 +243,7 @@ func TestMigrationStages(t *testing.T) {
 		"validation",
 		"setup",
 		"archive",
+		"storage",
 		"migration",
 	}
 	assert.Equal(t, expectedStages, MigrationStages)

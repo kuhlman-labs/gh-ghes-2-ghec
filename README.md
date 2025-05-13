@@ -30,6 +30,7 @@ A server application that provides an HTTP API for migrating repositories from G
 - Concurrent migration support
 - Progress tracking with detailed stage information
 - Configurable timeouts and retry policies
+- Works with GHOS based migrations
 
 ## Prerequisites
 
