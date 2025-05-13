@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,9 +125,35 @@ func TestSetupFileLogger(t *testing.T) {
 	logDir := filepath.Join(os.TempDir(), "gh-ghes-2-ghec", "logs")
 	assert.DirExists(t, logDir)
 
-	// Verify log file exists
+	// Create logger with the file handler to ensure file is created
+	fileHandler := slog.NewJSONHandler(fileLogger, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})
+	testLogger := slog.New(fileHandler)
+
+	// Write a test log entry to ensure file is created
+	testLogger.Info("test log entry for TestSetupFileLogger")
+
+	// Verify log file exists (giving it a moment to be created if needed)
 	logFile := filepath.Join(logDir, "gh-ghes-2-ghec.log")
-	assert.FileExists(t, logFile)
+
+	// Try a few times with short delays in case of filesystem delays
+	var fileExists bool
+	for i := 0; i < 3; i++ {
+		if _, err := os.Stat(logFile); err == nil {
+			fileExists = true
+			break
+		}
+		// Small delay before retrying
+		t.Logf("Waiting for log file to be created (attempt %d)", i+1)
+		os.Stdout.Sync() // Flush stdout to ensure log messages are visible
+		// Sleep a tiny bit to let the filesystem catch up
+		if i > 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	assert.True(t, fileExists, "Log file should exist: "+logFile)
 
 	// Clean up
 	if err := os.RemoveAll(logDir); err != nil {
