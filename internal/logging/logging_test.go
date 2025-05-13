@@ -146,7 +146,10 @@ func TestSetupFileLogger(t *testing.T) {
 		}
 		// Small delay before retrying
 		t.Logf("Waiting for log file to be created (attempt %d)", i+1)
-		os.Stdout.Sync() // Flush stdout to ensure log messages are visible
+		// Flush stdout to ensure log messages are visible
+		if err := os.Stdout.Sync(); err != nil {
+			t.Logf("Failed to sync stdout: %v", err)
+		}
 		// Sleep a tiny bit to let the filesystem catch up
 		if i > 0 {
 			time.Sleep(10 * time.Millisecond)
