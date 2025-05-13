@@ -96,39 +96,3 @@ func TestUpdateGHESBaseURL(t *testing.T) {
 		})
 	}
 }
-
-func TestExtractOrgDatabaseID(t *testing.T) {
-	tests := []struct {
-		name   string
-		nodeID string
-		want   string
-	}{
-		{
-			name:   "valid node ID",
-			nodeID: "04:Organization12345",
-			want:   "12345",
-		},
-		{
-			name:   "invalid format",
-			nodeID: "Organization12345",
-			want:   "",
-		},
-		{
-			name:   "empty string",
-			nodeID: "",
-			want:   "",
-		},
-		{
-			name:   "no numeric part",
-			nodeID: "04:Organization",
-			want:   "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ExtractOrgDatabaseID(tt.nodeID)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}

@@ -94,20 +94,3 @@ func (c *Clients) UpdateGHESBaseURL(baseURL string) error {
 	c.GHESClient.BaseURL = parsedURL
 	return nil
 }
-
-// ExtractOrgDatabaseID extracts the numeric organization ID from a GraphQL node ID
-// This is useful for GitHub Owned Storage operations which require the numeric ID
-//
-// Parameters:
-//   - nodeID: The GraphQL node ID (usually in format like "04:Organization12345")
-//
-// Returns:
-//   - string: The extracted numeric ID, or empty string if not found
-func ExtractOrgDatabaseID(nodeID string) string {
-	parts := strings.Split(nodeID, ":")
-	if len(parts) > 1 {
-		// Extract numeric part from the second portion (after "Organization")
-		return strings.TrimPrefix(parts[1], "Organization")
-	}
-	return ""
-}

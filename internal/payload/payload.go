@@ -130,6 +130,7 @@ var MigrationStages = []string{
 	"validation", // Repository validation
 	"setup",      // Migration setup and source creation
 	"archive",    // Archive generation and export
+	"storage",    // Storage upload (e.g., GitHub Owned Storage)
 	"migration",  // Repository migration to target
 }
 

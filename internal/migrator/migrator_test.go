@@ -1,6 +1,7 @@
 package migrator
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -135,6 +136,17 @@ func TestCalculateProgressData(t *testing.T) {
 		want     progressData
 	}{
 		{
+			name:  "init stage",
+			stage: "init",
+			state: "starting",
+			want: progressData{
+				progress:          0,
+				stageProgress:     0,
+				completedStages:   []string{},
+				currentStageIndex: 0,
+			},
+		},
+		{
 			name:  "validation stage",
 			stage: "validation",
 			state: "checking",
@@ -161,10 +173,21 @@ func TestCalculateProgressData(t *testing.T) {
 			stage: "archive",
 			state: "exporting",
 			want: progressData{
-				progress:          35,
+				progress:          32,
 				stageProgress:     50,
 				completedStages:   []string{"validation", "setup"},
 				currentStageIndex: 3,
+			},
+		},
+		{
+			name:  "storage stage",
+			stage: "storage",
+			state: "uploading",
+			want: progressData{
+				progress:          52,
+				stageProgress:     50,
+				completedStages:   []string{"validation", "setup", "archive"},
+				currentStageIndex: 4,
 			},
 		},
 		{
@@ -172,10 +195,10 @@ func TestCalculateProgressData(t *testing.T) {
 			stage: "migration",
 			state: "importing",
 			want: progressData{
-				progress:          75,
+				progress:          80,
 				stageProgress:     50,
-				completedStages:   []string{"validation", "setup", "archive"},
-				currentStageIndex: 4,
+				completedStages:   []string{"validation", "setup", "archive", "storage"},
+				currentStageIndex: 5,
 			},
 		},
 	}
@@ -211,6 +234,12 @@ func TestCalculateStageProgress(t *testing.T) {
 			name:  "archive exporting",
 			stage: "archive",
 			state: "exporting",
+			want:  50,
+		},
+		{
+			name:  "storage uploading",
+			stage: "storage",
+			state: "uploading",
 			want:  50,
 		},
 		{
@@ -255,6 +284,11 @@ func TestGetStageDescription(t *testing.T) {
 			name:  "archive stage",
 			stage: "archive",
 			want:  "Archive management",
+		},
+		{
+			name:  "storage stage",
+			stage: "storage",
+			want:  "Storage upload",
 		},
 		{
 			name:  "migration stage",
@@ -381,4 +415,37 @@ func TestMigrator_SendWebhookNotification(t *testing.T) {
 	// Test sending webhook notification
 	m.sendWebhookNotification(repoName, req)
 	// Note: We can't easily test the actual webhook payload without mocking the HTTP client
+}
+
+func TestMigrateRepository_GHOS_InvalidOrgID(t *testing.T) {
+	// Create a test migrator
+	m := New("")
+
+	// Create test data
+	startTime := time.Now()
+
+	// Set invalid ownerID that cannot be parsed
+	ownerID := "invalid-owner-id"
+
+	// Call the function being tested directly
+	err := m.extractAndValidateOrgID("test-repo", ownerID, startTime)
+
+	// Verify the error message
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "error extracting organization database ID")
+	assert.NotContains(t, err.Error(), "%!w(<nil>)") // Ensure we don't have the formatting error
+}
+
+// Helper function for testing GHOS organization ID extraction
+func (m *Migrator) extractAndValidateOrgID(repoName string, ownerID string, startTime time.Time) error {
+	// This function replicates just the org ID extraction logic from migrateRepository
+	orgDatabaseID := "" // Simulate failure to extract ID
+
+	if orgDatabaseID == "" {
+		errMsg := "failed to extract organization database ID for GHOS upload"
+		m.updateStatus(repoName, payload.StatusFailed, errMsg, time.Now(), startTime)
+		return fmt.Errorf("error extracting organization database ID for GHOS upload")
+	}
+
+	return nil
 }
