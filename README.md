@@ -8,6 +8,8 @@ A server application that provides an HTTP API for migrating repositories from G
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage](#usage)
+  - [Docker Deployment](#docker-deployment)
+  - [Migration Process](#migration-process)
 - [API Reference](#api-reference)
 - [Webhooks](#webhooks)
 - [Security](#security)
@@ -34,6 +36,9 @@ A server application that provides an HTTP API for migrating repositories from G
 
 ## Prerequisites
 
+<details>
+<summary>Click to expand</summary>
+
 - Go 1.21 or later
 - Access to GitHub Enterprise Server (GHES) instance
 - Access to GitHub Enterprise Cloud (GHEC) organization
@@ -44,10 +49,12 @@ A server application that provides an HTTP API for migrating repositories from G
 - Port availability for the server (default: 8080)
 - Sufficient disk space for temporary files
 - Network bandwidth for repository transfers
+</details>
 
 ## Installation
 
-### From Source
+<details>
+<summary>From Source</summary>
 
 1. Clone the repository:
 ```bash
@@ -59,8 +66,10 @@ cd gh-ghes-2-ghec
 ```bash
 go build -o gh-ghes-2-ghec
 ```
+</details>
 
-### Using the Makefile
+<details>
+<summary>Using the Makefile</summary>
 
 The project includes a Makefile to simplify building and testing:
 
@@ -86,14 +95,18 @@ make docker-run
 # Show all available commands
 make help
 ```
+</details>
 
-### Using the GitHub CLI
+<details>
+<summary>Using the GitHub CLI</summary>
 
 ```bash
 gh extension install kuhlman-labs/gh-ghes-2-ghec
 ```
+</details>
 
-### Docker Installation
+<details>
+<summary>Using Docker</summary>
 
 ```bash
 # Pull from GitHub Container Registry
@@ -106,10 +119,12 @@ docker run -p 8080:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
 docker pull ghcr.io/kuhlman-labs/gh-ghes-2-ghec:v1.0.0
 docker run -p 8080:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:v1.0.0
 ```
+</details>
 
 ## Configuration
 
-### Server Configuration
+<details>
+<summary>Server Configuration</summary>
 
 Create or modify a `config.yaml` file in the root directory:
 
@@ -132,7 +147,32 @@ logging:
   file: "/var/log/migrations.log"   # Log file path (if output is file)
 ```
 
-### Command Line Options
+The application uses a configuration template (`config.yaml.template`) that is used to generate the default configuration during the Docker build. This template includes these default settings:
+
+```yaml
+server:
+  port: 8080
+  shutdown_timeout: 30
+  read_timeout: 15
+  write_timeout: 15
+  rate_limit: 60
+
+webhook:
+  url: ""
+
+logging:
+  level: "info"
+
+tracing:
+  enabled: false
+  endpoint: "localhost:4317"
+  service_name: "gh-ghes-2-ghec"
+  sample_rate: 1.0
+```
+</details>
+
+<details>
+<summary>Command Line Options</summary>
 
 ```bash
 ./gh-ghes-2-ghec [flags]
@@ -145,6 +185,7 @@ Flags:
   --temp-dir string            Directory for temporary files
   --max-concurrent int         Maximum number of concurrent migrations
 ```
+</details>
 
 ## Usage
 
@@ -156,11 +197,28 @@ Flags:
 
 The server will start on the configured port and begin listening for migration requests.
 
-### Running with Docker
+### Docker Deployment
 
-The application can be run as a Docker container, which provides isolation and simplified deployment:
+<details>
+<summary>Building the Docker Image</summary>
 
-#### Basic Usage
+To build the Docker image from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/kuhlman-labs/gh-ghes-2-ghec.git
+cd gh-ghes-2-ghec
+
+# Build the Docker image
+docker build -t gh-ghes-2-ghec .
+
+# Run the container
+docker run -p 8080:8080 gh-ghes-2-ghec
+```
+</details>
+
+<details>
+<summary>Basic Usage</summary>
 
 ```bash
 # Pull the latest image
@@ -169,6 +227,10 @@ docker pull ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
 # Run with default configuration
 docker run -p 8080:8080 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
 ```
+</details>
+
+<details>
+<summary>Configuration Options</summary>
 
 #### Custom Port Mapping
 
@@ -209,18 +271,18 @@ docker run -d --name ghes-migration-server \
   ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
 ```
 
-#### Environment Variables
-
-You can pass configuration via environment variables:
+#### Using Environment Variables
 
 ```bash
 docker run -p 8080:8080 \
-  -e LOG_LEVEL=debug \
-  -e WEBHOOK_URL=https://your-webhook-url \
+  -e SERVER_PORT=9000 \
+  -e LOGGING_LEVEL=debug \
   ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
 ```
+</details>
 
-#### Docker Compose Example
+<details>
+<summary>Docker Compose Example</summary>
 
 Create a `docker-compose.yml` file:
 
@@ -229,12 +291,17 @@ version: '3'
 services:
   migration-server:
     image: ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+    # Or build from source
+    # build: .
     ports:
       - "8080:8080"
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./logs:/var/log
       - ./temp:/tmp/migrations
+    environment:
+      - SERVER_PORT=8080
+      - LOGGING_LEVEL=info
     restart: unless-stopped
 ```
 
@@ -243,8 +310,12 @@ Run with Docker Compose:
 ```bash
 docker-compose up -d
 ```
+</details>
 
 ### Validating Migration Requests
+
+<details>
+<summary>Click to expand</summary>
 
 Before submitting a migration request, you can validate it:
 
@@ -267,8 +338,12 @@ Summary:
   Repositories: 5
   Maximum Duration: Default (24h)
 ```
+</details>
 
 ### Migration Process
+
+<details>
+<summary>Click to expand</summary>
 
 The migration process consists of several stages:
 
@@ -291,10 +366,12 @@ The migration process consists of several stages:
    - Transfer repository data
    - Migrate metadata
    - Verify migration success
+</details>
 
 ## API Reference
 
-### Start Migration
+<details>
+<summary>Start Migration</summary>
 
 ```
 POST /migrate
@@ -323,8 +400,10 @@ Field Descriptions:
 - `gh_cloud_token`: Token for authenticating with GitHub Enterprise Cloud
 - `max_duration` (optional): Maximum duration for the migration
 - `use_ghos` (optional): When set to `true`, uses GitHub Owned Storage (GHOS) for migration archives. This is required for some enterprises and enables handling of large archives (>5GB) through chunked uploads.
+</details>
 
-### Check Migration Status
+<details>
+<summary>Check Migration Status</summary>
 
 For a specific repository:
 ```
@@ -335,21 +414,30 @@ For all repositories:
 ```
 GET /status
 ```
+</details>
 
-### Health Check
+<details>
+<summary>Health Check</summary>
+
 ```
 GET /health
 ```
+</details>
 
 ## Webhooks
+
+<details>
+<summary>Overview and Benefits</summary>
 
 Webhook notifications provide real-time updates about migration progress and status changes. They are particularly useful for:
 - Monitoring migrations in a central dashboard
 - Integrating with existing notification systems
 - Triggering automated actions based on migration events
 - Maintaining an audit trail of migration activities
+</details>
 
-### Configuration Options
+<details>
+<summary>Configuration Options</summary>
 
 Webhooks can be configured in two ways:
 
@@ -366,8 +454,10 @@ Webhooks can be configured in two ways:
    ```bash
    ./gh-ghes-2-ghec --webhook-url="https://your-webhook-url"
    ```
+</details>
 
-### Common Use Cases
+<details>
+<summary>Common Use Cases</summary>
 
 1. **Status Dashboard**:
    - Update a central dashboard with migration progress
@@ -389,8 +479,12 @@ Webhooks can be configured in two ways:
    - Log all migration events
    - Track migration history
    - Generate compliance reports
+</details>
 
 ## Security
+
+<details>
+<summary>Click to expand</summary>
 
 ### Token Protection
 - Tokens are sanitized in logs
@@ -406,10 +500,12 @@ Webhooks can be configured in two ways:
 - Comprehensive input validation
 - Connection testing before migration
 - Duration limits to prevent resource exhaustion
+</details>
 
 ## Troubleshooting
 
-### Common Issues
+<details>
+<summary>Common Issues</summary>
 
 1. **Webhook Delivery Issues**:
    - Check webhook URL accessibility
@@ -430,18 +526,22 @@ Webhooks can be configured in two ways:
    - Check network latency
    - Review concurrent migration limits
    - Verify webhook processing times
+</details>
 
-### Logging
+<details>
+<summary>Logging</summary>
 
 Logs are written to:
 - Standard output (with color-coded formatting)
 - Rotating log files in `/tmp/gh-ghes-2-ghec/logs/`
 
 Log files are automatically rotated when they reach 10MB, with up to 5 backup files kept for 30 days.
+</details>
 
 ## Architecture
 
-### Components
+<details>
+<summary>Components</summary>
 
 1. **API Server**
    - Handles HTTP requests
@@ -462,8 +562,10 @@ Log files are automatically rotated when they reach 10MB, with up to 5 backup fi
    - Manages webhook delivery
    - Handles retries
    - Provides delivery status
+</details>
 
-### Data Flow
+<details>
+<summary>Data Flow</summary>
 
 1. **Migration Request**
    ```
@@ -484,6 +586,7 @@ Log files are automatically rotated when they reach 10MB, with up to 5 backup fi
    ```
    Migration Engine -> Webhook System -> External Systems
    ```
+</details>
 
 ## Contributing
 
@@ -491,9 +594,10 @@ Please see the [CONTRIBUTING.md](CONTRIBUTING.md) guide for details on how to co
 
 ## CI/CD
 
-This project uses GitHub Actions for continuous integration and delivery:
+<details>
+<summary>Docker Image Publishing</summary>
 
-### Docker Image Publishing
+This project uses GitHub Actions for continuous integration and delivery:
 
 The repository is configured to automatically build and publish Docker images to GitHub Container Registry (GHCR) when a new tag is pushed. The workflow:
 
@@ -516,6 +620,7 @@ Once the workflow completes, the image will be available at:
 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:1.2.3
 ghcr.io/kuhlman-labs/gh-ghes-2-ghec:1.2
 ```
+</details>
 
 ## License
 

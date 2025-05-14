@@ -250,7 +250,7 @@ func TestSanitizeToken(t *testing.T) {
 }
 
 // Helper function to set up a test server
-func setupTestServer(t *testing.T) *Server {
+func setupTestServer(_ *testing.T) *Server {
 	cfg := &config.Config{
 		Server: config.ServerConfig{
 			Port:         8080,

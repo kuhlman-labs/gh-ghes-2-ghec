@@ -22,6 +22,12 @@ type Config struct {
 	Webhook WebhookConfig `mapstructure:"webhook"`
 	Logging LoggingConfig `mapstructure:"logging"`
 	Clients *Clients      // GitHub API clients
+	Tracing struct {
+		Enabled     bool    `mapstructure:"enabled"`
+		Endpoint    string  `mapstructure:"endpoint"`
+		ServiceName string  `mapstructure:"service_name"`
+		SampleRate  float64 `mapstructure:"sample_rate"`
+	} `mapstructure:"tracing"`
 }
 
 // ServerConfig holds server-specific configuration options.
@@ -68,6 +74,12 @@ type ConfigForWriting struct {
 	Logging struct {
 		Level string `yaml:"level"`
 	} `yaml:"logging"`
+	Tracing struct {
+		Enabled     bool    `yaml:"enabled"`
+		Endpoint    string  `yaml:"endpoint"`
+		ServiceName string  `yaml:"service_name"`
+		SampleRate  float64 `yaml:"sample_rate"`
+	} `yaml:"tracing"`
 }
 
 // Default configuration constants
@@ -225,6 +237,10 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Server.RateLimit = cfg.Server.RateLimit
 	writeCfg.Webhook.URL = cfg.Webhook.URL
 	writeCfg.Logging.Level = cfg.Logging.Level
+	writeCfg.Tracing.Enabled = cfg.Tracing.Enabled
+	writeCfg.Tracing.Endpoint = cfg.Tracing.Endpoint
+	writeCfg.Tracing.ServiceName = cfg.Tracing.ServiceName
+	writeCfg.Tracing.SampleRate = cfg.Tracing.SampleRate
 
 	return writeCfg
 }

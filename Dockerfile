@@ -11,8 +11,11 @@ RUN apk add --no-cache git ca-certificates tzdata
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the source code
+# Copy the source code and config template
 COPY . .
+
+# Generate config file from template
+RUN cp config.yaml.template config.yaml
 
 # Build the application with version information
 ARG VERSION=dev

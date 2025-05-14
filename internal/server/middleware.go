@@ -4,14 +4,19 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/sanitization"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
@@ -134,6 +139,144 @@ func (m *Middleware) RequestSizeLimit(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// SanitizeInput sanitizes various inputs in HTTP requests to prevent injection attacks.
+// It sanitizes URL parameters, headers, and JSON request bodies.
+func (m *Middleware) SanitizeInput(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Sanitize query parameters
+		if r.URL.RawQuery != "" {
+			sanitizedQuery := sanitizeQueryParams(r.URL.Query())
+			r.URL.RawQuery = sanitizedQuery.Encode()
+		}
+
+		// Sanitize headers
+		sanitizeHeaders(r.Header)
+
+		// Sanitize body for POST/PUT/PATCH requests
+		if (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch) &&
+			strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+			var err error
+			r.Body, err = sanitizeJSONBody(r.Body)
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				n, err := fmt.Fprintf(w, `{"error": "Invalid request body format"}`)
+				if err != nil {
+					m.logger.Warn("Failed to write response", "error", err)
+				} else if n == 0 {
+					m.logger.Warn("Zero bytes written in response")
+				}
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sanitizeQueryParams sanitizes all query parameters to prevent injection attacks.
+func sanitizeQueryParams(query url.Values) url.Values {
+	sanitized := url.Values{}
+	for key, values := range query {
+		sanitizedKey := sanitization.SanitizeGenericInput(key)
+		for _, value := range values {
+			// Apply both sanitization functions for stronger protection
+			sanitizedValue := sanitization.SanitizeGenericInput(value)
+			sanitizedValue = sanitization.SanitizeHTML(sanitizedValue)
+			sanitized.Add(sanitizedKey, sanitizedValue)
+		}
+	}
+	return sanitized
+}
+
+// sanitizeHeaders sanitizes header values to prevent header injection attacks.
+func sanitizeHeaders(header http.Header) {
+	for key, values := range header {
+		for i, value := range values {
+			header[key][i] = sanitization.SanitizeHeader(value)
+		}
+	}
+}
+
+// sanitizeJSONBody sanitizes a JSON request body.
+// It reads the body, parses it as JSON, sanitizes fields, and returns a new body reader.
+func sanitizeJSONBody(body io.ReadCloser) (io.ReadCloser, error) {
+	// Read the body
+	bodyBytes, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Close the original body and check for errors
+	if err := body.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close request body: %w", err)
+	}
+
+	// Parse as JSON
+	var data map[string]interface{}
+	if err := json.Unmarshal(bodyBytes, &data); err != nil {
+		return nil, err
+	}
+
+	// Sanitize the data recursively
+	sanitizedData := sanitizeJSONObject(data)
+
+	// Marshal back to JSON
+	sanitizedBytes, err := json.Marshal(sanitizedData)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return a new body reader
+	return io.NopCloser(bytes.NewReader(sanitizedBytes)), nil
+}
+
+// sanitizeJSONObject recursively sanitizes a JSON object's keys and string values.
+func sanitizeJSONObject(data map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	for key, value := range data {
+		sanitizedKey := sanitization.SanitizeJSONKey(key)
+
+		switch v := value.(type) {
+		case string:
+			// Apply both HTML and generic sanitization for better protection
+			sanitized := sanitization.SanitizeGenericInput(v)
+			sanitized = sanitization.SanitizeHTML(sanitized)
+			result[sanitizedKey] = sanitized
+		case []interface{}:
+			result[sanitizedKey] = sanitizeJSONArray(v)
+		case map[string]interface{}:
+			result[sanitizedKey] = sanitizeJSONObject(v)
+		default:
+			// For other types (numbers, booleans, null), keep as is
+			result[sanitizedKey] = v
+		}
+	}
+	return result
+}
+
+// sanitizeJSONArray sanitizes all elements in a JSON array.
+func sanitizeJSONArray(data []interface{}) []interface{} {
+	result := make([]interface{}, len(data))
+	for i, value := range data {
+		switch v := value.(type) {
+		case string:
+			// Apply both HTML and generic sanitization for better protection
+			sanitized := sanitization.SanitizeGenericInput(v)
+			sanitized = sanitization.SanitizeHTML(sanitized)
+			result[i] = sanitized
+		case []interface{}:
+			result[i] = sanitizeJSONArray(v)
+		case map[string]interface{}:
+			result[i] = sanitizeJSONObject(v)
+		default:
+			// For other types (numbers, booleans, null), keep as is
+			result[i] = v
+		}
+	}
+	return result
 }
 
 // RateLimiter implements a basic rate limiter per IP address to prevent abuse.

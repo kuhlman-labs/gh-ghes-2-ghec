@@ -17,7 +17,10 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
-	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/tracing"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Server handles HTTP requests for repository migrations.
@@ -74,7 +77,7 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 }
 
 // withBaseMiddleware applies the base middleware stack (used for all endpoints).
-// The base middleware includes request logging and security headers.
+// The base middleware includes request logging, tracing and security headers.
 //
 // Parameters:
 //   - next: The handler to wrap with middleware.
@@ -82,9 +85,13 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 // Returns:
 //   - http.Handler: The handler wrapped with base middleware.
 func (s *Server) withBaseMiddleware(next http.Handler) http.Handler {
-	return CombineMiddleware(next,
+	// Apply tracing middleware first to capture the entire request lifecycle
+	tracedHandler := tracing.TraceHTTP(next, "http_server")
+
+	return CombineMiddleware(tracedHandler,
 		s.middleware.LogRequest,
 		s.middleware.SecurityHeaders,
+		s.middleware.SanitizeInput,
 	)
 }
 
@@ -102,6 +109,7 @@ func (s *Server) withAPIMiddleware(next http.Handler) http.Handler {
 	middlewareStack := []func(http.Handler) http.Handler{
 		s.middleware.LogRequest,
 		s.middleware.SecurityHeaders,
+		s.middleware.SanitizeInput,
 		s.middleware.JSONOnly,
 		s.middleware.RequestSizeLimit,
 	}
@@ -110,6 +118,11 @@ func (s *Server) withAPIMiddleware(next http.Handler) http.Handler {
 	if s.config.Server.RateLimit > 0 {
 		middlewareStack = append(middlewareStack,
 			s.middleware.RateLimiter(s.config.Server.RateLimit))
+	}
+
+	// Apply tracing middleware only if enabled
+	if s.config.Tracing.Enabled {
+		next = tracing.TraceHTTP(next, "http_api")
 	}
 
 	return CombineMiddleware(next, middlewareStack...)
@@ -151,6 +164,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Add trace attribute for health check
+	span := trace.SpanFromContext(r.Context())
+	span.SetAttributes(attribute.String("endpoint", "health"))
+
 	s.writeJSON(w, r, http.StatusOK, map[string]string{
 		"status": "healthy",
 	})
@@ -160,27 +177,45 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // It returns the status of migrations for all repositories
 // or for a specific repository if a "repository" query parameter is provided.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	_, span := tracing.StartSpan(r.Context(), "get_migration_status")
+	defer span.End()
+
 	if r.Method != http.MethodGet {
 		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+		span.SetStatus(codes.Error, "Method not allowed")
 		return
 	}
 
 	// Get repository name from query parameter
 	repoName := r.URL.Query().Get("repository")
+	if repoName != "" {
+		span.SetAttributes(attribute.String("repository", repoName))
+	}
 
 	if repoName != "" {
 		// Get status for specific repository
 		status := s.migrator.GetMigrationStatus(repoName)
 		if status == nil {
-			s.writeError(w, r, http.StatusNotFound, fmt.Sprintf("No migration found for repository %s", repoName))
+			errMsg := fmt.Sprintf("No migration found for repository %s", repoName)
+			s.writeError(w, r, http.StatusNotFound, errMsg)
+			span.SetStatus(codes.Error, errMsg)
 			return
 		}
+
+		// Add migration status details to span
+		span.SetAttributes(
+			attribute.String("migration.id", status.MigrationID),
+			attribute.String("migration.status", status.Status),
+			attribute.Int("migration.progress", status.Progress),
+		)
+
 		s.writeJSON(w, r, http.StatusOK, status)
 		return
 	}
 
 	// Return all statuses
 	statuses := s.migrator.GetAllMigrationStatuses()
+	span.SetAttributes(attribute.Int("migration.count", len(statuses)))
 	s.writeJSON(w, r, http.StatusOK, statuses)
 }
 
@@ -188,8 +223,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // It validates the request, starts the migration process in the background,
 // and returns an acceptance response. The actual migration happens asynchronously.
 func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.StartSpan(r.Context(), "start_migration")
+	defer span.End()
+
 	if r.Method != http.MethodPost {
 		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+		span.SetStatus(codes.Error, "Method not allowed")
 		return
 	}
 
@@ -197,154 +236,169 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if !strings.Contains(contentType, "application/json") {
 		s.writeError(w, r, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
+		span.SetStatus(codes.Error, "Unsupported media type")
 		return
 	}
 
-	// Limit request body size to 1MB
-	r.Body = http.MaxBytesReader(w, r.Body, validation.MaxRequestBodySizeBytes)
-
-	// Read and decode the request body
+	// Read request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("Failed to read request body: %v", err))
+		s.writeError(w, r, http.StatusBadRequest, "Failed to read request body")
+		tracing.RecordError(ctx, err)
 		return
 	}
 
-	// Check if request body is empty
-	if len(body) == 0 {
-		s.writeError(w, r, http.StatusBadRequest, "Request body is empty")
-		return
+	if err := r.Body.Close(); err != nil {
+		s.logger.Warn("Failed to close request body", "error", err)
 	}
 
+	// Parse request
 	var req payload.MigrationRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("Invalid JSON: %v", err))
+		s.writeError(w, r, http.StatusBadRequest, "Invalid JSON payload")
+		tracing.RecordError(ctx, err)
 		return
 	}
 
-	// Validate request
+	// Add migration request details to span
+	span.SetAttributes(
+		attribute.String("migration.source_org", req.SourceOrg),
+		attribute.String("migration.target_org", req.TargetOrg),
+		attribute.Int("migration.repositories_count", len(req.Repositories)),
+	)
+
+	// Validate the request
 	if err := req.Validate(); err != nil {
 		s.writeError(w, r, http.StatusBadRequest, err.Error())
+		tracing.RecordError(ctx, err)
 		return
 	}
 
-	// Test connection to GHES if needed (optional, can be resource-intensive)
-	// if r.URL.Query().Get("test_connection") == "true" {
-	//    if err := validation.TestGHESURL(req.GHESBaseURL, req.GHESToken); err != nil {
-	//        s.writeError(w, r, http.StatusBadRequest, fmt.Sprintf("GHES connection test failed: %v", err))
-	//        return
-	//    }
-	// }
+	// Check if GHES token is provided when needed
+	ghesBaseURL := req.GHESBaseURL
+	if ghesBaseURL != "" && req.GHESToken == "" {
+		s.writeError(w, r, http.StatusBadRequest, "GHES token is required when using GHES base URL")
+		span.SetStatus(codes.Error, "Missing GHES token")
+		return
+	}
 
-	// Sanitize tokens for logging (only show first/last few characters)
-	sanitizedGHESToken := sanitizeToken(req.GHESToken)
-	sanitizedGHCloudToken := sanitizeToken(req.GHCloudToken)
-
-	// Log the migration request details with sanitized tokens
+	// Log migration request
 	s.logger.Info("Migration request received",
 		"source_org", req.SourceOrg,
 		"target_org", req.TargetOrg,
-		"repositories", len(req.Repositories),
-		"ghes_base_url", req.GHESBaseURL,
-		"ghes_token", sanitizedGHESToken,
-		"gh_cloud_token", sanitizedGHCloudToken,
+		"repo_count", len(req.Repositories),
+		"use_ghos", req.UseGHOS,
 	)
 
-	// Start migration in background
+	// Start migration in a separate goroutine
 	go func() {
-		var ctx context.Context
-		var cancel context.CancelFunc
-
-		// Use the custom timeout from the request if provided, otherwise use no timeout
-		if req.MaxDuration != "" {
-			// We already validated the duration in the request validation
-			maxDuration := req.GetMaxDuration()
-			s.logger.Info("Using custom timeout",
-				"max_duration", req.MaxDuration,
-				"repositories", len(req.Repositories),
-			)
-			ctx, cancel = context.WithTimeout(context.Background(), maxDuration)
-		} else {
-			// No timeout - for very large repositories
-			s.logger.Info("No timeout configured",
-				"repositories", len(req.Repositories),
-			)
-			ctx, cancel = context.WithCancel(context.Background())
+		// Create a new context with correlation ID for the background task
+		bgCtx := logging.ContextWithCorrelationID(context.Background())
+		if id := logging.GetCorrelationID(ctx); id != "" {
+			bgCtx = context.WithValue(bgCtx, logging.KeyCorrelationID, id)
 		}
 
-		// Migrator will take ownership of the context and handle its lifecycle
-		if err := s.migrator.StartMigration(ctx, &req, cancel); err != nil {
+		// Create a cancel function for the background context
+		bgCtx, cancel := context.WithCancel(bgCtx)
+
+		// Start the migration
+		err := s.migrator.StartMigration(bgCtx, &req, cancel)
+		if err != nil {
 			s.logger.Error("Failed to start migration",
 				"error", err,
 				"source_org", req.SourceOrg,
 				"target_org", req.TargetOrg,
 			)
-			// Only cancel if there was an error starting the migration
-			cancel()
+			cancel() // Cancel if there was an error starting
 		}
 	}()
 
-	s.writeJSON(w, r, http.StatusAccepted, map[string]string{
-		"status": "migration started",
-	})
+	// Return accepted response
+	resp := map[string]interface{}{
+		"status":       "accepted",
+		"message":      fmt.Sprintf("Migration started for %d repositories", len(req.Repositories)),
+		"timestamp":    time.Now(),
+		"request_id":   logging.GetCorrelationID(ctx),
+		"repositories": req.Repositories,
+	}
+
+	span.SetStatus(codes.Ok, "Migration accepted")
+	s.writeJSON(w, r, http.StatusAccepted, resp)
 }
 
-// sanitizeToken masks a token for secure logging, showing only the first and last few characters.
-// This prevents accidental exposure of sensitive credentials in logs.
-//
-// Parameters:
-//   - token: The token to sanitize.
-//
-// Returns:
-//   - string: The sanitized token with middle characters replaced by "...".
+// sanitizeToken redacts most of a token for logging purposes,
+// showing only the first 4 and last 4 characters.
 func sanitizeToken(token string) string {
-	if len(token) <= 8 {
+	if len(token) < 8 {
 		return "***"
 	}
 	return token[:4] + "..." + token[len(token)-4:]
 }
 
 // writeJSON writes a JSON response with the given status code and data.
-// It handles serialization of the data and sets appropriate headers.
-//
-// Parameters:
-//   - w: HTTP response writer.
-//   - r: HTTP request.
-//   - statusCode: HTTP status code to return.
-//   - data: Data to serialize as JSON.
+// It handles the error case internally and logs any issues.
 func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) {
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
-	if data != nil {
-		if err := json.NewEncoder(w).Encode(data); err != nil {
-			s.logger.Error("Failed to encode JSON response",
-				"error", err,
-				"path", r.URL.Path,
-			)
-		}
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		s.logger.Error("Failed to encode JSON response",
+			"error", err,
+			"status_code", statusCode,
+		)
+		tracing.RecordError(ctx, err)
+		span.SetStatus(codes.Error, "Failed to encode JSON response")
 	}
+
+	// Add response information to span
+	span.SetAttributes(attribute.Int("http.status_code", statusCode))
 }
 
 // writeError writes a JSON error response with the given status code and message.
-// It also logs the error for monitoring and debugging.
-//
-// Parameters:
-//   - w: HTTP response writer.
-//   - r: HTTP request.
-//   - statusCode: HTTP status code to return.
-//   - message: Error message to include in the response.
+// It also logs the error at the appropriate level based on the status code.
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode int, message string) {
-	s.logger.Error("Request error",
-		"status", statusCode,
-		"path", r.URL.Path,
-		"method", r.Method,
-		"error", message,
-	)
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 
+	// Log client errors at INFO level, server errors at ERROR level
+	if statusCode >= 500 {
+		s.logger.Error("Server error",
+			"status_code", statusCode,
+			"message", message,
+		)
+	} else {
+		s.logger.Info("Client error",
+			"status_code", statusCode,
+			"message", message,
+		)
+	}
+
+	// Add error information to span
+	span.SetAttributes(
+		attribute.Int("http.status_code", statusCode),
+		attribute.String("error.message", message),
+	)
+	span.SetStatus(codes.Error, message)
+
+	// Construct error response
+	errorResp := map[string]interface{}{
+		"status":     "error",
+		"message":    message,
+		"code":       statusCode,
+		"timestamp":  time.Now(),
+		"request_id": logging.GetCorrelationID(ctx),
+	}
+
+	// Write JSON response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	if _, err := fmt.Fprintf(w, `{"error": %q}`, message); err != nil {
-		s.logger.Warn("Failed to write error response", "error", err)
+	if err := json.NewEncoder(w).Encode(errorResp); err != nil {
+		s.logger.Error("Failed to encode error response",
+			"error", err,
+		)
+		tracing.RecordError(ctx, err)
 	}
 }
