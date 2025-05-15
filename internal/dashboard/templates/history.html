@@ -13,6 +13,18 @@
     </div>
 
     {{if .Migrations}}
+        <div class="table-controls">
+            <div class="page-size-selector">
+                <label for="history-page-size">Show:</label>
+                <select id="history-page-size" name="page-size" hx-get="/dashboard/history" hx-target=".dashboard-history" hx-swap="outerHTML" hx-trigger="change">
+                    <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
+                    <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
+                    <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
+                    <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
+                </select>
+            </div>
+        </div>
+        
         <div class="dashboard-table" id="history-migrations-table">
             <table>
                 <thead>

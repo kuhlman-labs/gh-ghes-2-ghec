@@ -112,10 +112,11 @@ footer p {
 }
 
 .dashboard-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    display: flex;
+    justify-content: center;
     gap: 1rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
+    flex-wrap: nowrap;
 }
 
 .stat-card {
@@ -124,6 +125,9 @@ footer p {
     padding: 1.5rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     text-align: center;
+    flex: 1;
+    min-width: 150px;
+    max-width: 250px;
 }
 
 .stat-card h3 {
@@ -150,6 +154,7 @@ footer p {
     justify-content: flex-end;
     align-items: center;
     margin-bottom: 1rem;
+    gap: 1.5rem;
 }
 
 .page-size-selector {
@@ -158,9 +163,11 @@ footer p {
     gap: 0.5rem;
 }
 
-.page-size-selector label {
+.page-size-selector label,
+.auto-refresh-control label {
     font-size: 0.875rem;
     color: var(--text-muted);
+    margin: 0;
 }
 
 .page-size-selector select {
@@ -178,6 +185,26 @@ footer p {
     box-shadow: 0 0 0 3px rgba(3, 102, 214, 0.1);
 }
 
+.auto-refresh-control {
+    display: flex;
+    align-items: center;
+}
+
+.auto-refresh-control label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+}
+
+.auto-refresh-control input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -188,6 +215,7 @@ table td {
     padding: 0.75rem 1rem;
     text-align: left;
     border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
 }
 
 table th {
@@ -200,9 +228,23 @@ table tr:last-child td {
 }
 
 .empty-state {
-    padding: 2rem;
+    padding: 3rem 2rem;
     text-align: center;
     color: var(--text-muted);
+}
+
+.empty-state p {
+    margin: 0.5rem 0;
+}
+
+.empty-state a {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.empty-state a:hover {
+    text-decoration: underline;
 }
 
 /* Buttons */
@@ -254,10 +296,14 @@ table tr:last-child td {
     height: 0.75rem;
     border-radius: 50%;
     margin-right: 0.5rem;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
 }
 
 .status-indicator.status-running,
-.status-indicator.status-active {
+.status-indicator.status-active,
+.status-indicator.status-in_progress {
     background-color: var(--primary-color);
     box-shadow: 0 0 0 2px rgba(3, 102, 214, 0.2);
 }
@@ -286,7 +332,8 @@ table tr:last-child td {
     background-color: #eaecef;
     border-radius: 0.25rem;
     overflow: hidden;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+    width: 100%;
 }
 
 .progress-value,
@@ -295,6 +342,13 @@ table tr:last-child td {
     background-color: var(--primary-color);
     border-radius: 0.25rem;
     transition: width 0.3s ease;
+}
+
+.progress-text {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    display: inline-block;
 }
 
 .status-succeeded .progress-value,
@@ -461,7 +515,7 @@ table tr:last-child td {
 }
 
 /* Status-specific row styling */
-tr.status-running, tr.status-active {
+tr.status-running, tr.status-active, tr.status-in_progress {
     background-color: rgba(3, 102, 214, 0.05);
 }
 
@@ -577,4 +631,57 @@ tr.status-pending {
     background-color: #d1fae5;
     border: 1px solid #a7f3d0;
     color: #065f46;
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+    .dashboard-stats {
+        overflow-x: auto;
+        padding-bottom: 0.5rem; /* For scrollbar space */
+    }
+    
+    .stat-card {
+        min-width: 120px;
+    }
+    
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .dashboard-controls {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .table-controls {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .stat-card {
+        min-width: 110px;
+        padding: 1rem;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+    }
+}
+
+/* Section Styling */
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0 0 1rem 0;
+    color: var(--text-color);
+}
+
+.stats-section,
+.active-migrations-section {
+    margin-bottom: 2rem;
 } 

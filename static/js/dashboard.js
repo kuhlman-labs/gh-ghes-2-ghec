@@ -7,7 +7,27 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.addEventListener('htmx:afterSwap', function() {
         updateProgressBars();
     });
+
+    // Set up the auto-refresh toggle
+    const autoRefreshCheckbox = document.getElementById('auto-refresh');
+    if (autoRefreshCheckbox) {
+        autoRefreshCheckbox.addEventListener('change', function() {
+            // Force a refresh immediately when turning auto-refresh back on
+            if (this.checked) {
+                const migrationsTable = document.getElementById('migrations-table');
+                if (migrationsTable) {
+                    htmx.trigger(migrationsTable, 'refreshTable');
+                }
+            }
+        });
+    }
 });
+
+// Function used by HTMX to check if auto-refresh is enabled
+function autoRefreshEnabled() {
+    const checkbox = document.getElementById('auto-refresh');
+    return checkbox && checkbox.checked;
+}
 
 function updateProgressBars() {
     // Get all progress bar elements with data-progress attribute

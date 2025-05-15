@@ -14,7 +14,10 @@
     <tbody>
         {{if eq (len .Migrations) 0}}
         <tr>
-            <td colspan="7" class="empty-state">No migrations found</td>
+            <td colspan="7" class="empty-state">
+                <p>No active migrations found</p>
+                <p>Completed migrations can be viewed in the <a href="/dashboard/history">History</a> page</p>
+            </td>
         </tr>
         {{else}}
         {{range .Migrations}}

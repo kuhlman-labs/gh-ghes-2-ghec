@@ -1,7 +1,7 @@
 {{define "overview_content"}}
 <div class="dashboard-overview">
     <div class="dashboard-header">
-        <h2>Migration Status Overview</h2>
+        <h2>Migration Dashboard</h2>
         <div class="dashboard-controls">
             <a href="/dashboard/new" class="btn btn-primary">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -19,39 +19,58 @@
         </div>
     </div>
 
-    <div class="dashboard-stats">
-        <div class="stat-card">
-            <h3>Active</h3>
-            <span class="stat-value">{{ .Stats.Active }}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Succeeded</h3>
-            <span class="stat-value">{{ .Stats.Succeeded }}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Failed</h3>
-            <span class="stat-value">{{ .Stats.Failed }}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Total</h3>
-            <span class="stat-value">{{ .Stats.Total }}</span>
-        </div>
-    </div>
-
-    <div class="table-controls">
-        <div class="page-size-selector">
-            <label for="page-size">Show:</label>
-            <select id="page-size" name="page-size" hx-get="/dashboard" hx-target=".dashboard-overview" hx-swap="outerHTML" hx-trigger="change">
-                <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
-                <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
-                <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
-                <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
-            </select>
+    <div class="stats-section">
+        <h3 class="section-title">Migration Statistics</h3>
+        <div class="dashboard-stats" 
+             hx-get="/dashboard/stats" 
+             hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
+             hx-swap="innerHTML">
+            <div class="stat-card">
+                <h3>Active</h3>
+                <span class="stat-value">{{ .Stats.Active }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Succeeded</h3>
+                <span class="stat-value">{{ .Stats.Succeeded }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Failed</h3>
+                <span class="stat-value">{{ .Stats.Failed }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Total</h3>
+                <span class="stat-value">{{ .Stats.Total }}</span>
+            </div>
         </div>
     </div>
 
-    <div class="dashboard-table" id="migrations-table">
-        {{template "migrations_table" .}}
+    <div class="active-migrations-section">
+        <h3 class="section-title">Active Migrations</h3>
+        <div class="table-controls">
+            <div class="page-size-selector">
+                <label for="page-size">Show:</label>
+                <select id="page-size" name="page-size" hx-get="/dashboard" hx-target=".dashboard-overview" hx-swap="outerHTML" hx-trigger="change">
+                    <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
+                    <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
+                    <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
+                    <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
+                </select>
+            </div>
+            <div class="auto-refresh-control">
+                <label for="auto-refresh">
+                    <input type="checkbox" id="auto-refresh" checked>
+                    <span>Auto-refresh</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="dashboard-table" id="migrations-table" 
+             hx-get="/dashboard/refresh" 
+             hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
+             hx-swap="innerHTML" 
+             hx-include="[name='page-size']">
+            {{template "migrations_table" .}}
+        </div>
     </div>
 </div>
 {{end}} 

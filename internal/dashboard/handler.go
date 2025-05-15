@@ -130,6 +130,7 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	// Dashboard overview
 	mux.HandleFunc("/dashboard", h.handleOverview)
 	mux.HandleFunc("/dashboard/refresh", h.handleRefresh)
+	mux.HandleFunc("/dashboard/stats", h.handleStats)
 
 	// Migration detail
 	mux.HandleFunc("/dashboard/migration/", h.handleMigrationDetail)
@@ -164,14 +165,23 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
-	migrations := mapToSlice(migrationsMap)
+	allMigrations := mapToSlice(migrationsMap)
 
-	// Calculate stats on all migrations before pagination
-	stats := calculateStats(migrations)
+	// Filter to show only active migrations in the overview
+	var activeMigrations []*payload.MigrationStatus
+	for _, migration := range allMigrations {
+		if migration.Status == payload.StatusInProgress {
+			activeMigrations = append(activeMigrations, migration)
+		}
+	}
+
+	// Calculate stats on all migrations
+	overallStats := calculateStats(allMigrations)
 
 	// Apply pagination if pageSize > 0
-	if pageSize > 0 && len(migrations) > pageSize {
-		migrations = migrations[:pageSize]
+	displayMigrations := activeMigrations
+	if pageSize > 0 && len(displayMigrations) > pageSize {
+		displayMigrations = displayMigrations[:pageSize]
 	}
 
 	// Create template data
@@ -180,8 +190,8 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		Active:      "overview",
 		PageName:    "overview",
 		CurrentYear: time.Now().Year(),
-		Migrations:  migrations,
-		Stats:       stats,
+		Migrations:  displayMigrations,
+		Stats:       overallStats,
 		PageSize:    pageSize,
 	}
 
@@ -219,20 +229,29 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
-	migrations := mapToSlice(migrationsMap)
+	allMigrations := mapToSlice(migrationsMap)
 
-	// Calculate stats on all migrations before pagination
-	stats := calculateStats(migrations)
+	// Filter to show only active migrations in the overview
+	var activeMigrations []*payload.MigrationStatus
+	for _, migration := range allMigrations {
+		if migration.Status == payload.StatusInProgress {
+			activeMigrations = append(activeMigrations, migration)
+		}
+	}
+
+	// Calculate stats on all migrations
+	overallStats := calculateStats(allMigrations)
 
 	// Apply pagination if pageSize > 0
-	if pageSize > 0 && len(migrations) > pageSize {
-		migrations = migrations[:pageSize]
+	displayMigrations := activeMigrations
+	if pageSize > 0 && len(displayMigrations) > pageSize {
+		displayMigrations = displayMigrations[:pageSize]
 	}
 
 	// Render only the table part
 	data := TemplateData{
-		Migrations: migrations,
-		Stats:      stats,
+		Migrations: displayMigrations,
+		Stats:      overallStats,
 		PageSize:   pageSize,
 	}
 
@@ -366,17 +385,40 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, let's reuse GetAllMigrationStatuses for history display
-	// In a real scenario, you might filter for completed/failed or have a separate query
+	// Parse page size from query parameters, default to 20
+	pageSizeStr := r.URL.Query().Get("page-size")
+	pageSize := 20 // Default
+	if pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
+			pageSize = ps
+		}
+	}
+
+	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
-	migrations := mapToSlice(migrationsMap)
+	allMigrations := mapToSlice(migrationsMap)
+
+	// Filter to show only completed (succeeded or failed) migrations in the history
+	var completedMigrations []*payload.MigrationStatus
+	for _, migration := range allMigrations {
+		if migration.Status == payload.StatusSucceeded || migration.Status == payload.StatusFailed {
+			completedMigrations = append(completedMigrations, migration)
+		}
+	}
+
+	// Apply pagination if pageSize > 0
+	displayMigrations := completedMigrations
+	if pageSize > 0 && len(displayMigrations) > pageSize {
+		displayMigrations = displayMigrations[:pageSize]
+	}
 
 	data := TemplateData{
 		Title:       "Migration History",
 		Active:      "history",
 		PageName:    "history",
 		CurrentYear: time.Now().Year(),
-		Migrations:  migrations, // Pass all migrations for now
+		Migrations:  displayMigrations,
+		PageSize:    pageSize,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
@@ -599,4 +641,48 @@ func getStagesInfo(status *payload.MigrationStatus) []StageInfo {
 		newStages = append(newStages, stageInfo)
 	}
 	return newStages
+}
+
+// handleStats returns just the migration statistics for HTMX updates
+func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get all migration statuses and calculate stats
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+	allMigrations := mapToSlice(migrationsMap)
+	stats := calculateStats(allMigrations)
+
+	// Create a template with just the stats HTML
+	statsTemplate := `
+		<div class="stat-card">
+			<h3>Active</h3>
+			<span class="stat-value">{{ .Active }}</span>
+		</div>
+		<div class="stat-card">
+			<h3>Succeeded</h3>
+			<span class="stat-value">{{ .Succeeded }}</span>
+		</div>
+		<div class="stat-card">
+			<h3>Failed</h3>
+			<span class="stat-value">{{ .Failed }}</span>
+		</div>
+		<div class="stat-card">
+			<h3>Total</h3>
+			<span class="stat-value">{{ .Total }}</span>
+		</div>
+	`
+
+	// Parse and execute the template
+	tmpl, err := template.New("stats").Parse(statsTemplate)
+	if err != nil {
+		http.Error(w, "Failed to parse stats template", http.StatusInternalServerError)
+		return
+	}
+
+	if err := tmpl.Execute(w, stats); err != nil {
+		http.Error(w, "Failed to render stats", http.StatusInternalServerError)
+	}
 }
