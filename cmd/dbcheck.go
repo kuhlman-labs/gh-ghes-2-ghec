@@ -609,54 +609,6 @@ func testDatabase(dbPath string) error {
 	return nil
 }
 
-// copyFile copies a file from src to dst
-func copyFile(src, dst string) error {
-	// Note: Additional validation is performed in the OpenFile calls
-
-	// Extra validation step before opening the file
-	if err := validateFilePath(src); err != nil {
-		return fmt.Errorf("source path validation failed: %w", err)
-	}
-
-	// Use OpenFile with explicit read-only permissions
-	sourceFile, err := os.OpenFile(src, os.O_RDONLY, 0)
-	if err != nil {
-		return fmt.Errorf("failed to open source file: %w", err)
-	}
-	defer func() {
-		if err := sourceFile.Close(); err != nil {
-			// Since this is a utility function, just log to stderr
-			fmt.Fprintf(os.Stderr, "Error closing source file: %v\n", err)
-		}
-	}()
-
-	// Create destination directory if it doesn't exist
-	dstDir := filepath.Dir(dst)
-	if err := os.MkdirAll(dstDir, 0750); err != nil {
-		return err
-	}
-
-	// Extra validation step before creating the file
-	if err := validateFilePath(dst); err != nil {
-		return fmt.Errorf("destination path validation failed: %w", err)
-	}
-
-	// Use OpenFile with explicit write-only permissions and secure file creation flags
-	destFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
-	if err != nil {
-		return fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer func() {
-		if err := destFile.Close(); err != nil {
-			// Since this is a utility function, just log to stderr
-			fmt.Fprintf(os.Stderr, "Error closing destination file: %v\n", err)
-		}
-	}()
-
-	_, err = destFile.ReadFrom(sourceFile)
-	return err
-}
-
 // validateFilePath checks if a file path is valid and safe
 func validateFilePath(path string) error {
 	// Check for empty path
@@ -691,8 +643,74 @@ func validateFilePath(path string) error {
 		}
 	}
 
-	// This might be further restricted based on specific application requirements
-	// For example, to only allow paths within a specific database directory
+	// Check if the path exists and whether it's a symlink
+	fileInfo, err := os.Lstat(path)
+	if err == nil {
+		// Path exists, check if it's a symlink
+		if fileInfo.Mode()&os.ModeSymlink != 0 {
+			// Don't allow symlinks for security
+			return fmt.Errorf("symlinks are not allowed for security reasons")
+		}
+	}
 
 	return nil
+}
+
+// safeOpenFile safely opens a file with given permissions after thorough validation
+func safeOpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
+	// Thorough path validation
+	if err := validateFilePath(path); err != nil {
+		return nil, fmt.Errorf("path validation failed: %w", err)
+	}
+
+	// Get absolute and clean path
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+	cleanPath := filepath.Clean(absPath)
+
+	// Open file with explicit flags and permissions
+	file, err := os.OpenFile(cleanPath, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+
+	return file, nil
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	// Open source file with read-only permissions
+	sourceFile, err := safeOpenFile(src, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer func() {
+		if err := sourceFile.Close(); err != nil {
+			// Since this is a utility function, just log to stderr
+			fmt.Fprintf(os.Stderr, "Error closing source file: %v\n", err)
+		}
+	}()
+
+	// Create destination directory if it doesn't exist
+	dstDir := filepath.Dir(dst)
+	if err := os.MkdirAll(dstDir, 0750); err != nil {
+		return err
+	}
+
+	// Use most restrictive permissions (0600) for the destination file
+	destFile, err := safeOpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer func() {
+		if err := destFile.Close(); err != nil {
+			// Since this is a utility function, just log to stderr
+			fmt.Fprintf(os.Stderr, "Error closing destination file: %v\n", err)
+		}
+	}()
+
+	_, err = destFile.ReadFrom(sourceFile)
+	return err
 }
