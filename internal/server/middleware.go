@@ -20,14 +20,6 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
-// Define a custom type for context keys to avoid collisions
-type contextKey string
-
-// Define constants for context keys
-const (
-	requestIDKey contextKey = "request_id"
-)
-
 // Middleware struct for holding middleware functions and their dependencies.
 // It provides various HTTP middleware functions for security, logging, and rate limiting.
 type Middleware struct {
