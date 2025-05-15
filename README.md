@@ -31,6 +31,18 @@ A server application that provides an HTTP API for migrating repositories from G
 - Concurrent migration support
 - Works with GHOS based migrations
 
+## Dashboard
+
+![Migration Dashboard](docs/images/dashboard.png)
+
+The migration server includes a web-based dashboard for monitoring and managing migrations:
+
+- **Migration Overview**: View all migration jobs with status summaries and progress indicators
+- **Real-time Updates**: Get live status updates on migration progress
+- **Detailed Progress**: Track each migration stage with visual progress indicators
+- **Self-service Form**: Submit new migrations directly through the web UI without constructing API requests
+- **Historical Data**: Access past migration records when storage is enabled
+
 ## Prerequisites
 
 <details>
@@ -367,18 +379,6 @@ The migration process consists of several stages:
    - Migrate metadata
    - Verify migration success
 </details>
-
-## Dashboard
-
-![Migration Dashboard](docs/images/dashboard.png)
-
-The migration server includes a web-based dashboard for monitoring and managing migrations:
-
-- **Migration Overview**: View all migration jobs with status summaries and progress indicators
-- **Real-time Updates**: Get live status updates on migration progress
-- **Detailed Progress**: Track each migration stage with visual progress indicators
-- **Self-service Form**: Submit new migrations directly through the web UI without constructing API requests
-- **Historical Data**: Access past migration records when storage is enabled
 
 
 The dashboard is accessible at `http://your-server:8080/dashboard` and can be enabled or disabled via configuration.
