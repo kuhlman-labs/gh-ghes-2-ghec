@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ type TemplateData struct {
 	Stages           []StageInfo
 	Error            string
 	Success          string
+	PageSize         int
 }
 
 // MigrationStats represents statistics about migrations
@@ -151,14 +153,28 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse page size from query parameters, default to 20
+	pageSizeStr := r.URL.Query().Get("page-size")
+	pageSize := 20 // Default
+	if pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
+			pageSize = ps
+		}
+	}
+
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	migrations := mapToSlice(migrationsMap)
 
-	// Calculate stats
+	// Calculate stats on all migrations before pagination
 	stats := calculateStats(migrations)
 
-	// Render template
+	// Apply pagination if pageSize > 0
+	if pageSize > 0 && len(migrations) > pageSize {
+		migrations = migrations[:pageSize]
+	}
+
+	// Create template data
 	data := TemplateData{
 		Title:       "Overview",
 		Active:      "overview",
@@ -166,10 +182,22 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		CurrentYear: time.Now().Year(),
 		Migrations:  migrations,
 		Stats:       stats,
+		PageSize:    pageSize,
 	}
 
-	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
-		http.Error(w, "Failed to render template", http.StatusInternalServerError)
+	// Check if request is coming from htmx
+	isHtmxRequest := r.Header.Get("HX-Request") == "true"
+
+	if isHtmxRequest {
+		// For htmx requests, only render the overview_content template
+		if err := h.templates.ExecuteTemplate(w, "overview_content", data); err != nil {
+			http.Error(w, "Failed to render template", http.StatusInternalServerError)
+		}
+	} else {
+		// For regular requests, render the full page
+		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+			http.Error(w, "Failed to render template", http.StatusInternalServerError)
+		}
 	}
 }
 
@@ -180,17 +208,32 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse page size from query parameters, default to 20
+	pageSizeStr := r.URL.Query().Get("page-size")
+	pageSize := 20 // Default
+	if pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
+			pageSize = ps
+		}
+	}
+
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	migrations := mapToSlice(migrationsMap)
 
-	// Calculate stats for consistency (though not used in this partial)
+	// Calculate stats on all migrations before pagination
 	stats := calculateStats(migrations)
+
+	// Apply pagination if pageSize > 0
+	if pageSize > 0 && len(migrations) > pageSize {
+		migrations = migrations[:pageSize]
+	}
 
 	// Render only the table part
 	data := TemplateData{
 		Migrations: migrations,
 		Stats:      stats,
+		PageSize:   pageSize,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "migrations_table", data); err != nil {

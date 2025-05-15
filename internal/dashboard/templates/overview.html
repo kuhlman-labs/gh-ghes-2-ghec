@@ -10,7 +10,7 @@
                 </svg>
                 New Migration
             </a>
-            <button class="btn btn-secondary" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML">
+            <button class="btn btn-secondary" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-include="[name='page-size']">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
                 </svg>
@@ -35,6 +35,18 @@
         <div class="stat-card">
             <h3>Total</h3>
             <span class="stat-value">{{ .Stats.Total }}</span>
+        </div>
+    </div>
+
+    <div class="table-controls">
+        <div class="page-size-selector">
+            <label for="page-size">Show:</label>
+            <select id="page-size" name="page-size" hx-get="/dashboard" hx-target=".dashboard-overview" hx-swap="outerHTML" hx-trigger="change">
+                <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
+                <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
+                <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
+                <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
+            </select>
         </div>
     </div>
 
