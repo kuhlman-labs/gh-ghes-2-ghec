@@ -20,14 +20,6 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/validation"
 )
 
-// Define a custom type for context keys to avoid collisions
-type contextKey string
-
-// Define constants for context keys
-const (
-	requestIDKey contextKey = "request_id"
-)
-
 // Middleware struct for holding middleware functions and their dependencies.
 // It provides various HTTP middleware functions for security, logging, and rate limiting.
 type Middleware struct {
@@ -47,9 +39,12 @@ func NewMiddleware() *Middleware {
 // and logs details such as method, path, remote address, and user agent.
 func (m *Middleware) LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add request ID to context
+		// Generate a correlation ID (request ID)
 		requestID := fmt.Sprintf("%d", time.Now().UnixNano())
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+
+		// Add correlation ID to context using logging package functions
+		// This ensures it can be retrieved with logging.GetCorrelationID
+		ctx := context.WithValue(r.Context(), logging.KeyCorrelationID, requestID)
 
 		// Log request
 		start := time.Now()
@@ -61,7 +56,7 @@ func (m *Middleware) LogRequest(next http.Handler) http.Handler {
 			"user_agent", r.UserAgent(),
 		)
 
-		// Call next handler
+		// Call next handler with updated context
 		next.ServeHTTP(w, r.WithContext(ctx))
 
 		// Log response time

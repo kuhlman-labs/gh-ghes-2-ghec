@@ -1,3 +1,5 @@
+// Package migrator provides functionality for migrating repositories from
+// GitHub Enterprise Server (GHES) to GitHub Enterprise Cloud (GHEC).
 package migrator
 
 import (
@@ -7,12 +9,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
+	// Initialize config before creating a migrator
+	err := config.Init()
+	require.NoError(t, err, "Failed to initialize config")
+
 	tests := []struct {
 		name       string
 		webhookURL string
@@ -37,17 +47,24 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := New(tt.webhookURL)
+			logger := logging.Get()
+			githubAPI := github.NewNoopAPI(logger)
+			storageProvider := &storage.NoopStorage{}
+			cfg := config.Get()
+			m := NewMigrator(logger, githubAPI, storageProvider, tt.webhookURL, cfg, nil, nil)
 			assert.NotNil(t, m)
 			assert.Equal(t, tt.wantURL, m.webhookURL)
 			assert.NotNil(t, m.logger)
-			assert.NotNil(t, m.migrations)
 		})
 	}
 }
 
 func TestMigrator_GetMigrationStatus(t *testing.T) {
-	m := New("")
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	cfg := config.Get()
+	m := NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
 	repoName := "test-repo"
 	status := &payload.MigrationStatus{
 		Repository: repoName,
@@ -69,7 +86,11 @@ func TestMigrator_GetMigrationStatus(t *testing.T) {
 }
 
 func TestMigrator_GetAllMigrationStatuses(t *testing.T) {
-	m := New("")
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	cfg := config.Get()
+	m := NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
 	statuses := map[string]*payload.MigrationStatus{
 		"repo1": {
 			Repository: "repo1",
@@ -366,7 +387,11 @@ func TestMigrator_UpdateStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := New(server.URL)
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	cfg := config.Get()
+	m := NewMigrator(logger, githubAPI, storageProvider, server.URL, cfg, nil, nil)
 	repoName := "test-repo"
 	status := payload.StatusInProgress
 	message := "test message"
@@ -396,7 +421,11 @@ func TestMigrator_SendWebhookNotification(t *testing.T) {
 	}))
 	defer server.Close()
 
-	m := New(server.URL)
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	cfg := config.Get()
+	m := NewMigrator(logger, githubAPI, storageProvider, server.URL, cfg, nil, nil)
 	repoName := "test-repo"
 	req := &payload.MigrationRequest{
 		SourceOrg:    "source-org",
@@ -419,7 +448,11 @@ func TestMigrator_SendWebhookNotification(t *testing.T) {
 
 func TestMigrateRepository_GHOS_InvalidOrgID(t *testing.T) {
 	// Create a test migrator
-	m := New("")
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	cfg := config.Get()
+	m := NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
 
 	// Create test data
 	startTime := time.Now()
@@ -437,7 +470,7 @@ func TestMigrateRepository_GHOS_InvalidOrgID(t *testing.T) {
 }
 
 // Helper function for testing GHOS organization ID extraction
-func (m *Migrator) extractAndValidateOrgID(repoName string, ownerID string, startTime time.Time) error {
+func (m *Migrator) extractAndValidateOrgID(repoName string, _ string, startTime time.Time) error {
 	// This function replicates just the org ID extraction logic from migrateRepository
 	orgDatabaseID := "" // Simulate failure to extract ID
 

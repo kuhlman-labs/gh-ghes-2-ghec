@@ -1,0 +1,113 @@
+{{define "history_content"}}
+<div class="dashboard-history">
+    <div class="dashboard-header">
+        <h2>Migration History</h2>
+        <div class="dashboard-controls">
+            <a href="/dashboard" class="btn btn-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Back to Overview
+            </a>
+        </div>
+    </div>
+
+    <div class="search-container">
+        <form action="/dashboard/history" method="GET" class="search-form">
+            <div class="search-input-container">
+                <input 
+                    type="text" 
+                    name="search" 
+                    id="repository-search" 
+                    placeholder="Search by repository name" 
+                    value="{{ .SearchQuery }}"
+                    class="search-input"
+                >
+                <button type="submit" class="search-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    Search
+                </button>
+                {{if .SearchQuery}}
+                <a href="/dashboard/history" class="btn btn-sm clear-search">Clear</a>
+                {{end}}
+            </div>
+            <!-- Preserve page size when submitting search -->
+            <input type="hidden" name="page-size" value="{{ .PageSize }}">
+        </form>
+    </div>
+
+    {{if .Migrations}}
+        <div class="table-controls">
+            <div class="page-size-selector">
+                <label for="history-page-size">Show:</label>
+                <select id="history-page-size" name="page-size" hx-get="/dashboard/history{{if .SearchQuery}}?search={{.SearchQuery}}{{end}}" hx-target=".dashboard-history" hx-swap="outerHTML" hx-trigger="change">
+                    <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
+                    <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
+                    <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
+                    <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="dashboard-table" id="history-migrations-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Source Repository</th>
+                        <th>Status</th>
+                        <th>Stage</th>
+                        <th>Progress</th>
+                        <th>Started</th>
+                        <th>Duration</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Migrations}}
+                        <tr class="status-{{ToLower .Status}}">
+                            <td>{{.Repository}}</td>
+                            <td>
+                                <span class="status-indicator status-{{ToLower .Status}}"></span>
+                                {{Title .Status}}
+                            </td>
+                            <td>{{if .Error}}{{.Error}}{{else}}{{Title .Stage}}: {{Title .State}}{{end}}</td>
+                            <td>
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar" style="width: {{.Progress}}%;"></div>
+                                    <span class="progress-text">{{.Progress}}%</span>
+                                </div>
+                            </td>
+                            <td>{{FormatDateTime .StartedAt}}</td>
+                            <td>{{FormatDuration .Duration}}</td>
+                            <td>
+                                <a href="/dashboard/migration/{{.Repository}}" class="btn btn-sm btn-details">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                                    Details
+                                </a>
+                            </td>
+                        </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    {{else}}
+        <div class="empty-state">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 13V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h5.5"/>
+                <path d="m20 17-3 3-1.5-1.5"/>
+                <path d="m4 10 4.1 3.5L12 8"/>
+            </svg>
+            {{if .SearchQuery}}
+            <p>No matching repositories found for "{{.SearchQuery}}"</p>
+            <p><a href="/dashboard/history">View all completed migrations</a></p>
+            {{else}}
+            <p>No migration history found.</p>
+            <p>Completed or failed migrations will appear here.</p>
+            {{end}}
+        </div>
+    {{end}}
+</div>
+{{end}} 

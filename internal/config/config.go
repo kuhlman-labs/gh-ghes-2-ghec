@@ -28,6 +28,7 @@ type Config struct {
 		ServiceName string  `mapstructure:"service_name"`
 		SampleRate  float64 `mapstructure:"sample_rate"`
 	} `mapstructure:"tracing"`
+	Storage StorageConfig `mapstructure:"storage"`
 }
 
 // ServerConfig holds server-specific configuration options.
@@ -38,6 +39,7 @@ type ServerConfig struct {
 	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
 	RateLimit       int           `mapstructure:"rate_limit"` // Requests per minute, 0 means unlimited
+	Dashboard       bool          `mapstructure:"dashboard"`  // Whether to enable the dashboard UI
 }
 
 // GitHubConfig holds GitHub-specific configuration.
@@ -57,16 +59,27 @@ type LoggingConfig struct {
 	Level string `mapstructure:"level"`
 }
 
+// StorageConfig holds storage-specific configuration.
+// It defines how migration state data is persisted.
+type StorageConfig struct {
+	Enabled          bool   `mapstructure:"enabled"`           // Whether persistent storage is enabled
+	Type             string `mapstructure:"type"`              // Storage type: sqlite, mysql, postgres
+	ConnectionString string `mapstructure:"connection_string"` // Connection string or file path
+	TablePrefix      string `mapstructure:"table_prefix"`      // Optional prefix for table names
+	Timeout          int    `mapstructure:"timeout"`           // Timeout in seconds for database operations (0 means use default)
+}
+
 // ConfigForWriting is used to serialize config to YAML.
 // It contains a simplified representation of the Config struct
 // suitable for writing to a configuration file.
 type ConfigForWriting struct {
 	Server struct {
-		Port            int `yaml:"port"`
-		ShutdownTimeout int `yaml:"shutdown_timeout"`
-		ReadTimeout     int `yaml:"read_timeout"`
-		WriteTimeout    int `yaml:"write_timeout"`
-		RateLimit       int `yaml:"rate_limit"` // Requests per minute, 0 means unlimited
+		Port            int  `yaml:"port"`
+		ShutdownTimeout int  `yaml:"shutdown_timeout"`
+		ReadTimeout     int  `yaml:"read_timeout"`
+		WriteTimeout    int  `yaml:"write_timeout"`
+		RateLimit       int  `yaml:"rate_limit"` // Requests per minute, 0 means unlimited
+		Dashboard       bool `yaml:"dashboard"`  // Whether to enable the dashboard UI
 	} `yaml:"server"`
 	Webhook struct {
 		URL string `yaml:"url"`
@@ -80,15 +93,25 @@ type ConfigForWriting struct {
 		ServiceName string  `yaml:"service_name"`
 		SampleRate  float64 `yaml:"sample_rate"`
 	} `yaml:"tracing"`
+	Storage struct {
+		Enabled          bool   `yaml:"enabled"`
+		Type             string `yaml:"type"`
+		ConnectionString string `yaml:"connection_string"`
+		TablePrefix      string `yaml:"table_prefix"`
+		Timeout          int    `yaml:"timeout"`
+	} `yaml:"storage"`
 }
 
 // Default configuration constants
 const (
-	configFileName   = "config.yaml"
-	defaultPort      = 8080
-	defaultTimeout   = 30 * time.Second
-	defaultIOTimeout = 15 * time.Second
-	defaultRateLimit = 60 // 60 requests per minute
+	configFileName     = "config.yaml"
+	defaultPort        = 8080
+	defaultTimeout     = 120 * time.Second // Increased from 60 to 120 seconds
+	defaultIOTimeout   = 60 * time.Second  // Increased from 30 to 60 seconds
+	defaultRateLimit   = 60                // 60 requests per minute
+	defaultStorageType = "sqlite"
+	defaultStoragePath = "migrations.db"
+	defaultDbTimeout   = 120 // Default timeout for database operations (2 minutes)
 )
 
 var (
@@ -150,7 +173,13 @@ func loadConfig() error {
 	viper.SetDefault("server.read_timeout", defaultIOTimeout)
 	viper.SetDefault("server.write_timeout", defaultIOTimeout)
 	viper.SetDefault("server.rate_limit", defaultRateLimit)
+	viper.SetDefault("server.dashboard", true) // Default to enabled
 	viper.SetDefault("logging.level", "info")
+	viper.SetDefault("storage.enabled", false)
+	viper.SetDefault("storage.type", defaultStorageType)
+	viper.SetDefault("storage.connection_string", defaultStoragePath)
+	viper.SetDefault("storage.table_prefix", "")
+	viper.SetDefault("storage.timeout", defaultDbTimeout)
 
 	// Read from environment variables
 	viper.SetEnvPrefix("GH_REPO_MIGRATE")
@@ -217,10 +246,18 @@ func CreateDefaultConfig() *Config {
 			ReadTimeout:     defaultIOTimeout,
 			WriteTimeout:    defaultIOTimeout,
 			RateLimit:       defaultRateLimit,
+			Dashboard:       true, // Default to enabled
 		},
 		Webhook: WebhookConfig{},
 		Logging: LoggingConfig{
 			Level: "info",
+		},
+		Storage: StorageConfig{
+			Enabled:          false,
+			Type:             defaultStorageType,
+			ConnectionString: defaultStoragePath,
+			TablePrefix:      "",
+			Timeout:          defaultDbTimeout,
 		},
 	}
 }
@@ -235,12 +272,18 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Server.ReadTimeout = int(cfg.Server.ReadTimeout.Seconds())
 	writeCfg.Server.WriteTimeout = int(cfg.Server.WriteTimeout.Seconds())
 	writeCfg.Server.RateLimit = cfg.Server.RateLimit
+	writeCfg.Server.Dashboard = cfg.Server.Dashboard
 	writeCfg.Webhook.URL = cfg.Webhook.URL
 	writeCfg.Logging.Level = cfg.Logging.Level
 	writeCfg.Tracing.Enabled = cfg.Tracing.Enabled
 	writeCfg.Tracing.Endpoint = cfg.Tracing.Endpoint
 	writeCfg.Tracing.ServiceName = cfg.Tracing.ServiceName
 	writeCfg.Tracing.SampleRate = cfg.Tracing.SampleRate
+	writeCfg.Storage.Enabled = cfg.Storage.Enabled
+	writeCfg.Storage.Type = cfg.Storage.Type
+	writeCfg.Storage.ConnectionString = cfg.Storage.ConnectionString
+	writeCfg.Storage.TablePrefix = cfg.Storage.TablePrefix
+	writeCfg.Storage.Timeout = cfg.Storage.Timeout
 
 	return writeCfg
 }

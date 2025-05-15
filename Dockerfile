@@ -28,6 +28,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 # Copy binary and config files from the builder stage
 COPY --from=builder /app/gh-ghes-2-ghec /app/gh-ghes-2-ghec
 COPY --from=builder /app/config.yaml /app/config.yaml
+COPY --from=builder /app/static /app/static
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 

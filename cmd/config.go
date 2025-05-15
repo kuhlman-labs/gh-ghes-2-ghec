@@ -74,6 +74,10 @@ You can then edit this file to customize your settings.`,
 		if port != 8080 {
 			defaultConfig.Server.Port = port
 		}
+		// Check if dashboard flag was explicitly set
+		if cmd.Flags().Changed("dashboard") {
+			defaultConfig.Server.Dashboard = dashboardFlag
+		}
 
 		// Create file
 		file, err := os.Create(absPath) // #nosec G304 -- path is validated above with multiple checks
