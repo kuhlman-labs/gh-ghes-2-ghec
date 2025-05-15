@@ -698,13 +698,19 @@ func safeOpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
 	// Additional verification
 	fileInfo, err := file.Stat()
 	if err != nil {
-		file.Close()
+		closeErr := file.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to get file info: %w, and failed to close file: %v", err, closeErr)
+		}
 		return nil, fmt.Errorf("failed to get file information after opening: %w", err)
 	}
 
 	// Verify it's not a directory when opening as a file
 	if fileInfo.IsDir() && flag != os.O_RDONLY {
-		file.Close()
+		closeErr := file.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("cannot open a directory with write permissions and failed to close file: %v", closeErr)
+		}
 		return nil, fmt.Errorf("cannot open a directory with write permissions")
 	}
 
