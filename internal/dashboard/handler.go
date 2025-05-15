@@ -41,6 +41,7 @@ type TemplateData struct {
 	Error            string
 	Success          string
 	PageSize         int
+	SearchQuery      string
 }
 
 // MigrationStats represents statistics about migrations
@@ -394,6 +395,9 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get search query parameter
+	searchQuery := r.URL.Query().Get("search")
+
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	allMigrations := mapToSlice(migrationsMap)
@@ -406,8 +410,22 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Apply search filter if a search query is provided
+	var filteredMigrations []*payload.MigrationStatus
+	if searchQuery != "" {
+		searchQuery = strings.ToLower(searchQuery)
+		for _, migration := range completedMigrations {
+			// Case-insensitive search of repository name
+			if strings.Contains(strings.ToLower(migration.Repository), searchQuery) {
+				filteredMigrations = append(filteredMigrations, migration)
+			}
+		}
+	} else {
+		filteredMigrations = completedMigrations
+	}
+
 	// Apply pagination if pageSize > 0
-	displayMigrations := completedMigrations
+	displayMigrations := filteredMigrations
 	if pageSize > 0 && len(displayMigrations) > pageSize {
 		displayMigrations = displayMigrations[:pageSize]
 	}
@@ -419,6 +437,7 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		CurrentYear: time.Now().Year(),
 		Migrations:  displayMigrations,
 		PageSize:    pageSize,
+		SearchQuery: searchQuery,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
