@@ -25,7 +25,7 @@ func TestLogRequest(t *testing.T) {
 	middleware := NewMiddleware()
 	var capturedRequestID any
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedRequestID = r.Context().Value(requestIDKey)
+		capturedRequestID = r.Context().Value(logging.KeyCorrelationID)
 		w.WriteHeader(http.StatusOK)
 	})
 
