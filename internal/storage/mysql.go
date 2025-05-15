@@ -146,8 +146,6 @@ func (s *MySQLStorage) SaveMigrationStatus(ctx context.Context, status *payload.
 		return fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_status")
-
 	// Convert completed stages to JSON
 	completedStages, err := json.Marshal(status.CompletedStages)
 	if err != nil {
@@ -155,8 +153,9 @@ func (s *MySQLStorage) SaveMigrationStatus(ctx context.Context, status *payload.
 	}
 
 	// Upsert query using MySQL syntax
-	query := fmt.Sprintf(`
-	INSERT INTO %s (
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := `
+	INSERT INTO ` + quotedTableName + ` (
 		repository, status, error, updated_at, 
 		stage, state, started_at, duration_seconds, 
 		migration_id, progress, stage_progress, 
@@ -180,7 +179,7 @@ func (s *MySQLStorage) SaveMigrationStatus(ctx context.Context, status *payload.
 		completed_stages = VALUES(completed_stages),
 		total_stages = VALUES(total_stages),
 		current_stage_index = VALUES(current_stage_index)
-	`, tableName)
+	`
 
 	// Format time values for MySQL
 	startedAtStr := formatTimeOrEmpty(status.StartedAt)
@@ -224,8 +223,8 @@ func (s *MySQLStorage) GetMigrationStatus(ctx context.Context, repoName string) 
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_status")
-	query := fmt.Sprintf("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM %s WHERE repository = ?", tableName)
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + quotedTableName + " WHERE repository = ?"
 
 	row := s.db.QueryRowContext(ctx, query, repoName)
 
@@ -304,8 +303,8 @@ func (s *MySQLStorage) GetAllMigrationStatuses(ctx context.Context) (map[string]
 
 	result := make(map[string]*payload.MigrationStatus)
 
-	tableName := s.getTableName("migration_status")
-	query := fmt.Sprintf("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM %s", tableName)
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + quotedTableName
 
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -395,8 +394,8 @@ func (s *MySQLStorage) DeleteMigrationStatus(ctx context.Context, repoName strin
 		return fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_status")
-	query := fmt.Sprintf("DELETE FROM %s WHERE repository = ?", tableName)
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := "DELETE FROM " + quotedTableName + " WHERE repository = ?"
 
 	_, err := s.db.ExecContext(ctx, query, repoName)
 	if err != nil {
@@ -509,6 +508,13 @@ func (s *MySQLStorage) getTableName(table string) string {
 	return s.tablePrefix + "_" + table
 }
 
+// getQuotedTableName returns a safely quoted table name for use in SQL queries.
+// This helps prevent SQL injection by properly handling table names.
+func (s *MySQLStorage) getQuotedTableName(table string) string {
+	tableName := s.getTableName(table)
+	return "`" + strings.ReplaceAll(tableName, "`", "``") + "`"
+}
+
 // ArchiveMigrationAttempt saves a completed migration attempt to history
 func (s *MySQLStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *payload.MigrationStatus) error {
 	if attempt == nil {
@@ -522,8 +528,6 @@ func (s *MySQLStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pay
 		return fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_history")
-
 	// Convert completed stages to JSON
 	completedStages, err := json.Marshal(attempt.CompletedStages)
 	if err != nil {
@@ -531,8 +535,9 @@ func (s *MySQLStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pay
 	}
 
 	// Insert query for archiving
-	query := fmt.Sprintf(`
-	INSERT INTO %s (
+	quotedTableName := s.getQuotedTableName("migration_history")
+	query := `
+	INSERT INTO ` + quotedTableName + ` (
 		repository, status, error, updated_at, 
 		stage, state, started_at, duration_seconds, 
 		migration_id, progress, stage_progress, 
@@ -542,7 +547,7 @@ func (s *MySQLStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pay
 		?, ?, ?, ?, 
 		?, ?, ?, 
 		?, ?, ?
-	)`, tableName)
+	)`
 
 	// Format time values for MySQL
 	startedAtStr := formatTimeOrEmpty(attempt.StartedAt)
@@ -586,18 +591,18 @@ func (s *MySQLStorage) GetArchivedMigrationAttempts(ctx context.Context, repoFul
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_history")
-	query := fmt.Sprintf(`
+	quotedTableName := s.getQuotedTableName("migration_history")
+	query := `
 		SELECT 
 			repository, status, error, updated_at, 
 			stage, state, started_at, duration_seconds, 
 			migration_id, progress, stage_progress, 
 			completed_stages, total_stages, current_stage_index,
 			archived_at
-		FROM %s 
+		FROM ` + quotedTableName + ` 
 		WHERE repository = ?
 		ORDER BY archived_at DESC
-	`, tableName)
+	`
 
 	rows, err := s.db.QueryContext(ctx, query, repoFullName)
 	if err != nil {

@@ -154,8 +154,6 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 		return fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_status")
-
 	// Convert completed stages to JSON
 	completedStages, err := json.Marshal(status.CompletedStages)
 	if err != nil {
@@ -163,8 +161,9 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 	}
 
 	// Upsert query using PostgreSQL syntax
-	query := fmt.Sprintf(`
-	INSERT INTO %s (
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := `
+	INSERT INTO ` + quotedTableName + ` (
 		repository, status, error, updated_at, 
 		stage, state, started_at, duration_seconds, 
 		migration_id, progress, stage_progress, 
@@ -180,7 +179,7 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 		updated_at = EXCLUDED.updated_at,
 		stage = EXCLUDED.stage,
 		state = EXCLUDED.state,
-		started_at = COALESCE(%s.started_at, EXCLUDED.started_at),
+		started_at = COALESCE(` + quotedTableName + `.started_at, EXCLUDED.started_at),
 		duration_seconds = EXCLUDED.duration_seconds,
 		migration_id = EXCLUDED.migration_id,
 		progress = EXCLUDED.progress,
@@ -188,7 +187,7 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 		completed_stages = EXCLUDED.completed_stages,
 		total_stages = EXCLUDED.total_stages,
 		current_stage_index = EXCLUDED.current_stage_index
-	`, tableName, tableName)
+	`
 
 	// Format time values for PostgreSQL
 	var startedAt interface{}
@@ -231,8 +230,8 @@ func (s *PostgresStorage) GetMigrationStatus(ctx context.Context, repoName strin
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_status")
-	query := fmt.Sprintf("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM %s WHERE repository = $1", tableName)
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + quotedTableName + " WHERE repository = $1"
 
 	row := s.db.QueryRowContext(ctx, query, repoName)
 
@@ -299,8 +298,8 @@ func (s *PostgresStorage) GetAllMigrationStatuses(ctx context.Context) (map[stri
 
 	result := make(map[string]*payload.MigrationStatus)
 
-	tableName := s.getTableName("migration_status")
-	query := fmt.Sprintf("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM %s", tableName)
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + quotedTableName
 
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -378,8 +377,8 @@ func (s *PostgresStorage) DeleteMigrationStatus(ctx context.Context, repoName st
 		return fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_status")
-	query := fmt.Sprintf("DELETE FROM %s WHERE repository = $1", tableName)
+	quotedTableName := s.getQuotedTableName("migration_status")
+	query := "DELETE FROM " + quotedTableName + " WHERE repository = $1"
 
 	_, err := s.db.ExecContext(ctx, query, repoName)
 	if err != nil {
@@ -508,6 +507,15 @@ func (s *PostgresStorage) getTableName(table string) string {
 	return s.tablePrefix + "_" + table
 }
 
+// getQuotedTableName returns a safely quoted table name for use in SQL queries.
+// This helps prevent SQL injection by properly handling table names.
+func (s *PostgresStorage) getQuotedTableName(table string) string {
+	tableName := s.getTableName(table)
+	return "\"" + strings.ReplaceAll(tableName, "\"", "\"\"") + "\""
+}
+
+// formatTimeOrEmpty formats a time value as RFC3339 or returns an empty string if the time is zero.
+
 // ArchiveMigrationAttempt saves a completed migration attempt to history
 func (s *PostgresStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *payload.MigrationStatus) error {
 	if attempt == nil {
@@ -521,8 +529,6 @@ func (s *PostgresStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *
 		return fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_history")
-
 	// Convert completed stages to JSON
 	completedStages, err := json.Marshal(attempt.CompletedStages)
 	if err != nil {
@@ -530,8 +536,9 @@ func (s *PostgresStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *
 	}
 
 	// Insert query for archiving
-	query := fmt.Sprintf(`
-	INSERT INTO %s (
+	quotedTableName := s.getQuotedTableName("migration_history")
+	query := `
+	INSERT INTO ` + quotedTableName + ` (
 		repository, status, error, updated_at, 
 		stage, state, started_at, duration_seconds, 
 		migration_id, progress, stage_progress, 
@@ -541,7 +548,7 @@ func (s *PostgresStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *
 		$5, $6, $7, $8, 
 		$9, $10, $11, 
 		$12, $13, $14
-	)`, tableName)
+	)`
 
 	// Format time values for PostgreSQL
 	var startedAt interface{}
@@ -584,18 +591,18 @@ func (s *PostgresStorage) GetArchivedMigrationAttempts(ctx context.Context, repo
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	tableName := s.getTableName("migration_history")
-	query := fmt.Sprintf(`
+	quotedTableName := s.getQuotedTableName("migration_history")
+	query := `
 		SELECT 
 			repository, status, error, updated_at, 
 			stage, state, started_at, duration_seconds, 
 			migration_id, progress, stage_progress, 
 			completed_stages, total_stages, current_stage_index,
 			archived_at
-		FROM %s 
+		FROM ` + quotedTableName + ` 
 		WHERE repository = $1
 		ORDER BY archived_at DESC
-	`, tableName)
+	`
 
 	rows, err := s.db.QueryContext(ctx, query, repoFullName)
 	if err != nil {

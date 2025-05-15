@@ -557,8 +557,7 @@ func (s *SQLiteStorage) GetMigrationStatus(ctx context.Context, repoName string)
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		tableName := s.getTableName("migration_status")
-		query := fmt.Sprintf("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM %s WHERE repository = ?", tableName)
+		query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + s.getQuotedTableName("migration_status") + " WHERE repository = ?"
 
 		row := s.db.QueryRowContext(dbCtx, query, repoName)
 
@@ -790,8 +789,8 @@ func (s *SQLiteStorage) DeleteMigrationStatus(ctx context.Context, repoName stri
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		tableName := s.getTableName("migration_status")
-		query := fmt.Sprintf("DELETE FROM %s WHERE repository = ?", tableName)
+		quotedTableName := s.getQuotedTableName("migration_status")
+		query := "DELETE FROM " + quotedTableName + " WHERE repository = ?"
 
 		_, err := s.db.ExecContext(dbCtx, query, repoName)
 		if err != nil {
@@ -812,6 +811,13 @@ func (s *SQLiteStorage) getTableName(table string) string {
 	return s.tablePrefix + "_" + table
 }
 
+// getQuotedTableName returns a safely quoted table name for use in SQL queries.
+// This helps prevent SQL injection by properly handling table names.
+func (s *SQLiteStorage) getQuotedTableName(table string) string {
+	tableName := s.getTableName(table)
+	return "\"" + strings.ReplaceAll(tableName, "\"", "\"\"") + "\""
+}
+
 // formatTimeOrEmpty formats a time value as RFC3339 or returns an empty string if the time is zero.
 func formatTimeOrEmpty(t time.Time) string {
 	if t.IsZero() {
@@ -823,7 +829,7 @@ func formatTimeOrEmpty(t time.Time) string {
 // ensureDir creates a directory if it doesn't exist.
 // It creates all necessary parent directories if they don't exist.
 func ensureDir(dir string) error {
-	return os.MkdirAll(dir, 0755)
+	return os.MkdirAll(dir, 0750)
 }
 
 // CheckAndRepairDatabase is a utility function that attempts to check and repair the database.
@@ -972,12 +978,11 @@ func (s *SQLiteStorage) CheckAndRepairDatabase(ctx context.Context) (string, err
 			report.WriteString("✓ PING successful\n")
 
 			// Try a simple table check
-			tableName := s.getTableName("migration_status")
 			countCtx, countCancel := context.WithTimeout(ctx, 5*time.Second)
 			defer countCancel()
 
 			var count int
-			err := s.db.QueryRowContext(countCtx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+			err := s.db.QueryRowContext(countCtx, "SELECT COUNT(*) FROM "+s.getQuotedTableName("migration_status")).Scan(&count)
 			if err != nil {
 				report.WriteString(fmt.Sprintf("✗ Failed to count records: %s\n", err))
 			} else {
@@ -1054,8 +1059,6 @@ func (s *SQLiteStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pa
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		tableName := s.getTableName("migration_history")
-
 		// Convert completed stages to JSON
 		completedStages, err := json.Marshal(attempt.CompletedStages)
 		if err != nil {
@@ -1063,8 +1066,9 @@ func (s *SQLiteStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pa
 		}
 
 		// Insert into history table
-		query := fmt.Sprintf(`
-		INSERT INTO %s (
+		quotedTableName := s.getQuotedTableName("migration_history")
+		query := `
+		INSERT INTO ` + quotedTableName + ` (
 			repository, status, error, updated_at, 
 			stage, state, started_at, duration_seconds, 
 			migration_id, progress, stage_progress, 
@@ -1074,7 +1078,7 @@ func (s *SQLiteStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pa
 			?, ?, ?, ?, 
 			?, ?, ?, 
 			?, ?, ?
-		)`, tableName)
+		)`
 
 		_, err = s.db.ExecContext(dbCtx, query,
 			attempt.Repository,
@@ -1123,18 +1127,18 @@ func (s *SQLiteStorage) GetArchivedMigrationAttempts(ctx context.Context, repoFu
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		tableName := s.getTableName("migration_history")
-		query := fmt.Sprintf(`
+		quotedTableName := s.getQuotedTableName("migration_history")
+		query := `
 			SELECT 
 				repository, status, error, updated_at, 
 				stage, state, started_at, duration_seconds, 
 				migration_id, progress, stage_progress, 
 				completed_stages, total_stages, current_stage_index,
 				archived_at
-			FROM %s 
+			FROM ` + quotedTableName + ` 
 			WHERE repository = ?
 			ORDER BY archived_at DESC
-		`, tableName)
+		`
 
 		rows, err := s.db.QueryContext(dbCtx, query, repoFullName)
 		if err != nil {

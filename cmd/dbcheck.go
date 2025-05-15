@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
@@ -610,6 +611,14 @@ func testDatabase(dbPath string) error {
 
 // copyFile copies a file from src to dst
 func copyFile(src, dst string) error {
+	// Validate file paths
+	if err := validateFilePath(src); err != nil {
+		return fmt.Errorf("invalid source path: %w", err)
+	}
+	if err := validateFilePath(dst); err != nil {
+		return fmt.Errorf("invalid destination path: %w", err)
+	}
+
 	sourceFile, err := os.Open(src)
 	if err != nil {
 		return err
@@ -623,7 +632,7 @@ func copyFile(src, dst string) error {
 
 	// Create destination directory if it doesn't exist
 	dstDir := filepath.Dir(dst)
-	if err := os.MkdirAll(dstDir, 0755); err != nil {
+	if err := os.MkdirAll(dstDir, 0750); err != nil {
 		return err
 	}
 
@@ -640,4 +649,30 @@ func copyFile(src, dst string) error {
 
 	_, err = destFile.ReadFrom(sourceFile)
 	return err
+}
+
+// validateFilePath checks if a file path is valid and safe
+func validateFilePath(path string) error {
+	// Check for empty path
+	if path == "" {
+		return fmt.Errorf("empty file path")
+	}
+
+	// Check if path is absolute and can be resolved
+	_, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("error resolving absolute path: %w", err)
+	}
+
+	// Additional validation can be added here based on specific requirements
+	// For example, check if the path is within a specific directory
+
+	// Check for path traversal attempts
+	if strings.Contains(path, "..") {
+		// Verify the resolved path doesn't escape expected boundaries
+		// This is a simple check; more complex validation might be needed
+		return fmt.Errorf("path contains potential traversal sequence")
+	}
+
+	return nil
 }
