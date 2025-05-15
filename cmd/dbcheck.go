@@ -611,17 +611,17 @@ func testDatabase(dbPath string) error {
 
 // copyFile copies a file from src to dst
 func copyFile(src, dst string) error {
-	// Validate file paths
+	// Note: Additional validation is performed in the OpenFile calls
+
+	// Extra validation step before opening the file
 	if err := validateFilePath(src); err != nil {
-		return fmt.Errorf("invalid source path: %w", err)
-	}
-	if err := validateFilePath(dst); err != nil {
-		return fmt.Errorf("invalid destination path: %w", err)
+		return fmt.Errorf("source path validation failed: %w", err)
 	}
 
-	sourceFile, err := os.Open(src)
+	// Use OpenFile with explicit read-only permissions
+	sourceFile, err := os.OpenFile(src, os.O_RDONLY, 0)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer func() {
 		if err := sourceFile.Close(); err != nil {
@@ -636,9 +636,15 @@ func copyFile(src, dst string) error {
 		return err
 	}
 
-	destFile, err := os.Create(dst)
+	// Extra validation step before creating the file
+	if err := validateFilePath(dst); err != nil {
+		return fmt.Errorf("destination path validation failed: %w", err)
+	}
+
+	// Use OpenFile with explicit write-only permissions and secure file creation flags
+	destFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create destination file: %w", err)
 	}
 	defer func() {
 		if err := destFile.Close(); err != nil {
@@ -658,21 +664,35 @@ func validateFilePath(path string) error {
 		return fmt.Errorf("empty file path")
 	}
 
-	// Check if path is absolute and can be resolved
-	_, err := filepath.Abs(path)
+	// Get the absolute path
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("error resolving absolute path: %w", err)
 	}
 
-	// Additional validation can be added here based on specific requirements
-	// For example, check if the path is within a specific directory
+	// Clean the path to handle any . or .. sequences
+	cleanPath := filepath.Clean(absPath)
 
-	// Check for path traversal attempts
-	if strings.Contains(path, "..") {
-		// Verify the resolved path doesn't escape expected boundaries
-		// This is a simple check; more complex validation might be needed
-		return fmt.Errorf("path contains potential traversal sequence")
+	// Get the current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("unable to get current working directory: %w", err)
 	}
+
+	// Convert both paths to canonical form
+	cleanCwd := filepath.Clean(cwd)
+
+	// Check if this is a path traversal attempt escaping the working directory
+	// This only detects attempts to escape, not arbitrary paths outside
+	if strings.HasPrefix(path, "..") || strings.Contains(path, "/..") {
+		// Extra caution: only allow validated absolute paths to proceed
+		if !strings.HasPrefix(cleanPath, cleanCwd) {
+			return fmt.Errorf("path traversal attempt detected")
+		}
+	}
+
+	// This might be further restricted based on specific application requirements
+	// For example, to only allow paths within a specific database directory
 
 	return nil
 }

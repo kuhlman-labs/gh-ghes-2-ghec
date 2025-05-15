@@ -474,8 +474,6 @@ func (s *SQLiteStorage) SaveMigrationStatus(ctx context.Context, status *payload
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		tableName := s.getTableName("migration_status")
-
 		// Convert completed stages to JSON
 		completedStages, err := json.Marshal(status.CompletedStages)
 		if err != nil {
@@ -483,8 +481,8 @@ func (s *SQLiteStorage) SaveMigrationStatus(ctx context.Context, status *payload
 		}
 
 		// Upsert query (insert or update)
-		query := fmt.Sprintf(`
-		INSERT INTO %s (
+		query := s.prepareTableQuery(`
+		INSERT INTO {table} (
 			repository, status, error, updated_at, 
 			stage, state, started_at, duration_seconds, 
 			migration_id, progress, stage_progress, 
@@ -508,7 +506,7 @@ func (s *SQLiteStorage) SaveMigrationStatus(ctx context.Context, status *payload
 			completed_stages = excluded.completed_stages,
 			total_stages = excluded.total_stages,
 			current_stage_index = excluded.current_stage_index
-		`, tableName)
+		`, "migration_status")
 
 		_, err = s.db.ExecContext(dbCtx, query,
 			status.Repository,
@@ -557,7 +555,7 @@ func (s *SQLiteStorage) GetMigrationStatus(ctx context.Context, repoName string)
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + s.getQuotedTableName("migration_status") + " WHERE repository = ?"
+		query := s.prepareTableQuery("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM {table} WHERE repository = ?", "migration_status")
 
 		row := s.db.QueryRowContext(dbCtx, query, repoName)
 
@@ -662,13 +660,12 @@ func (s *SQLiteStorage) GetAllMigrationStatuses(ctx context.Context) (map[string
 			return fmt.Errorf("database not initialized")
 		}
 
-		tableName := s.getTableName("migration_status")
-		query := fmt.Sprintf(`
+		query := s.prepareTableQuery(`
 			SELECT repository, status, error, updated_at, stage, state, started_at, 
 				duration_seconds, migration_id, progress, stage_progress, 
 				completed_stages, total_stages, current_stage_index, data 
-			FROM %s
-		`, tableName)
+			FROM {table}
+		`, "migration_status")
 
 		s.logger.Info("Executing query to get all migration statuses")
 
@@ -789,8 +786,7 @@ func (s *SQLiteStorage) DeleteMigrationStatus(ctx context.Context, repoName stri
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		quotedTableName := s.getQuotedTableName("migration_status")
-		query := "DELETE FROM " + quotedTableName + " WHERE repository = ?"
+		query := s.prepareTableQuery("DELETE FROM {table} WHERE repository = ?", "migration_status")
 
 		_, err := s.db.ExecContext(dbCtx, query, repoName)
 		if err != nil {
@@ -816,6 +812,14 @@ func (s *SQLiteStorage) getTableName(table string) string {
 func (s *SQLiteStorage) getQuotedTableName(table string) string {
 	tableName := s.getTableName(table)
 	return "\"" + strings.ReplaceAll(tableName, "\"", "\"\"") + "\""
+}
+
+// prepareTableQuery prepares a SQL query with a given table name in a secure way.
+// It replaces the placeholder {table} with the quoted table name.
+// This is safer than direct string concatenation for SQL queries.
+func (s *SQLiteStorage) prepareTableQuery(query string, tableName string) string {
+	quotedTable := s.getQuotedTableName(tableName)
+	return strings.ReplaceAll(query, "{table}", quotedTable)
 }
 
 // formatTimeOrEmpty formats a time value as RFC3339 or returns an empty string if the time is zero.
@@ -982,7 +986,7 @@ func (s *SQLiteStorage) CheckAndRepairDatabase(ctx context.Context) (string, err
 			defer countCancel()
 
 			var count int
-			err := s.db.QueryRowContext(countCtx, "SELECT COUNT(*) FROM "+s.getQuotedTableName("migration_status")).Scan(&count)
+			err := s.db.QueryRowContext(countCtx, s.prepareTableQuery("SELECT COUNT(*) FROM {table}", "migration_status")).Scan(&count)
 			if err != nil {
 				report.WriteString(fmt.Sprintf("✗ Failed to count records: %s\n", err))
 			} else {
@@ -1066,9 +1070,8 @@ func (s *SQLiteStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pa
 		}
 
 		// Insert into history table
-		quotedTableName := s.getQuotedTableName("migration_history")
-		query := `
-		INSERT INTO ` + quotedTableName + ` (
+		query := s.prepareTableQuery(`
+		INSERT INTO {table} (
 			repository, status, error, updated_at, 
 			stage, state, started_at, duration_seconds, 
 			migration_id, progress, stage_progress, 
@@ -1078,7 +1081,7 @@ func (s *SQLiteStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pa
 			?, ?, ?, ?, 
 			?, ?, ?, 
 			?, ?, ?
-		)`
+		)`, "migration_history")
 
 		_, err = s.db.ExecContext(dbCtx, query,
 			attempt.Repository,
@@ -1127,18 +1130,17 @@ func (s *SQLiteStorage) GetArchivedMigrationAttempts(ctx context.Context, repoFu
 		dbCtx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 		defer cancel()
 
-		quotedTableName := s.getQuotedTableName("migration_history")
-		query := `
+		query := s.prepareTableQuery(`
 			SELECT 
 				repository, status, error, updated_at, 
 				stage, state, started_at, duration_seconds, 
 				migration_id, progress, stage_progress, 
 				completed_stages, total_stages, current_stage_index,
 				archived_at
-			FROM ` + quotedTableName + ` 
+			FROM {table} 
 			WHERE repository = ?
 			ORDER BY archived_at DESC
-		`
+		`, "migration_history")
 
 		rows, err := s.db.QueryContext(dbCtx, query, repoFullName)
 		if err != nil {

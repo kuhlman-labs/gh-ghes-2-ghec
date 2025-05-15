@@ -161,9 +161,9 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 	}
 
 	// Upsert query using PostgreSQL syntax
-	quotedTableName := s.getQuotedTableName("migration_status")
-	query := `
-	INSERT INTO ` + quotedTableName + ` (
+	const tableName = "migration_status"
+	query := s.prepareTableQuery(`
+	INSERT INTO {table} (
 		repository, status, error, updated_at, 
 		stage, state, started_at, duration_seconds, 
 		migration_id, progress, stage_progress, 
@@ -179,7 +179,7 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 		updated_at = EXCLUDED.updated_at,
 		stage = EXCLUDED.stage,
 		state = EXCLUDED.state,
-		started_at = COALESCE(` + quotedTableName + `.started_at, EXCLUDED.started_at),
+		started_at = COALESCE({table}.started_at, EXCLUDED.started_at),
 		duration_seconds = EXCLUDED.duration_seconds,
 		migration_id = EXCLUDED.migration_id,
 		progress = EXCLUDED.progress,
@@ -187,7 +187,7 @@ func (s *PostgresStorage) SaveMigrationStatus(ctx context.Context, status *paylo
 		completed_stages = EXCLUDED.completed_stages,
 		total_stages = EXCLUDED.total_stages,
 		current_stage_index = EXCLUDED.current_stage_index
-	`
+	`, tableName)
 
 	// Format time values for PostgreSQL
 	var startedAt interface{}
@@ -230,8 +230,7 @@ func (s *PostgresStorage) GetMigrationStatus(ctx context.Context, repoName strin
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	quotedTableName := s.getQuotedTableName("migration_status")
-	query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + quotedTableName + " WHERE repository = $1"
+	query := s.prepareTableQuery("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM {table} WHERE repository = $1", "migration_status")
 
 	row := s.db.QueryRowContext(ctx, query, repoName)
 
@@ -298,8 +297,7 @@ func (s *PostgresStorage) GetAllMigrationStatuses(ctx context.Context) (map[stri
 
 	result := make(map[string]*payload.MigrationStatus)
 
-	quotedTableName := s.getQuotedTableName("migration_status")
-	query := "SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM " + quotedTableName
+	query := s.prepareTableQuery("SELECT repository, status, error, updated_at, stage, state, started_at, duration_seconds, migration_id, progress, stage_progress, completed_stages, total_stages, current_stage_index FROM {table}", "migration_status")
 
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
@@ -377,8 +375,7 @@ func (s *PostgresStorage) DeleteMigrationStatus(ctx context.Context, repoName st
 		return fmt.Errorf("database not initialized")
 	}
 
-	quotedTableName := s.getQuotedTableName("migration_status")
-	query := "DELETE FROM " + quotedTableName + " WHERE repository = $1"
+	query := s.prepareTableQuery("DELETE FROM {table} WHERE repository = $1", "migration_status")
 
 	_, err := s.db.ExecContext(ctx, query, repoName)
 	if err != nil {
@@ -514,6 +511,14 @@ func (s *PostgresStorage) getQuotedTableName(table string) string {
 	return "\"" + strings.ReplaceAll(tableName, "\"", "\"\"") + "\""
 }
 
+// prepareTableQuery prepares a SQL query with a given table name in a secure way.
+// It replaces the placeholder {table} with the quoted table name.
+// This is safer than direct string concatenation for SQL queries.
+func (s *PostgresStorage) prepareTableQuery(query string, tableName string) string {
+	quotedTable := s.getQuotedTableName(tableName)
+	return strings.ReplaceAll(query, "{table}", quotedTable)
+}
+
 // formatTimeOrEmpty formats a time value as RFC3339 or returns an empty string if the time is zero.
 
 // ArchiveMigrationAttempt saves a completed migration attempt to history
@@ -536,9 +541,8 @@ func (s *PostgresStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *
 	}
 
 	// Insert query for archiving
-	quotedTableName := s.getQuotedTableName("migration_history")
-	query := `
-	INSERT INTO ` + quotedTableName + ` (
+	query := s.prepareTableQuery(`
+	INSERT INTO {table} (
 		repository, status, error, updated_at, 
 		stage, state, started_at, duration_seconds, 
 		migration_id, progress, stage_progress, 
@@ -548,7 +552,7 @@ func (s *PostgresStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *
 		$5, $6, $7, $8, 
 		$9, $10, $11, 
 		$12, $13, $14
-	)`
+	)`, "migration_history")
 
 	// Format time values for PostgreSQL
 	var startedAt interface{}
@@ -591,18 +595,17 @@ func (s *PostgresStorage) GetArchivedMigrationAttempts(ctx context.Context, repo
 		return nil, fmt.Errorf("database not initialized")
 	}
 
-	quotedTableName := s.getQuotedTableName("migration_history")
-	query := `
+	query := s.prepareTableQuery(`
 		SELECT 
 			repository, status, error, updated_at, 
 			stage, state, started_at, duration_seconds, 
 			migration_id, progress, stage_progress, 
 			completed_stages, total_stages, current_stage_index,
 			archived_at
-		FROM ` + quotedTableName + ` 
+		FROM {table} 
 		WHERE repository = $1
 		ORDER BY archived_at DESC
-	`
+	`, "migration_history")
 
 	rows, err := s.db.QueryContext(ctx, query, repoFullName)
 	if err != nil {
