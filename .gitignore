@@ -26,7 +26,7 @@ go.work
 
 # OS specific files
 .DS_Store
-Thumbs.db
+*.db
 
 # Config files
 config.yaml

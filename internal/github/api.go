@@ -21,10 +21,24 @@ import (
 	"github.com/shurcooL/githubv4"
 )
 
-// API handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.
+// API is the interface for interacting with GitHub APIs.
+// It abstracts the GitHub API operations for better testability and flexibility.
+type API interface {
+	ValidateRepository(ctx context.Context, org, repo string) error
+	GetOrganizationID(ctx context.Context, org string) (string, int64, error)
+	CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error)
+	GenerateMigrationArchive(ctx context.Context, orgName, repoName string) (int64, error)
+	GetMigrationArchiveStatus(ctx context.Context, migrationID int64, orgName string) (string, error)
+	GetMigrationArchiveURL(ctx context.Context, archiveID int64, orgName string) (string, error)
+	StartRepositoryMigration(ctx context.Context, sourceID, ownerID, repoName, sourceRepoURL, archiveURL, metadataURL, ghesToken, ghCloudToken string) (string, error)
+	GetMigrationStatus(ctx context.Context, migrationID string) (string, error)
+	UploadArchiveToGHOS(ctx context.Context, databaseID int64, archiveURL, archiveName, ghCloudToken string) (string, error)
+}
+
+// GitHubAPI handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.
 // It provides methods for repository validation, organization management,
 // migration source creation, and migration operations.
-type API struct {
+type GitHubAPI struct {
 	clients     *config.Clients
 	logger      *slog.Logger
 	retryConfig *utils.RetryConfig
@@ -32,14 +46,14 @@ type API struct {
 
 // New creates a new GitHub API handler with the provided clients and logger.
 // It configures default retry policies appropriate for GitHub API interactions.
-func New(clients *config.Clients, logger *slog.Logger) *API {
+func New(clients *config.Clients, logger *slog.Logger) API {
 	// Create a retry configuration suitable for GitHub API calls
 	retryConfig := utils.DefaultRetryConfig(logger).
 		WithMaxRetries(2).                    // 3 total attempts
 		WithInitialInterval(1 * time.Second). // Start with 1s backoff
 		WithMaxInterval(5 * time.Second)      // Cap at 5s
 
-	return &API{
+	return &GitHubAPI{
 		clients:     clients,
 		logger:      logger,
 		retryConfig: retryConfig,
@@ -49,14 +63,14 @@ func New(clients *config.Clients, logger *slog.Logger) *API {
 // retryableOperation executes a function with retries based on the API's retry configuration.
 // It logs attempts and results, and backs off exponentially between retry attempts.
 // The operation name is used for logging and observability.
-func (a *API) retryableOperation(ctx context.Context, operation string, fn func() error) error {
+func (a *GitHubAPI) retryableOperation(ctx context.Context, operation string, fn func() error) error {
 	return utils.Retry(ctx, a.retryConfig, operation, fn)
 }
 
 // ValidateRepository checks if a repository exists in the source organization.
 // It makes a REST API call to the GHES instance and verifies the repository's existence.
 // Returns an error if the repository doesn't exist or can't be accessed.
-func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
+func (a *GitHubAPI) ValidateRepository(ctx context.Context, org, repo string) error {
 	startTime := time.Now()
 	a.logger.Debug("Validating repository",
 		"api", "GHES_REST",
@@ -104,7 +118,7 @@ func (a *API) ValidateRepository(ctx context.Context, org, repo string) error {
 // It makes a GraphQL API call to fetch the organization's unique identifier,
 // which is needed for migration operations.
 // Returns the organization ID as a string and any errors encountered.
-func (a *API) GetOrganizationID(ctx context.Context, org string) (string, int64, error) {
+func (a *GitHubAPI) GetOrganizationID(ctx context.Context, org string) (string, int64, error) {
 	var query struct {
 		Organization struct {
 			ID         string `graphql:"id"`
@@ -167,7 +181,7 @@ func (a *API) GetOrganizationID(ctx context.Context, org string) (string, int64,
 // A migration source defines where repositories will be migrated from.
 // This function uses the GraphQL API to create a GITHUB_ARCHIVE type source
 // and returns the created source's ID.
-func (a *API) CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error) {
+func (a *GitHubAPI) CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error) {
 	var mutation struct {
 		CreateMigrationSource struct {
 			MigrationSource struct {
@@ -240,7 +254,7 @@ func (a *API) CreateMigrationSource(ctx context.Context, name, url, ownerID stri
 }
 
 // GenerateMigrationArchive generates a migration archive for a repository on GHES
-func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName string) (int64, error) {
+func (a *GitHubAPI) GenerateMigrationArchive(ctx context.Context, orgName, repoName string) (int64, error) {
 	repos := []string{repoName}
 	opts := &github.MigrationOptions{
 		LockRepositories: false,
@@ -298,7 +312,7 @@ func (a *API) GenerateMigrationArchive(ctx context.Context, orgName, repoName st
 }
 
 // GetMigrationArchiveStatus gets the status of a migration archive export on GHES
-func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, orgName string) (string, error) {
+func (a *GitHubAPI) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, orgName string) (string, error) {
 	a.logger.Debug("Getting archive status",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationStatus",
@@ -365,7 +379,7 @@ func (a *API) GetMigrationArchiveStatus(ctx context.Context, migrationID int64, 
 }
 
 // GetMigrationArchiveURL gets the archive URL of a migration source
-func (a *API) GetMigrationArchiveURL(ctx context.Context, archiveID int64, orgName string) (string, error) {
+func (a *GitHubAPI) GetMigrationArchiveURL(ctx context.Context, archiveID int64, orgName string) (string, error) {
 	a.logger.Debug("Getting migration archive URL",
 		"api", "GHES_REST",
 		"method", "Migrations.MigrationArchiveURL",
@@ -409,7 +423,7 @@ func (a *API) GetMigrationArchiveURL(ctx context.Context, archiveID int64, orgNa
 }
 
 // StartRepositoryMigration starts a repository migration in GHEC
-func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, repoName, sourceRepoURL, archiveURL, metadataURL, ghesToken, ghCloudToken string) (string, error) {
+func (a *GitHubAPI) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, repoName, sourceRepoURL, archiveURL, metadataURL, ghesToken, ghCloudToken string) (string, error) {
 	var mutation struct {
 		StartRepositoryMigration struct {
 			RepositoryMigration struct {
@@ -514,7 +528,7 @@ func (a *API) StartRepositoryMigration(ctx context.Context, sourceID, ownerID, r
 }
 
 // GetMigrationStatus gets the current status of a repository migration from GHEC
-func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (string, error) {
+func (a *GitHubAPI) GetMigrationStatus(ctx context.Context, migrationID string) (string, error) {
 	var query struct {
 		Node struct {
 			Migration struct {
@@ -598,7 +612,7 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 			"duration_ms", duration.Milliseconds(),
 			"migrationId", migrationID,
 		)
-	case "FAILED":
+	case "FAILED", "FAILED_VALIDATION":
 		failureReason := query.Node.Migration.FailureReason
 		if failureReason != "" {
 			a.logger.Error("Migration failed",
@@ -637,7 +651,7 @@ func (a *API) GetMigrationStatus(ctx context.Context, migrationID string) (strin
 // UploadArchiveToGHOS uploads a migration archive to GitHub Owned Storage
 // This is used when customers select Local Storage (GHOS) instead of Azure or S3
 // It performs a chunked upload for all archives.
-func (a *API) UploadArchiveToGHOS(ctx context.Context, databaseID int64, archiveURL, archiveName, ghCloudToken string) (string, error) {
+func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, archiveURL, archiveName, ghCloudToken string) (string, error) {
 	// Log the start of the upload to GHOS
 	a.logger.Info("Starting archive upload to GitHub Owned Storage",
 		"api", "GHOS_Upload",

@@ -6,7 +6,7 @@ BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-X github.com/kuhlman-labs/gh-ghes-2-ghec/internal/version.Version=${VERSION} -X github.com/kuhlman-labs/gh-ghes-2-ghec/internal/version.BuildTime=${BUILD_TIME}"
 GO_FILES=$(shell find . -name "*.go" -type f -not -path "./vendor/*")
 
-.PHONY: all build clean test lint vet fmt docker docker-run help
+.PHONY: all build clean test lint vet fmt docker docker-run help run
 
 all: clean fmt lint test build
 
@@ -36,6 +36,10 @@ vet:
 fmt:
 	gofmt -s -w $(GO_FILES)
 
+# Build and run the server with dashboard enabled
+run: build
+	./$(BINARY_NAME) --dashboard=true --log-level=debug
+
 # Build docker image
 docker:
 	docker build --build-arg VERSION=$(VERSION) --build-arg BUILD_TIME=$(BUILD_TIME) -t $(BINARY_NAME):$(VERSION) .
@@ -58,6 +62,7 @@ help:
 	@echo "  make lint         : Run linter"
 	@echo "  make vet          : Run go vet"
 	@echo "  make fmt          : Format code"
+	@echo "  make run          : Build and run the server with dashboard enabled"
 	@echo "  make docker       : Build docker image"
 	@echo "  make docker-run   : Run docker container"
 	@echo "  make install      : Install the application" 

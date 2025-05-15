@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -250,7 +253,11 @@ func TestSanitizeToken(t *testing.T) {
 }
 
 // Helper function to set up a test server
-func setupTestServer(_ *testing.T) *Server {
+func setupTestServer(t *testing.T) *Server {
+	// Initialize config before creating a server
+	err := config.Init()
+	require.NoError(t, err, "Failed to initialize config")
+
 	cfg := &config.Config{
 		Server: config.ServerConfig{
 			Port:         8080,
@@ -259,6 +266,11 @@ func setupTestServer(_ *testing.T) *Server {
 			RateLimit:    60,
 		},
 	}
-	m := migrator.New("")
+
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	m := migrator.NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
+
 	return New(cfg, m)
 }

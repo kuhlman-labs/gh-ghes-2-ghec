@@ -1,0 +1,57 @@
+{{define "migrations_table"}}
+<table>
+    <thead>
+        <tr>
+            <th>Repository</th>
+            <th>Status</th>
+            <th>Stage</th>
+            <th>Progress</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{if eq (len .Migrations) 0}}
+        <tr>
+            <td colspan="7" class="empty-state">No migrations found</td>
+        </tr>
+        {{else}}
+        {{range .Migrations}}
+        <tr class="status-{{.Status | ToLower}}">
+            <td>{{.Repository}}</td>
+            <td>
+                <span class="status-indicator status-{{.Status | ToLower}}"></span>
+                {{.Status | Title}}
+            </td>
+            <td>
+                {{if .Stage}}
+                {{.Stage | Title}}: {{.State | Title}}
+                {{else}}
+                -
+                {{end}}
+            </td>
+            <td>
+                <div class="progress-bar">
+                    <div class="progress-value" data-progress="{{.Progress}}"></div>
+                </div>
+                <span class="progress-text">{{.Progress}}%</span>
+            </td>
+            <td>{{.StartedAt | FormatTime}}</td>
+            <td>{{.Duration | FormatDuration}}</td>
+            <td>
+                <a href="/dashboard/migration/{{.Repository}}" class="btn btn-sm btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                        <path d="M15 3h6v6"/>
+                        <path d="M10 14L21 3"/>
+                    </svg>
+                    Details
+                </a>
+            </td>
+        </tr>
+        {{end}}
+        {{end}}
+    </tbody>
+</table>
+{{end}} 

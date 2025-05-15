@@ -1,0 +1,148 @@
+{{define "migration_detail_content"}}
+<div id="migration-detail" class="detail-content">
+    {{if .Migration }} {{/* Check if Migration data is available */}}
+    <div class="detail-header status-{{.Migration.Status | ToLower}}">
+        <div class="detail-status">
+            <span class="status-indicator status-{{.Migration.Status | ToLower}}"></span>
+            <span class="status-text">{{.Migration.Status | Title}}</span>
+        </div>
+        <div class="detail-progress">
+            <div class="progress-bar">
+                <div class="progress-value" data-progress="{{.Migration.Progress}}"></div>
+            </div>
+            <span class="progress-text">{{.Migration.Progress}}% Complete</span>
+        </div>
+        <div class="detail-actions">
+            <button class="btn btn-sm btn-secondary" 
+                    hx-get="/dashboard/migration/{{.Migration.Repository}}/refresh" 
+                    hx-target="#migration-detail" 
+                    hx-swap="outerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/></svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="detail-info">
+        <div class="info-section">
+            <h3>General Information</h3>
+            <table class="info-table">
+                <tr>
+                    <th>Repository</th>
+                    <td>{{.Migration.Repository}}</td>
+                </tr>
+                <tr>
+                    <th>Started At</th>
+                    <td>{{.Migration.StartedAt | FormatDateTime}}</td>
+                </tr>
+                <tr>
+                    <th>Last Updated</th>
+                    <td>{{.Migration.UpdatedAt | FormatDateTime}}</td>
+                </tr>
+                <tr>
+                    <th>Duration</th>
+                    <td>{{.Migration.Duration | FormatDuration}}</td>
+                </tr>
+                <tr>
+                    <th>Migration ID</th>
+                    <td>{{if .Migration.MigrationID}}{{.Migration.MigrationID}}{{else}}-{{end}}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="info-section">
+            <h3>Migration Progress</h3>
+            <div class="stage-progress">
+                {{range $i, $stage := .Stages}}
+                <div class="stage-item {{/* Directly use status for class */}} {{$stage.Status}}">
+                    <div class="stage-marker">
+                        {{if eq $stage.Status "completed"}}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <path d="M22 4L12 14.01l-3-3"/>
+                        </svg>
+                        {{else if eq $stage.Status "current"}}
+                        <div class="current-stage-marker"></div>
+                        {{else if eq $stage.Status "failed"}}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                        {{else if eq $stage.Status "skipped"}}
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="grey" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        {{else}} {{/* Covers "pending" and any other default */}}
+                        <div class="pending-stage-marker"></div>
+                        {{end}}
+                    </div>
+                    <div class="stage-info">
+                        <h4>{{$stage.Name | Title}}</h4>
+                        <p>{{$stage.Description}}</p>
+                        {{if eq $stage.Status "current"}}
+                        <div class="stage-progress-bar">
+                            <div class="stage-progress-value" data-progress="{{$.Migration.StageProgress}}"></div>
+                        </div>
+                        <span class="stage-progress-text">{{$.Migration.StageProgress}}%</span>
+                        <p class="stage-state">Current state: {{$.Migration.State | Title}}</p>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+
+        {{if .Migration.Error}}
+        <div class="info-section error-section">
+            <h3>Error Details</h3>
+            <div class="error-message">
+                {{.Migration.Error}}
+            </div>
+        </div>
+        {{end}}
+    </div>
+    {{else}}
+    <div class="detail-header">
+        <div class="detail-status">
+            <span class="status-text">Migration data not available. It might have been deleted or is no longer accessible.</span>
+        </div>
+    </div>
+    {{end}}
+
+    {{/* Archived Attempts Section */}}
+    <div class="info-section archived-attempts-section">
+        <h3>Archived Migration Attempts</h3>
+        {{if .ArchivedAttempts}}
+        <table class="info-table archived-table">
+            <thead>
+                <tr>
+                    <th>Attempt Started</th>
+                    <th>Attempt Finished</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                    <th>Migration ID</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{range .ArchivedAttempts}}
+                <tr class="status-{{.Status | ToLower}}">
+                    <td>{{.StartedAt | FormatDateTime}}</td>
+                    <td>{{.UpdatedAt | FormatDateTime}}</td> {{/* Using UpdatedAt as 'finished time' for the attempt */}}
+                    <td>{{.Duration | FormatDuration}}</td>
+                    <td>
+                        <span class="status-indicator status-{{.Status | ToLower}}"></span>
+                        {{.Status | Title}}
+                    </td>
+                    <td>{{if .MigrationID}}{{.MigrationID}}{{else}}-{{end}}</td>
+                    <td class="error-message-cell">{{if .Error}}{{.Error}}{{else}}-{{end}}</td>
+                </tr>
+                {{end}}
+            </tbody>
+        </table>
+        {{else}}
+        <p>No archived attempts found for this repository.</p>
+        {{end}}
+    </div>
+</div>
+{{end}} 

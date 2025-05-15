@@ -1,0 +1,45 @@
+{{define "overview_content"}}
+<div class="dashboard-overview">
+    <div class="dashboard-header">
+        <h2>Migration Status Overview</h2>
+        <div class="dashboard-controls">
+            <a href="/dashboard/new" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                New Migration
+            </a>
+            <button class="btn btn-secondary" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="dashboard-stats">
+        <div class="stat-card">
+            <h3>Active</h3>
+            <span class="stat-value">{{ .Stats.Active }}</span>
+        </div>
+        <div class="stat-card">
+            <h3>Succeeded</h3>
+            <span class="stat-value">{{ .Stats.Succeeded }}</span>
+        </div>
+        <div class="stat-card">
+            <h3>Failed</h3>
+            <span class="stat-value">{{ .Stats.Failed }}</span>
+        </div>
+        <div class="stat-card">
+            <h3>Total</h3>
+            <span class="stat-value">{{ .Stats.Total }}</span>
+        </div>
+    </div>
+
+    <div class="dashboard-table" id="migrations-table">
+        {{template "migrations_table" .}}
+    </div>
+</div>
+{{end}} 

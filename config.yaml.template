@@ -1,9 +1,10 @@
 server:
   port: 8080
-  shutdown_timeout: 30
-  read_timeout: 15
-  write_timeout: 15
+  shutdown_timeout: 60
+  read_timeout: 30
+  write_timeout: 30
   rate_limit: 60  # 60 requests per minute
+  dashboard: true  # Set to true to enable the web dashboard UI
 
 webhook:
   url: ""  # Set this to your webhook URL if needed
@@ -16,3 +17,10 @@ tracing:
   endpoint: "localhost:4317"  # OTLP endpoint
   service_name: "gh-ghes-2-ghec"
   sample_rate: 1.0  # Sample all traces (1.0) or a fraction (e.g., 0.1 for 10%) 
+
+storage:
+  enabled: false  # Set to true to enable persistent storage of migration state
+  type: "sqlite"  # Options: sqlite, mysql, postgres
+  connection_string: "migrations.db"  # For SQLite: file path, for MySQL/Postgres: connection string
+  table_prefix: ""  # Optional prefix for database tables
+  timeout: 60       # Timeout for database operations in seconds (default: 60) 

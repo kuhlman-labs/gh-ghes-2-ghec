@@ -10,19 +10,23 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/server"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/storage"
 	"github.com/spf13/cobra"
 )
 
 var (
 	// Flag variables
-	webhookURL string
-	port       int
-	logLevel   string
+	webhookURL    string
+	port          int
+	logLevel      string
+	dashboardFlag bool
 
 	// Flag state tracking
 	logLevelFlagSet bool
@@ -44,7 +48,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Initialize and validate configuration
-		if err := initializeConfig(); err != nil {
+		if err := initializeConfig(cmd); err != nil {
 			return err
 		}
 
@@ -75,6 +79,7 @@ func init() {
 	rootCmd.Flags().StringVar(&webhookURL, "webhook-url", "", "Global webhook URL for all migration notifications")
 	rootCmd.Flags().IntVar(&port, "port", 8080, "Port to listen on")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "Logging level (debug, info, warn, error)")
+	rootCmd.Flags().BoolVar(&dashboardFlag, "dashboard", true, "Enable the web dashboard UI")
 
 	// Remove required flags to allow config init to work
 	// We'll validate these in the RunE functions where needed
@@ -120,7 +125,7 @@ func initializeLogging() error {
 // initializeConfig initializes and validates the configuration.
 // It updates the configuration with command-line flag values if provided.
 // Returns an error if configuration validation fails.
-func initializeConfig() error {
+func initializeConfig(cmd *cobra.Command) error {
 	// Get the logger
 	logger := logging.Get()
 
@@ -138,12 +143,17 @@ func initializeConfig() error {
 	if logLevelFlagSet {
 		cfg.Logging.Level = logLevel
 	}
+	// Check if dashboard flag was explicitly set
+	if cmd.Flags().Changed("dashboard") {
+		cfg.Server.Dashboard = dashboardFlag
+	}
 
 	// Log config
 	logger.Debug("Configuration loaded",
 		"port", cfg.Server.Port,
 		"webhook_configured", cfg.Webhook.URL != "",
 		"log_level", cfg.Logging.Level,
+		"dashboard", cfg.Server.Dashboard,
 	)
 
 	// Validate configuration
@@ -159,9 +169,50 @@ func initializeConfig() error {
 // Returns the configured server or an error if setup fails.
 func setupServer() (*server.Server, error) {
 	cfg := config.Get()
+	logger := logging.Get()
 
-	// Create migrator
-	m := migrator.New(cfg.Webhook.URL)
+	// Create HTTP client with default timeouts for various operations
+	httpClient := &http.Client{
+		Timeout: 30 * time.Second, // Default timeout
+	}
+
+	// Create a no-op GitHub API implementation
+	// In real API calls, the migrator will create a proper API client using tokens from the request
+	githubAPI := github.NewNoopAPI(logger)
+
+	// Setup storage provider based on configuration
+	var storageProvider storage.MigrationStorage
+	var err error
+	if cfg.Storage.Enabled {
+		// Convert app config to storage config
+		storageConfig := storage.NewStorageConfigFromConfig(&cfg.Storage)
+		storageProvider, err = storage.NewStorageProvider(storageConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create storage provider: %w", err)
+		}
+
+		// Initialize storage
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := storageProvider.Initialize(ctx); err != nil {
+			return nil, fmt.Errorf("failed to initialize storage: %w", err)
+		}
+		logger.Info("Storage initialized successfully", "type", cfg.Storage.Type)
+	} else {
+		logger.Info("Storage is disabled, using in-memory storage only")
+		storageProvider = &storage.NoopStorage{}
+	}
+
+	// Create migrator with dependencies
+	m := migrator.NewMigrator(
+		logger,          // Logger
+		githubAPI,       // GitHub API client (no-op implementation)
+		storageProvider, // Storage provider
+		cfg.Webhook.URL, // Webhook URL
+		cfg,             // Full config
+		httpClient,      // HTTP client
+		nil,             // Tracing provider (nil is acceptable)
+	)
 
 	// Create server
 	s := server.New(cfg, m)

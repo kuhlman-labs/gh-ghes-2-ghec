@@ -1,0 +1,105 @@
+{{define "new_migration_content"}}
+<div class="dashboard-form">
+    <div class="dashboard-header">
+        <h2>New Migration</h2>
+        <div class="dashboard-controls">
+            <a href="/dashboard" class="btn btn-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Back to Overview
+            </a>
+        </div>
+    </div>
+
+    <div class="form-container">
+        <form id="migration-form" action="/dashboard/migrate" method="POST">
+            {{if .Error}}
+            <div class="alert alert-error">
+                {{.Error}}
+            </div>
+            {{end}}
+
+            {{if .Success}}
+            <div class="alert alert-success">
+                {{.Success}}
+            </div>
+            {{end}}
+
+            <div class="form-section">
+                <h3>GitHub Enterprise Server (Source)</h3>
+                
+                <div class="form-group">
+                    <label for="ghes_base_url">GHES URL</label>
+                    <input type="url" id="ghes_base_url" name="ghes_base_url" placeholder="https://github.yourdomain.com" required>
+                    <div class="form-hint">The base URL of your GitHub Enterprise Server instance</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="source_org">Source Organization</label>
+                    <input type="text" id="source_org" name="source_org" placeholder="source-organization" required>
+                    <div class="form-hint">The name of the organization in your GHES instance</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ghes_token">GHES Token</label>
+                    <input type="password" id="ghes_token" name="ghes_token" required>
+                    <div class="form-hint">A token with 'repo' and 'admin:org' scopes for your GHES instance</div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h3>GitHub Enterprise Cloud (Target)</h3>
+                
+                <div class="form-group">
+                    <label for="target_org">Target Organization</label>
+                    <input type="text" id="target_org" name="target_org" placeholder="target-organization" required>
+                    <div class="form-hint">The name of the organization in GitHub Enterprise Cloud</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="gh_cloud_token">GHEC Token</label>
+                    <input type="password" id="gh_cloud_token" name="gh_cloud_token" required>
+                    <div class="form-hint">A token with 'repo' and 'admin:org' scopes for GitHub Enterprise Cloud</div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h3>Repositories</h3>
+                
+                <div class="form-group">
+                    <label for="repositories">Repositories (one per line)</label>
+                    <textarea id="repositories" name="repositories" rows="5" placeholder="repo1&#10;repo2&#10;repo3" required></textarea>
+                    <div class="form-hint">Enter each repository name on a new line</div>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h3>Migration Options</h3>
+                
+                <div class="form-group form-group-checkbox">
+                    <input type="checkbox" id="use_ghos" name="use_ghos" value="true" checked>
+                    <label for="use_ghos">Use GitHub Owned Storage (GHOS)</label>
+                    <div class="form-hint">Recommended for migrations with large repositories (>5GB)</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="max_duration">Maximum Duration (optional)</label>
+                    <input type="text" id="max_duration" name="max_duration" placeholder="24h">
+                    <div class="form-hint">Maximum allowed duration for the migration (e.g., "24h", "36h")</div>
+                </div>
+            </div>
+            
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <polyline points="19 12 12 19 5 12"></polyline>
+                    </svg>
+                    Start Migration
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}} 

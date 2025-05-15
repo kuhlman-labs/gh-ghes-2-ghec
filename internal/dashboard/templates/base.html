@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .Title }} - GitHub Migration Dashboard</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="/static/js/htmx.min.js" defer></script>
+    <script src="/static/js/dashboard.js" defer></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="logo">
+                <h1>GitHub Migration Dashboard</h1>
+            </div>
+            <nav>
+                <ul>
+                    <li><a href="/dashboard" class="{{ if eq .Active "overview" }}active{{ end }}">Overview</a></li>
+                    <li><a href="/dashboard/new" class="{{ if eq .Active "new" }}active{{ end }}">New Migration</a></li>
+                    <li><a href="/dashboard/history" class="{{ if eq .Active "history" }}active{{ end }}">History</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        {{if eq .PageName "overview"}}
+            {{template "overview_content" .}}
+        {{else if eq .PageName "new_migration"}}
+            {{template "new_migration_content" .}}
+        {{else if eq .PageName "migration_detail"}}
+            {{template "migration_detail_content_wrapper" .}}
+        {{else if eq .PageName "history"}}
+            {{template "history_content" .}}        
+        {{else}}
+            <p>Error: Page content not found (PageName: {{.PageName}}).</p>
+        {{end}}
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; {{ .CurrentYear }} GitHub GHES to GHEC Migration Tool</p>
+        </div>
+    </footer>
+</body>
+</html> 

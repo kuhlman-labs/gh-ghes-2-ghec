@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/dashboard"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
@@ -63,6 +64,11 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 	mux.Handle("/migrate", s.withAPIMiddleware(migrateHandler))
 	mux.Handle("/status", s.withBaseMiddleware(statusHandler))
 	mux.Handle("/health", s.withBaseMiddleware(healthHandler))
+
+	// Initialize and register dashboard if enabled
+	if cfg.Server.Dashboard {
+		s.initDashboard(mux)
+	}
 
 	// Create server with timeouts
 	s.server = &http.Server{
@@ -144,6 +150,7 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully shuts down the server with a timeout context.
 // It attempts to complete all in-flight requests before shutting down.
+// It also closes any resources used by the migrator, including storage connections.
 //
 // Parameters:
 //   - ctx: Context for shutdown timeout.
@@ -152,7 +159,21 @@ func (s *Server) Start() error {
 //   - error: An error if the server fails to shut down gracefully.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Shutting down server")
-	return s.server.Shutdown(ctx)
+
+	// First shut down the HTTP server
+	if err := s.server.Shutdown(ctx); err != nil {
+		s.logger.Error("Error shutting down HTTP server", "error", err)
+		// Continue with cleanup even if HTTP shutdown fails
+	}
+
+	// Then close migrator resources (including storage)
+	if err := s.migrator.Close(); err != nil {
+		s.logger.Error("Error closing migrator resources", "error", err)
+		return err
+	}
+
+	s.logger.Info("Server shutdown completed")
+	return nil
 }
 
 // handleHealth handles requests to the /health endpoint.
@@ -186,17 +207,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get repository name from query parameter
-	repoName := r.URL.Query().Get("repository")
-	if repoName != "" {
-		span.SetAttributes(attribute.String("repository", repoName))
+	// Get repository full name (org/repo) from query parameter
+	repoFullName := r.URL.Query().Get("repository")
+	if repoFullName != "" {
+		span.SetAttributes(attribute.String("repository_full_name", repoFullName))
 	}
 
-	if repoName != "" {
+	if repoFullName != "" {
 		// Get status for specific repository
-		status := s.migrator.GetMigrationStatus(repoName)
+		status := s.migrator.GetMigrationStatus(repoFullName)
 		if status == nil {
-			errMsg := fmt.Sprintf("No migration found for repository %s", repoName)
+			errMsg := fmt.Sprintf("No migration found for repository %s", repoFullName)
 			s.writeError(w, r, http.StatusNotFound, errMsg)
 			span.SetStatus(codes.Error, errMsg)
 			return
@@ -401,4 +422,18 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 		)
 		tracing.RecordError(ctx, err)
 	}
+}
+
+// initDashboard initializes and registers the dashboard handlers
+func (s *Server) initDashboard(mux *http.ServeMux) {
+	// Create dashboard handler
+	dashboardHandler, err := dashboard.New(s.migrator)
+	if err != nil {
+		s.logger.Error("Failed to initialize dashboard", "error", err)
+		return
+	}
+
+	// Register dashboard handlers
+	dashboardHandler.RegisterHandlers(mux)
+	s.logger.Info("Dashboard enabled and registered")
 }

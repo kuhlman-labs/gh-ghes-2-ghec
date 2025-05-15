@@ -12,6 +12,7 @@ A server application that provides an HTTP API for migrating repositories from G
   - [Migration Process](#migration-process)
 - [API Reference](#api-reference)
 - [Webhooks](#webhooks)
+- [Storage Options](#storage-options)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
 - [Architecture](#architecture)
@@ -25,6 +26,7 @@ A server application that provides an HTTP API for migrating repositories from G
 - Asynchronous processing of multiple repositories
 - Real-time status tracking and progress updates
 - Webhook notifications for migration events
+- Web dashboard for visualizing migration status
 - Support for large archives (>5GB) via GitHub Owned Storage (GHOS)
 - Comprehensive logging and monitoring
 - Graceful shutdown handling
@@ -136,6 +138,7 @@ server:
   write_timeout: 15
   max_concurrent_migrations: 5  # Maximum number of concurrent migrations
   temp_dir: "/tmp/migrations"   # Directory for temporary files
+  dashboard: true               # Enable or disable the web dashboard UI
 webhook:
   url: "https://your-webhook-url"   # Global webhook URL for all migration notifications
   timeout: 10                       # Webhook delivery timeout in seconds
@@ -156,6 +159,7 @@ server:
   read_timeout: 15
   write_timeout: 15
   rate_limit: 60
+  dashboard: true
 
 webhook:
   url: ""
@@ -181,6 +185,7 @@ Flags:
   --port int                    Port to listen on (default 8080)
   --webhook-url string         Global webhook URL for all migration notifications
   --log-level string           Logging level (debug, info, warn, error) (default "info")
+  --dashboard                  Enable the web dashboard UI (default true)
   --config string              Path to config file (default "config.yaml")
   --temp-dir string            Directory for temporary files
   --max-concurrent int         Maximum number of concurrent migrations
@@ -481,6 +486,106 @@ Webhooks can be configured in two ways:
    - Generate compliance reports
 </details>
 
+## Storage Options
+
+<details>
+<summary>Overview</summary>
+
+The migration server provides options for persistent storage of migration states and data. By default, all migration data is stored in memory and will be lost when the server restarts. Enabling persistent storage allows the server to:
+
+- Survive restarts while preserving migration state
+- Maintain historical records of past migrations
+- Provide migration statistics across server sessions
+- Support the dashboard with historical data
+
+Storage is entirely optional but recommended for production deployments.
+</details>
+
+<details>
+<summary>Configuration Options</summary>
+
+Storage can be configured in the config.yaml file:
+
+```yaml
+storage:
+  enabled: true                           # Set to true to enable persistent storage
+  type: "sqlite"                          # Options: sqlite, mysql, postgres
+  connection_string: "migrations.db"      # SQLite: file path, MySQL/Postgres: connection string
+  table_prefix: "ghes2ghec_"              # Optional prefix for database tables
+```
+
+### Storage Types
+
+1. **SQLite** (default):
+   - Lightweight file-based database
+   - Suitable for small to medium deployments
+   - Example: `connection_string: "migrations.db"`
+
+2. **MySQL**:
+   - More robust for higher concurrency
+   - Example: `connection_string: "user:password@tcp(localhost:3306)/migrations"`
+
+3. **PostgreSQL**:
+   - Enterprise-grade database with advanced features
+   - Example: `connection_string: "postgres://user:password@localhost:5432/migrations"`
+
+### Table Prefix
+The `table_prefix` parameter adds a prefix to all database table names. This is useful when:
+- Using a shared database with other applications
+- Running multiple instances of the migration server with the same database
+- Implementing database sharding strategies
+</details>
+
+<details>
+<summary>Data Persistence Behavior</summary>
+
+When storage is enabled:
+
+1. **Server Startup**:
+   - The server loads all previously saved migration states from the database
+   - Migrations that were in progress when the server last shut down remain in their last known state
+   - The dashboard will display historical migration data
+
+2. **During Operation**:
+   - Each status change is persisted to the database in real-time
+   - Migration metadata and progress information are stored
+
+3. **Shutdown and Restart**:
+   - In-flight migrations that didn't complete will be marked as failed after restart
+   - Historical data remains available for reporting
+</details>
+
+<details>
+<summary>Database Schema Management</summary>
+
+The server automatically handles database schema creation and migrations:
+
+- Tables are created if they don't exist
+- Schema migrations are applied automatically
+- No manual database setup is required
+
+Example tables created:
+- `migrations` - Core migration data
+- `migration_events` - Historical events for each migration
+- `repositories` - Repository-specific migration data
+</details>
+
+<details>
+<summary>Backup Recommendations</summary>
+
+For production deployments with storage enabled:
+
+1. **SQLite**:
+   - Regular file backups of the database file
+   - Consider using an external volume with your container
+   - Example Docker mount: `-v /path/to/data:/app/data`
+
+2. **MySQL/PostgreSQL**:
+   - Use standard database backup procedures
+   - Consider point-in-time recovery options
+   - Implement database replication where appropriate
+</details>
+
 ## Security
 
 <details>
@@ -625,3 +730,56 @@ ghcr.io/kuhlman-labs/gh-ghes-2-ghec:1.2
 ## License
 
 MIT 
+
+### Dashboard UI
+
+<details>
+<summary>Click to expand</summary>
+
+The migration server includes a web-based dashboard for visualizing migration status and progress. The dashboard is accessible at the `/dashboard` endpoint.
+
+#### Features
+- Overview of all migrations with status summaries
+- Detailed view of individual migration progress
+- Real-time updates using HTMX for a dynamic experience
+- Visual progress indicators for each migration stage
+- Works with or without persistent storage enabled
+
+#### Accessing the Dashboard
+By default, the dashboard is enabled and accessible at:
+```
+http://your-server:8080/dashboard
+```
+
+#### Configuration
+You can enable or disable the dashboard in your configuration:
+
+```yaml
+server:
+  dashboard: true  # Set to false to disable the dashboard
+```
+
+Or using the command line flag:
+```bash
+./gh-ghes-2-ghec --dashboard=false  # Disable the dashboard
+```
+
+#### Persistent Storage
+The dashboard works without persistent storage enabled, using in-memory state. However, when storage is enabled, the dashboard will also display historical migration data loaded from the database even after server restarts.
+
+#### Self-Service Migration Form
+The dashboard includes a self-service migration form that allows users to:
+- Submit new migrations directly from the web UI
+- Specify source and target organizations
+- Enter GitHub Enterprise Server and Cloud tokens
+- Select repositories to migrate
+- Configure migration options like GHOS and max duration
+
+To use the form:
+1. Navigate to `/dashboard/new` or click "New Migration" in the dashboard navigation
+2. Fill out the required fields
+3. Submit the form to start the migration process
+4. You'll be redirected to the dashboard overview to monitor progress
+
+This feature makes it easy for teams to initiate migrations without having to construct API requests manually.
+</details> 
