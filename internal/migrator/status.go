@@ -11,24 +11,9 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 )
 
-// updateStatus updates the in-memory status of a migration and triggers persistence.
-// repoFullName is the unique identifier in "org/repo" format.
-// newOverallStatus is one of payload.StatusInProgress, payload.StatusSucceeded, payload.StatusFailed.
-// message often contains details about the current state or an error.
-// timestamp is when this specific update event occurred.
-// attemptStartTime is the time this particular migration attempt (fresh or retry) began.
-func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, message string, timestamp time.Time, attemptStartTime time.Time) {
-	m.mu.Lock() // Lock is released before potentially long-running operations
-
-	var currentAttemptStatus *payload.MigrationStatus // Declared here
-	var isNewOrChanged bool
-	var oldStatus *payload.MigrationStatus
-	var migrationStatus *payload.MigrationStatus
-
-	// Parse the message to determine stage and state for this update
-	var stage, state string
-
-	// Extract stage information from message (with improved mapping)
+// parseMessageToStageAndState extracts the stage and state information from a status message.
+// It returns the appropriate stage and state strings based on the message content.
+func parseMessageToStageAndState(message string, overallStatus string) (stage, state string) {
 	switch {
 	case strings.Contains(message, "starting migration process"):
 		stage = "init"
@@ -98,7 +83,7 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 	case strings.Contains(message, "migration completed successfully"):
 		stage = "migration"
 		state = "completed"
-	case newOverallStatus == payload.StatusFailed:
+	case overallStatus == payload.StatusFailed:
 		stage = "error"
 		state = "failed"
 	default:
@@ -106,6 +91,66 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 		stage = "unknown"
 		state = "unknown"
 	}
+
+	return stage, state
+}
+
+// persistAndNotifyStatusUpdate handles persisting the status to storage and sending webhook notifications.
+// This is run asynchronously to avoid blocking the main status update flow.
+func (m *Migrator) persistAndNotifyStatusUpdate(status *payload.MigrationStatus, isNewOrChanged bool) {
+	if status == nil {
+		m.logger.Error("Status is nil, cannot persist or send webhook", "repository_full_name", "unknown")
+		return
+	}
+
+	repoFullName := status.Repository
+
+	// Persist to storage (in a background goroutine to avoid blocking)
+	if config.Get().Storage.Enabled {
+		go func(status payload.MigrationStatus) {
+			// Use a dedicated timeout for saving migration status,
+			// as the server write timeout might be too short for this operation.
+			// Defaulting to 60 seconds, similar to default DB operation timeouts.
+			saveTimeout := 60 * time.Second
+			ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+			defer cancel()
+
+			if err := m.storage.SaveMigrationStatus(ctx, &status); err != nil {
+				m.logger.Error("Failed to persist migration status",
+					"repository", status.Repository,
+					"error", err,
+				)
+			} else {
+				m.logger.Debug("Migration status persisted to storage",
+					"repository", status.Repository,
+				)
+			}
+		}(*status)
+	}
+
+	// Send webhook notification if the status changed
+	if isNewOrChanged && m.webhookURL != "" {
+		// Passing nil for the second argument, assuming sendWebhookNotification will fetch the status using repoFullName.
+		go m.sendWebhookNotification(repoFullName, nil)
+	}
+}
+
+// updateStatus updates the in-memory status of a migration and triggers persistence.
+// repoFullName is the unique identifier in "org/repo" format.
+// newOverallStatus is one of payload.StatusInProgress, payload.StatusSucceeded, payload.StatusFailed.
+// message often contains details about the current state or an error.
+// timestamp is when this specific update event occurred.
+// attemptStartTime is the time this particular migration attempt (fresh or retry) began.
+func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, message string, timestamp time.Time, attemptStartTime time.Time) {
+	m.mu.Lock() // Lock is released before potentially long-running operations
+
+	var currentAttemptStatus *payload.MigrationStatus
+	var isNewOrChanged bool
+	var oldStatus *payload.MigrationStatus
+	var migrationStatus *payload.MigrationStatus
+
+	// Parse the message to determine stage and state for this update
+	stage, state := parseMessageToStageAndState(message, newOverallStatus)
 
 	if existing, ok := m.migrations[repoFullName]; !ok {
 		// New status - Initialize with first stage
@@ -129,7 +174,7 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 			CurrentStageIndex: progressData.currentStageIndex,
 		}
 		m.migrations[repoFullName] = migrationStatus
-		currentAttemptStatus = migrationStatus // Assign here
+		currentAttemptStatus = migrationStatus
 		m.logger.Debug("Created new in-memory status for first update", "repository_full_name", repoFullName, "attempt_start_time", attemptStartTime)
 	} else {
 		// Save old status for comparison
@@ -160,10 +205,6 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 			existing.Error = message
 		} else if existing.Status != payload.StatusFailed && newOverallStatus != payload.StatusFailed {
 			// If not failing now, and wasn't already failed, clear any old error from a previous stage if message is not an error.
-			// This depends on what `message` contains. If `message` is purely informational for non-failed states,
-			// then we might not want to overwrite `existing.Error` here unless `newOverallStatus` implies error state is resolved.
-			// For simplicity, error is set if StatusFailed, otherwise StartMigration clears it for retries.
-			// If it transitions from InProgress to InProgress with a new message, we assume the message is informational.
 			existing.Error = ""
 		}
 
@@ -184,7 +225,7 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 
 	// Calculate duration for terminal states (Succeeded or Failed)
 	if newOverallStatus == payload.StatusSucceeded || newOverallStatus == payload.StatusFailed {
-		if currentAttemptStatus != nil && !currentAttemptStatus.StartedAt.IsZero() { // Use currentAttemptStatus
+		if currentAttemptStatus != nil && !currentAttemptStatus.StartedAt.IsZero() {
 			currentAttemptStatus.Duration = timestamp.Sub(currentAttemptStatus.StartedAt)
 			if currentAttemptStatus.Status == payload.StatusSucceeded || currentAttemptStatus.Status == payload.StatusFailed {
 				if currentAttemptStatus.Progress < 100 {
@@ -197,37 +238,9 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 	}
 
 	// Create a deep copy for persistence and webhook to avoid race conditions if the in-memory object is further modified.
-	statusForAsyncTasks := deepCopyMigrationStatus(currentAttemptStatus) // Use currentAttemptStatus
+	statusForAsyncTasks := deepCopyMigrationStatus(currentAttemptStatus)
 
 	m.mu.Unlock() // Unlock before long-running I/O
-
-	if statusForAsyncTasks == nil {
-		m.logger.Error("Status for async tasks is nil, cannot persist or send webhook", "repository_full_name", repoFullName)
-		return
-	}
-
-	// Persist to storage (in a background goroutine to avoid blocking)
-	if config.Get().Storage.Enabled {
-		go func(status payload.MigrationStatus) {
-			// Use a dedicated timeout for saving migration status,
-			// as the server write timeout might be too short for this operation.
-			// Defaulting to 60 seconds, similar to default DB operation timeouts.
-			saveTimeout := 60 * time.Second
-			ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
-			defer cancel()
-
-			if err := m.storage.SaveMigrationStatus(ctx, &status); err != nil {
-				m.logger.Error("Failed to persist migration status",
-					"repository", status.Repository,
-					"error", err,
-				)
-			} else {
-				m.logger.Debug("Migration status persisted to storage",
-					"repository", status.Repository,
-				)
-			}
-		}(*statusForAsyncTasks)
-	}
 
 	// Log status update (only for significant changes to reduce noise)
 	if isNewOrChanged {
@@ -259,13 +272,8 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 		)
 	}
 
-	// Send webhook notification if the status changed
-	if isNewOrChanged && m.webhookURL != "" {
-		// Passing nil for the second argument, assuming sendWebhookNotification will fetch the status using repoFullName.
-		// This matches the previous call pattern. Ideally, sendWebhookNotification will be updated
-		// to accept *payload.MigrationStatus, and this call can be changed to pass statusForAsyncTasks.
-		go m.sendWebhookNotification(repoFullName, nil)
-	}
+	// Handle persistence and notifications asynchronously
+	m.persistAndNotifyStatusUpdate(statusForAsyncTasks, isNewOrChanged)
 }
 
 // getStageDescription returns a human-readable description of a migration stage
