@@ -10,6 +10,7 @@ A server application that provides an HTTP API for migrating repositories from G
 - [Usage](#usage)
   - [Docker Deployment](#docker-deployment)
   - [Migration Process](#migration-process)
+- [Dashboard](#dashboard)
 - [API Reference](#api-reference)
 - [Webhooks](#webhooks)
 - [Storage Options](#storage-options)
@@ -23,17 +24,11 @@ A server application that provides an HTTP API for migrating repositories from G
 ## Features
 
 - API for initiating and monitoring migrations
-- Asynchronous processing of multiple repositories
-- Real-time status tracking and progress updates
-- Webhook notifications for migration events
+- Real-time status tracking and progress updates via webhooks
 - Web dashboard for visualizing migration status
-- Support for large archives (>5GB) via GitHub Owned Storage (GHOS)
 - Comprehensive logging and monitoring
-- Graceful shutdown handling
 - Automatic retry mechanism for API calls
 - Concurrent migration support
-- Progress tracking with detailed stage information
-- Configurable timeouts and retry policies
 - Works with GHOS based migrations
 
 ## Prerequisites
@@ -372,6 +367,21 @@ The migration process consists of several stages:
    - Migrate metadata
    - Verify migration success
 </details>
+
+## Dashboard
+
+![Migration Dashboard](docs/images/dashboard.png)
+
+The migration server includes a web-based dashboard for monitoring and managing migrations:
+
+- **Migration Overview**: View all migration jobs with status summaries and progress indicators
+- **Real-time Updates**: Get live status updates on migration progress
+- **Detailed Progress**: Track each migration stage with visual progress indicators
+- **Self-service Form**: Submit new migrations directly through the web UI without constructing API requests
+- **Historical Data**: Access past migration records when storage is enabled
+
+
+The dashboard is accessible at `http://your-server:8080/dashboard` and can be enabled or disabled via configuration.
 
 ## API Reference
 
