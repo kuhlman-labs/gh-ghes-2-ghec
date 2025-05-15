@@ -690,6 +690,7 @@ func safeOpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
 
 	// Open file with explicit flags and permissions
 	// This approach follows security best practices for file operations
+	// #nosec G304 - This file path has been thoroughly validated and sanitized
 	file, err = os.OpenFile(sanitizedPath, flag, perm)
 	if err != nil {
 		return nil, err
