@@ -12,9 +12,12 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
@@ -31,6 +34,8 @@ var (
 	enabled bool
 	// serviceName is the name of the service for traces
 	serviceName = "gh-ghes-2-ghec"
+	// meterProvider is the global meter provider for metrics
+	meterProvider *metric.MeterProvider
 )
 
 // Config holds configuration for the tracing system.
@@ -43,6 +48,8 @@ type Config struct {
 	ServiceName string `mapstructure:"service_name"`
 	// SampleRate is the fraction of traces to sample (0.0 to 1.0)
 	SampleRate float64 `mapstructure:"sample_rate"`
+	// PrometheusMetrics enables exporting OpenTelemetry metrics to Prometheus
+	PrometheusMetrics bool `mapstructure:"prometheus_metrics"`
 }
 
 // Init initializes the tracing system with the provided configuration.
@@ -58,11 +65,25 @@ func Init(cfg Config) error {
 		serviceName = cfg.ServiceName
 	}
 
-	// Create a new OTLP exporter
+	// Create a new resource with service information
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Configure the OTLP exporter client options
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(serviceName),
+			semconv.ServiceVersion("0.1.0"), // TODO: Use actual version from the app
+			attribute.String("environment", "production"),
+		),
+		resource.WithTelemetrySDK(),
+		resource.WithHost(),
+		resource.WithOS(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create resource: %w", err)
+	}
+
+	// Configure the OTLP exporter
 	opts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(cfg.Endpoint),
 		otlptracegrpc.WithInsecure(), // For development; use TLS in production
@@ -71,17 +92,6 @@ func Init(cfg Config) error {
 	exporter, err := otlptrace.New(ctx, otlptracegrpc.NewClient(opts...))
 	if err != nil {
 		return fmt.Errorf("failed to create OTLP trace exporter: %w", err)
-	}
-
-	// Configure the resource with service information
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion("0.1.0"), // TODO: Use actual version from the app
-		),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create resource: %w", err)
 	}
 
 	// Configure the sample rate
@@ -94,9 +104,16 @@ func Init(cfg Config) error {
 		sampler = sdktrace.TraceIDRatioBased(cfg.SampleRate)
 	}
 
-	// Create a new tracer provider
+	// Create a new tracer provider with better processor options
 	tracerProvider = sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithBatcher(exporter,
+			// Configure the maximum batch size
+			sdktrace.WithMaxExportBatchSize(512),
+			// Configure the maximum queue size
+			sdktrace.WithMaxQueueSize(2048),
+			// Configure the batch timeout
+			sdktrace.WithBatchTimeout(5*time.Second),
+		),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sampler),
 	)
@@ -111,6 +128,21 @@ func Init(cfg Config) error {
 	// Create the tracer
 	tracer = otel.Tracer(serviceName)
 	enabled = true
+
+	// Initialize OpenTelemetry metrics with Prometheus if enabled
+	if cfg.PrometheusMetrics {
+		promExporter, err := prometheus.New()
+		if err != nil {
+			logging.Get().Warn("Failed to create Prometheus exporter, metrics will not be available", "error", err)
+		} else {
+			meterProvider = metric.NewMeterProvider(
+				metric.WithResource(res),
+				metric.WithReader(promExporter),
+			)
+			otel.SetMeterProvider(meterProvider)
+			logging.Get().Info("OpenTelemetry metrics with Prometheus exporter initialized")
+		}
+	}
 
 	logging.Get().Info("Distributed tracing initialized",
 		"endpoint", cfg.Endpoint,
@@ -131,6 +163,13 @@ func Shutdown(ctx context.Context) error {
 	err := tracerProvider.Shutdown(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to shutdown tracer provider: %w", err)
+	}
+
+	// Shutdown the meter provider if it exists
+	if meterProvider != nil {
+		if err := meterProvider.Shutdown(ctx); err != nil {
+			logging.Get().Error("Failed to shutdown meter provider", "error", err)
+		}
 	}
 
 	return nil
@@ -189,6 +228,22 @@ func AddAttribute(ctx context.Context, key string, value interface{}) {
 	span.SetAttributes(attr)
 }
 
+// AddAttributes adds multiple attributes to the current span in the context.
+func AddAttributes(ctx context.Context, attrs map[string]interface{}) {
+	if !enabled {
+		return
+	}
+
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+
+	for key, value := range attrs {
+		AddAttribute(ctx, key, value)
+	}
+}
+
 // RecordError records an error on the current span.
 func RecordError(ctx context.Context, err error) {
 	if !enabled || err == nil {
@@ -220,6 +275,10 @@ func TraceHTTP(handler http.Handler, operation string) http.Handler {
 			attribute.String("http.method", r.Method),
 			attribute.String("http.url", r.URL.String()),
 			attribute.String("http.user_agent", r.UserAgent()),
+			attribute.String("http.flavor", r.Proto),
+			attribute.String("http.host", r.Host),
+			attribute.String("http.scheme", getScheme(r)),
+			attribute.String("http.target", r.URL.Path),
 		)
 
 		// Extract any correlation ID from headers
@@ -243,8 +302,27 @@ func TraceHTTP(handler http.Handler, operation string) http.Handler {
 		handler.ServeHTTP(wrappedWriter, r.WithContext(ctx))
 
 		// Record the HTTP status code
-		span.SetAttributes(attribute.Int("http.status_code", wrappedWriter.statusCode))
+		statusCode := wrappedWriter.statusCode
+		span.SetAttributes(attribute.Int("http.status_code", statusCode))
+
+		// Set appropriate span status based on HTTP status code
+		if statusCode >= 400 {
+			span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", statusCode))
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
 	})
+}
+
+// getScheme returns the scheme (http/https) for the request
+func getScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	if scheme := r.Header.Get("X-Forwarded-Proto"); scheme != "" {
+		return scheme
+	}
+	return "http"
 }
 
 // ResponseWriter is a wrapper around http.ResponseWriter that captures the status code.
@@ -258,7 +336,7 @@ func newResponseWriter(w http.ResponseWriter) *responseWriter {
 	return &responseWriter{w, http.StatusOK}
 }
 
-// WriteHeader captures the status code and passes it to the underlying ResponseWriter.
+// WriteHeader captures the status code and passes it to the wrapped ResponseWriter.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)

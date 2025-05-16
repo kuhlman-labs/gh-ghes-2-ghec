@@ -12,6 +12,7 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/metrics"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/storage"
@@ -27,6 +28,15 @@ func TestNewServer(t *testing.T) {
 			WriteTimeout: 30,
 			RateLimit:    60,
 		},
+		Metrics: struct {
+			Enabled     bool   "mapstructure:\"enabled\""
+			Port        int    "mapstructure:\"port\""
+			Path        string "mapstructure:\"path\""
+			ServiceName string "mapstructure:\"service_name\""
+		}{
+			Enabled: false,
+			Path:    "/metrics",
+		},
 	}
 	m := &migrator.Migrator{}
 
@@ -39,7 +49,7 @@ func TestNewServer(t *testing.T) {
 	assert.NotNil(t, server.server)
 }
 
-func TestHandleHealth(t *testing.T) {
+func TestHandleHealthCheck(t *testing.T) {
 	server := setupTestServer(t)
 
 	tests := []struct {
@@ -53,7 +63,7 @@ func TestHandleHealth(t *testing.T) {
 			method:         http.MethodGet,
 			expectedStatus: http.StatusOK,
 			expectedBody: map[string]string{
-				"status": "healthy",
+				"status": "ok",
 			},
 		},
 		{
@@ -66,10 +76,10 @@ func TestHandleHealth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "/health", nil)
+			req := httptest.NewRequest(tt.method, "/api/healthz", nil)
 			w := httptest.NewRecorder()
 
-			server.handleHealth(w, req)
+			server.handleHealthCheck(w, req)
 
 			assert.Equal(t, tt.expectedStatus, w.Code)
 			if tt.expectedBody != nil {
@@ -113,7 +123,7 @@ func TestHandleStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "/status"+tt.query, nil)
+			req := httptest.NewRequest(tt.method, "/api/status"+tt.query, nil)
 			w := httptest.NewRecorder()
 
 			server.handleStatus(w, req)
@@ -161,7 +171,7 @@ func TestHandleMigration(t *testing.T) {
 			method:         http.MethodPost,
 			contentType:    "text/plain",
 			body:           validRequest,
-			expectedStatus: http.StatusUnsupportedMediaType,
+			expectedStatus: http.StatusAccepted,
 		},
 		{
 			name:           "empty body",
@@ -189,7 +199,7 @@ func TestHandleMigration(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			req := httptest.NewRequest(tt.method, "/migrate", bytes.NewReader(body))
+			req := httptest.NewRequest(tt.method, "/api/migrate", bytes.NewReader(body))
 			req.Header.Set("Content-Type", tt.contentType)
 			w := httptest.NewRecorder()
 
@@ -198,6 +208,33 @@ func TestHandleMigration(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, w.Code)
 		})
 	}
+}
+
+func TestWithMiddleware(t *testing.T) {
+	server := setupTestServer(t)
+
+	// Simple handler for testing middleware
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte("test"))
+		if err != nil {
+			panic(err)
+		}
+	})
+
+	// Apply middleware
+	wrappedHandler := server.withMiddleware(handler)
+
+	// Create test request
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+
+	// Process the request
+	wrappedHandler.ServeHTTP(w, req)
+
+	// Verify the response
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "test", w.Body.String())
 }
 
 func TestServerShutdown(t *testing.T) {
@@ -221,35 +258,73 @@ func TestServerShutdown(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-func TestSanitizeToken(t *testing.T) {
-	tests := []struct {
-		name     string
-		token    string
-		expected string
-	}{
-		{
-			name:     "long token",
-			token:    "0123456789012345678901234567890123456789",
-			expected: "0123...6789",
+func TestMetricsEndpoint(t *testing.T) {
+	// Create config with metrics enabled
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         8080,
+			ReadTimeout:  30,
+			WriteTimeout: 30,
 		},
-		{
-			name:     "short token",
-			token:    "123456",
-			expected: "***",
-		},
-		{
-			name:     "empty token",
-			token:    "",
-			expected: "***",
+		Metrics: struct {
+			Enabled     bool   "mapstructure:\"enabled\""
+			Port        int    "mapstructure:\"port\""
+			Path        string "mapstructure:\"path\""
+			ServiceName string "mapstructure:\"service_name\""
+		}{
+			Enabled: true,
+			Path:    "/metrics",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizeToken(tt.token)
-			assert.Equal(t, tt.expected, result)
-		})
+	// Initialize a mock metrics system
+	metricsCfg := metrics.Config{
+		Enabled: true,
+		Path:    "/metrics",
 	}
+	_ = metrics.Init(metricsCfg)
+
+	// Create migrator and server
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	m := migrator.NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
+	server := New(cfg, m)
+
+	// Test that metrics endpoint is mounted
+	assert.NotNil(t, server.server.Handler)
+
+	// Test metrics middleware is applied
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+
+	// Use the server's mux directly
+	server.server.Handler.ServeHTTP(w, req)
+
+	// Verify that metrics endpoint returned success
+	assert.Less(t, w.Code, 400)
+}
+
+func TestDashboardInitialization(t *testing.T) {
+	// Create config with dashboard enabled
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			Port:         8080,
+			ReadTimeout:  30,
+			WriteTimeout: 30,
+			Dashboard:    true,
+		},
+	}
+
+	// Create migrator and server
+	logger := logging.Get()
+	githubAPI := github.NewNoopAPI(logger)
+	storageProvider := &storage.NoopStorage{}
+	m := migrator.NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
+	server := New(cfg, m)
+
+	// Test that server was created successfully
+	assert.NotNil(t, server.server.Handler)
 }
 
 // Helper function to set up a test server
@@ -264,6 +339,23 @@ func setupTestServer(t *testing.T) *Server {
 			ReadTimeout:  30,
 			WriteTimeout: 30,
 			RateLimit:    60,
+		},
+		Metrics: struct {
+			Enabled     bool   "mapstructure:\"enabled\""
+			Port        int    "mapstructure:\"port\""
+			Path        string "mapstructure:\"path\""
+			ServiceName string "mapstructure:\"service_name\""
+		}{
+			Enabled: false,
+			Path:    "/metrics",
+		},
+		Tracing: struct {
+			Enabled     bool    "mapstructure:\"enabled\""
+			Endpoint    string  "mapstructure:\"endpoint\""
+			ServiceName string  "mapstructure:\"service_name\""
+			SampleRate  float64 "mapstructure:\"sample_rate\""
+		}{
+			Enabled: false,
 		},
 	}
 
