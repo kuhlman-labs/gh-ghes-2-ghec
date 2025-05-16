@@ -227,7 +227,7 @@ func RetryMiddleware(client *http.Client, config *RetryConfig, operation string)
 
 				// We need to drain and close the body to avoid resource leaks
 				if resp.Body != nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 
 				return err

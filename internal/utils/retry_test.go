@@ -203,7 +203,7 @@ func TestRetryMiddleware_Success(t *testing.T) {
 	// Create a test server that always succeeds
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		_, _ = w.Write([]byte("success"))
 	}))
 	defer server.Close()
 
@@ -226,7 +226,7 @@ func TestRetryMiddleware_Success(t *testing.T) {
 	// Read the body
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, "success", string(body))
 }
 
@@ -243,7 +243,7 @@ func TestRetryMiddleware_ServerError(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success after retry"))
+		_, _ = w.Write([]byte("success after retry"))
 	}))
 	defer server.Close()
 
@@ -268,7 +268,7 @@ func TestRetryMiddleware_ServerError(t *testing.T) {
 	// Read the body
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, "success after retry", string(body))
 	assert.Equal(t, maxAttempts, attempts)
 }
@@ -286,7 +286,7 @@ func TestRetryMiddleware_RateLimited(t *testing.T) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success after rate limit"))
+		_, _ = w.Write([]byte("success after rate limit"))
 	}))
 	defer server.Close()
 
@@ -311,7 +311,7 @@ func TestRetryMiddleware_RateLimited(t *testing.T) {
 	// Read the body
 	body, err := io.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, "success after rate limit", string(body))
 	assert.Equal(t, maxAttempts, attempts)
 }
@@ -397,7 +397,7 @@ func TestRetryMiddleware_BodyPreservation(t *testing.T) {
 	resp, err := executeRequest(req)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Verify each attempt had the same body
 	assert.Equal(t, maxAttempts, len(requestBodies))

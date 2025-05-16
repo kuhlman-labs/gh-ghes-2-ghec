@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	apierrors "github.com/kuhlman-labs/gh-ghes-2-ghec/internal/errors"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/utils"
 	"github.com/shurcooL/githubv4"
 )
@@ -39,9 +41,11 @@ type API interface {
 // It provides methods for repository validation, organization management,
 // migration source creation, and migration operations.
 type GitHubAPI struct {
-	clients     *config.Clients
-	logger      *slog.Logger
-	retryConfig *utils.RetryConfig
+	clients               *config.Clients
+	logger                *slog.Logger
+	retryConfig           *utils.RetryConfig
+	ghesCircuitBreaker    *utils.CircuitBreaker
+	ghCloudCircuitBreaker *utils.CircuitBreaker
 }
 
 // New creates a new GitHub API handler with the provided clients and logger.
@@ -54,10 +58,43 @@ func New(clients *config.Clients, logger *slog.Logger) API {
 		WithMaxInterval(30 * time.Second).    // Cap at 30s
 		WithFactor(2.0)                       // Double the wait time each retry (exponential backoff)
 
+	// Create circuit breakers for both GitHub endpoints
+	ghesCircuitConfig := utils.DefaultCircuitConfig("github-enterprise-server", logger).
+		WithFailureThreshold(5).           // Trip after 5 consecutive failures
+		WithResetTimeout(1 * time.Minute). // Stay open for 1 minute before attempting recovery
+		WithHalfOpenSuccessThreshold(2).   // Require 2 successful requests to close circuit
+		WithMaxConcurrentRequests(20)      // Limit concurrent requests to 20
+
+	ghCloudCircuitConfig := utils.DefaultCircuitConfig("github-cloud", logger).
+		WithFailureThreshold(5).           // Trip after 5 consecutive failures
+		WithResetTimeout(1 * time.Minute). // Stay open for 1 minute before attempting recovery
+		WithHalfOpenSuccessThreshold(2).   // Require 2 successful requests to close circuit
+		WithMaxConcurrentRequests(20)      // Limit concurrent requests to 20
+
+	ghesCircuitBreaker := utils.NewCircuitBreaker(ghesCircuitConfig)
+	ghCloudCircuitBreaker := utils.NewCircuitBreaker(ghCloudCircuitConfig)
+
+	// Set up state change handlers to log circuit state transitions
+	ghesCircuitBreaker.OnStateChange(func(oldState, newState utils.CircuitState) {
+		logger.Info("GHES circuit breaker state changed",
+			"from", string(oldState),
+			"to", string(newState),
+		)
+	})
+
+	ghCloudCircuitBreaker.OnStateChange(func(oldState, newState utils.CircuitState) {
+		logger.Info("GitHub Cloud circuit breaker state changed",
+			"from", string(oldState),
+			"to", string(newState),
+		)
+	})
+
 	return &GitHubAPI{
-		clients:     clients,
-		logger:      logger,
-		retryConfig: retryConfig,
+		clients:               clients,
+		logger:                logger,
+		retryConfig:           retryConfig,
+		ghesCircuitBreaker:    ghesCircuitBreaker,
+		ghCloudCircuitBreaker: ghCloudCircuitBreaker,
 	}
 }
 
@@ -66,6 +103,102 @@ func New(clients *config.Clients, logger *slog.Logger) API {
 // The operation name is used for logging and observability.
 func (a *GitHubAPI) retryableOperation(ctx context.Context, operation string, fn func() error) error {
 	return utils.Retry(ctx, a.retryConfig, operation, fn)
+}
+
+// circuitProtectedGhesOperation executes a function with circuit breaker protection for GHES API calls.
+// It wraps the function with the GHES circuit breaker to prevent cascading failures.
+//
+// Parameters:
+//   - ctx: Context for cancellation control
+//   - operation: A name for the operation (for logging)
+//   - fn: The function to execute with circuit breaker protection
+//
+// Returns:
+//   - error: Error from the function or circuit breaker if circuit is open
+func (a *GitHubAPI) circuitProtectedGhesOperation(ctx context.Context, operation string, fn func() error) error {
+	return a.ghesCircuitBreaker.Execute(func() error {
+		// Use a retry operation within the circuit breaker
+		err := a.retryableOperation(ctx, operation, fn)
+		if err != nil {
+			// Classify the error for better handling
+			return a.classifyGitHubError(err)
+		}
+		return nil
+	})
+}
+
+// circuitProtectedGhCloudOperation executes a function with circuit breaker protection for GitHub Cloud API calls.
+// It wraps the function with the GitHub Cloud circuit breaker to prevent cascading failures.
+//
+// Parameters:
+//   - ctx: Context for cancellation control
+//   - operation: A name for the operation (for logging)
+//   - fn: The function to execute with circuit breaker protection
+//
+// Returns:
+//   - error: Error from the function or circuit breaker if circuit is open
+func (a *GitHubAPI) circuitProtectedGhCloudOperation(ctx context.Context, operation string, fn func() error) error {
+	return a.ghCloudCircuitBreaker.Execute(func() error {
+		// Use a retry operation within the circuit breaker
+		err := a.retryableOperation(ctx, operation, fn)
+		if err != nil {
+			// Classify the error for better handling
+			return a.classifyGitHubError(err)
+		}
+		return nil
+	})
+}
+
+// classifyGitHubError converts GitHub API errors to classified errors.
+// This provides a consistent error classification for better handling.
+func (a *GitHubAPI) classifyGitHubError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// Handle GitHub API errors
+	var respErr *github.ErrorResponse
+	if errors.As(err, &respErr) {
+		// Create HTTP status error with appropriate metadata
+		httpErr := apierrors.NewHTTPStatusError(
+			respErr.Response.StatusCode,
+			respErr.Response.Request.URL.String(),
+			respErr.Response.Request.Method,
+		)
+
+		// Create a message that includes GitHub error message
+		msg := fmt.Sprintf("GitHub API error: %s", respErr.Message)
+		if len(respErr.Errors) > 0 {
+			errDetails := make([]string, 0, len(respErr.Errors))
+			for _, e := range respErr.Errors {
+				if e.Message != "" {
+					errDetails = append(errDetails, e.Message)
+				}
+			}
+			if len(errDetails) > 0 {
+				msg += fmt.Sprintf(" - %s", strings.Join(errDetails, ", "))
+			}
+		}
+
+		// Return the error with appropriate classification
+		category := apierrors.Classify(httpErr)
+		classifiedErr := apierrors.WrapWithCategory(err, category, msg)
+
+		// Report the error for metrics and dashboard
+		apierrors.ReportError(classifiedErr)
+
+		return classifiedErr
+	}
+
+	// Handle other GitHub-specific errors
+	// For now, we'll just use the standard classification
+	category := apierrors.Classify(err)
+	classifiedErr := apierrors.NewClassifiedError(err, category)
+
+	// Report the error for metrics and dashboard
+	apierrors.ReportError(classifiedErr)
+
+	return classifiedErr
 }
 
 // retryableHTTP returns a function that executes HTTP requests with retry logic.
@@ -79,7 +212,128 @@ func (a *GitHubAPI) retryableOperation(ctx context.Context, operation string, fn
 // Returns:
 //   - A function that will execute an HTTP request with retries
 func (a *GitHubAPI) retryableHTTP(client *http.Client, operation string) func(req *http.Request) (*http.Response, error) {
-	return utils.RetryMiddleware(client, a.retryConfig, operation)
+	httpExecutor := utils.RetryMiddleware(client, a.retryConfig, operation)
+
+	return func(req *http.Request) (*http.Response, error) {
+		resp, err := httpExecutor(req)
+		if err != nil {
+			// Classify HTTP errors for better handling
+			return resp, a.classifyHTTPError(err, req)
+		}
+
+		// Check if response status code indicates an error
+		if resp != nil && resp.StatusCode >= 400 {
+			err = apierrors.NewHTTPStatusError(resp.StatusCode, req.URL.String(), req.Method)
+			return resp, a.classifyHTTPError(err, req)
+		}
+
+		return resp, nil
+	}
+}
+
+// classifyHTTPError converts HTTP errors to classified errors
+func (a *GitHubAPI) classifyHTTPError(err error, req *http.Request) error {
+	if err == nil {
+		return nil
+	}
+
+	// If it's already an HTTPStatusError, just classify it
+	var httpErr *apierrors.HTTPStatusError
+	if errors.As(err, &httpErr) {
+		category := apierrors.Classify(httpErr)
+		classifiedErr := apierrors.NewClassifiedError(err, category)
+
+		// Report the error for metrics and dashboard
+		apierrors.ReportError(classifiedErr)
+
+		return classifiedErr
+	}
+
+	// Handle URL errors (network, timeout, etc.)
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		msg := fmt.Sprintf("HTTP %s request to %s failed", req.Method, req.URL.String())
+		category := apierrors.Classify(err)
+		classifiedErr := apierrors.WrapWithCategory(err, category, msg)
+
+		// Report the error for metrics and dashboard
+		apierrors.ReportError(classifiedErr)
+
+		return classifiedErr
+	}
+
+	// For other errors, just use the standard classification
+	category := apierrors.Classify(err)
+	classifiedErr := apierrors.NewClassifiedError(err, category)
+
+	// Report the error for metrics and dashboard
+	apierrors.ReportError(classifiedErr)
+
+	return classifiedErr
+}
+
+// circuitProtectedGhesHTTP returns a function that executes HTTP requests with circuit breaker
+// and retry protection for GHES API calls that use direct HTTP operations.
+//
+// Parameters:
+//   - client: The HTTP client to wrap
+//   - operation: A name for the operation (for logging)
+//
+// Returns:
+//   - A function that will execute an HTTP request with circuit breaker and retry protection
+func (a *GitHubAPI) circuitProtectedGhesHTTP(client *http.Client, operation string) func(req *http.Request) (*http.Response, error) {
+	// Get the standard retryable HTTP executor
+	retryableExecutor := a.retryableHTTP(client, operation)
+
+	// Return a function that first checks the circuit breaker state
+	return func(req *http.Request) (*http.Response, error) {
+		var resp *http.Response
+		var err error
+
+		// Execute within circuit breaker protection
+		cbErr := a.ghesCircuitBreaker.Execute(func() error {
+			resp, err = retryableExecutor(req)
+			return err
+		})
+
+		if cbErr != nil {
+			return nil, cbErr
+		}
+
+		return resp, nil
+	}
+}
+
+// circuitProtectedGhCloudHTTP returns a function that executes HTTP requests with circuit breaker
+// and retry protection for GitHub Cloud API calls that use direct HTTP operations.
+//
+// Parameters:
+//   - client: The HTTP client to wrap
+//   - operation: A name for the operation (for logging)
+//
+// Returns:
+//   - A function that will execute an HTTP request with circuit breaker and retry protection
+func (a *GitHubAPI) circuitProtectedGhCloudHTTP(client *http.Client, operation string) func(req *http.Request) (*http.Response, error) {
+	// Get the standard retryable HTTP executor
+	retryableExecutor := a.retryableHTTP(client, operation)
+
+	// Return a function that first checks the circuit breaker state
+	return func(req *http.Request) (*http.Response, error) {
+		var resp *http.Response
+		var err error
+
+		// Execute within circuit breaker protection
+		cbErr := a.ghCloudCircuitBreaker.Execute(func() error {
+			resp, err = retryableExecutor(req)
+			return err
+		})
+
+		if cbErr != nil {
+			return nil, cbErr
+		}
+
+		return resp, nil
+	}
 }
 
 // ValidateRepository checks if a repository exists in the source organization.
@@ -95,7 +349,7 @@ func (a *GitHubAPI) ValidateRepository(ctx context.Context, org, repo string) er
 	)
 
 	var respStatus int
-	err := a.retryableOperation(ctx, "validate_repository", func() error {
+	err := a.circuitProtectedGhesOperation(ctx, "validate_repository", func() error {
 		_, resp, err := a.clients.GHESClient.Repositories.Get(ctx, org, repo)
 		if resp != nil {
 			respStatus = resp.StatusCode
@@ -153,7 +407,7 @@ func (a *GitHubAPI) GetOrganizationID(ctx context.Context, org string) (string, 
 
 	startTime := time.Now()
 
-	err := a.retryableOperation(ctx, "get_organization_id", func() error {
+	err := a.circuitProtectedGhCloudOperation(ctx, "get_organization_id", func() error {
 		return a.clients.GHCloudGraphQL.Query(ctx, &query, variables)
 	})
 
@@ -229,7 +483,7 @@ func (a *GitHubAPI) CreateMigrationSource(ctx context.Context, name, url, ownerI
 
 	startTime := time.Now()
 
-	err := a.retryableOperation(ctx, "create_migration_source", func() error {
+	err := a.circuitProtectedGhCloudOperation(ctx, "create_migration_source", func() error {
 		return a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, input, nil)
 	})
 
@@ -287,7 +541,7 @@ func (a *GitHubAPI) GenerateMigrationArchive(ctx context.Context, orgName, repoN
 	var archive *github.Migration
 	var respStatus int
 
-	err := a.retryableOperation(ctx, "generate_migration_archive", func() error {
+	err := a.circuitProtectedGhesOperation(ctx, "generate_migration_archive", func() error {
 		var resp *github.Response
 		var err error
 		archive, resp, err = a.clients.GHESClient.Migrations.StartMigration(ctx, orgName, repos, opts)
@@ -340,7 +594,7 @@ func (a *GitHubAPI) GetMigrationArchiveStatus(ctx context.Context, migrationID i
 	var status *github.Migration
 	var respStatus int
 
-	err := a.retryableOperation(ctx, "get_migration_archive_status", func() error {
+	err := a.circuitProtectedGhesOperation(ctx, "get_migration_archive_status", func() error {
 		var resp *github.Response
 		var err error
 		status, resp, err = a.clients.GHESClient.Migrations.MigrationStatus(ctx, orgName, migrationID)
@@ -406,7 +660,7 @@ func (a *GitHubAPI) GetMigrationArchiveURL(ctx context.Context, archiveID int64,
 
 	var archiveURL string
 
-	err := a.retryableOperation(ctx, "get_migration_archive_url", func() error {
+	err := a.circuitProtectedGhesOperation(ctx, "get_migration_archive_url", func() error {
 		var err error
 		archiveURL, err = a.clients.GHESClient.Migrations.MigrationArchiveURL(ctx, orgName, archiveID)
 		return err
@@ -500,7 +754,7 @@ func (a *GitHubAPI) StartRepositoryMigration(ctx context.Context, sourceID, owne
 
 	startTime := time.Now()
 
-	err = a.retryableOperation(ctx, "start_repository_migration", func() error {
+	err = a.circuitProtectedGhCloudOperation(ctx, "start_repository_migration", func() error {
 		return a.clients.GHCloudGraphQL.Mutate(ctx, &mutation, input, nil)
 	})
 
@@ -570,7 +824,7 @@ func (a *GitHubAPI) GetMigrationStatus(ctx context.Context, migrationID string) 
 
 	startTime := time.Now()
 
-	err := a.retryableOperation(ctx, "get_migration_status", func() error {
+	err := a.circuitProtectedGhCloudOperation(ctx, "get_migration_status", func() error {
 		return a.clients.GHCloudGraphQL.Query(ctx, &query, variables)
 	})
 
@@ -681,8 +935,9 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 		Timeout: 120 * time.Minute, // Long timeout for potentially large files
 	}
 
-	// Create a retryable HTTP client
-	executeRequest := a.retryableHTTP(client, "ghos_upload")
+	// Create circuit-protected HTTP clients for GHES and GitHub Cloud
+	executeGhesRequest := a.circuitProtectedGhesHTTP(client, "ghos_download")
+	executeGhCloudRequest := a.circuitProtectedGhCloudHTTP(client, "ghos_upload")
 
 	// Download the archive from GHES
 	a.logger.Debug("Downloading migration archive from GHES",
@@ -694,7 +949,7 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 		return "", fmt.Errorf("failed to create request for archive download: %w", err)
 	}
 
-	resp, err := executeRequest(req)
+	resp, err := executeGhesRequest(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download archive from GHES: %w", err)
 	}
@@ -743,7 +998,7 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 		return io.NopCloser(bytes.NewReader(initBodyBytes)), nil
 	}
 
-	initResp, err := executeRequest(initReq)
+	initResp, err := executeGhCloudRequest(initReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to initialize multipart upload: %w", err)
 	}
@@ -826,7 +1081,7 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 			return io.NopCloser(bytes.NewReader(partData)), nil
 		}
 
-		partResp, err := executeRequest(partReq)
+		partResp, err := executeGhCloudRequest(partReq)
 		if err != nil {
 			return "", fmt.Errorf("failed to upload part %d: %w", partNumber, err)
 		}
@@ -867,7 +1122,7 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 	completeReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
 	completeReq.Header.Set("Content-Type", "application/octet-stream")
 
-	completeResp, err := executeRequest(completeReq)
+	completeResp, err := executeGhCloudRequest(completeReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to complete upload: %w", err)
 	}

@@ -28,6 +28,11 @@ lint:
 	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 	golangci-lint run ./...
 
+# Run Go Sec
+sec:
+	go install github.com/securego/gosec/v2/cmd/gosec@latest
+	$(shell go env GOPATH)/bin/gosec ./...
+
 # Run go vet
 vet:
 	go vet ./...
@@ -38,7 +43,7 @@ fmt:
 
 # Build and run the server with dashboard enabled
 run: build
-	./$(BINARY_NAME) --dashboard=true --log-level=debug
+	./$(BINARY_NAME)
 
 # Build docker image
 docker:
