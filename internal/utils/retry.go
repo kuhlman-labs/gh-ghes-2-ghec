@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"math/big"
+	"net/http"
 	"time"
 )
 
@@ -186,4 +187,59 @@ func Retry(ctx context.Context, config *RetryConfig, operation string, fn func()
 	)
 
 	return fmt.Errorf("operation %s failed after %d attempts: %w", operation, config.MaxRetries+1, err)
+}
+
+// RetryMiddleware creates an HTTP client middleware that adds retry capability to HTTP requests.
+// It handles common transient errors and retries requests based on the provided retry configuration.
+//
+// Parameters:
+//   - client: The base HTTP client to wrap with retry logic
+//   - config: The retry configuration to use
+//   - operation: A name for the operation being retried (for logging)
+//
+// Returns:
+//   - A function that will execute an HTTP request with retries
+func RetryMiddleware(client *http.Client, config *RetryConfig, operation string) func(req *http.Request) (*http.Response, error) {
+	return func(req *http.Request) (*http.Response, error) {
+		var resp *http.Response
+		err := Retry(req.Context(), config, operation, func() error {
+			// Clone the request body for each retry attempt if it's not nil
+			// This is necessary because the body may be consumed by the previous attempt
+			if req.Body != nil && req.GetBody != nil {
+				// Use GetBody to get a fresh reader for the body
+				body, err := req.GetBody()
+				if err != nil {
+					return fmt.Errorf("failed to get fresh request body: %w", err)
+				}
+				req.Body = body
+			}
+
+			var err error
+			resp, err = client.Do(req)
+			if err != nil {
+				return err
+			}
+
+			// Treat certain status codes as retryable errors
+			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+				// For server errors and rate limiting, we want to retry
+				err = fmt.Errorf("server returned status code %d", resp.StatusCode)
+
+				// We need to drain and close the body to avoid resource leaks
+				if resp.Body != nil {
+					resp.Body.Close()
+				}
+
+				return err
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		return resp, nil
+	}
 }

@@ -49,9 +49,10 @@ type GitHubAPI struct {
 func New(clients *config.Clients, logger *slog.Logger) API {
 	// Create a retry configuration suitable for GitHub API calls
 	retryConfig := utils.DefaultRetryConfig(logger).
-		WithMaxRetries(2).                    // 3 total attempts
+		WithMaxRetries(5).                    // 6 total attempts
 		WithInitialInterval(1 * time.Second). // Start with 1s backoff
-		WithMaxInterval(5 * time.Second)      // Cap at 5s
+		WithMaxInterval(30 * time.Second).    // Cap at 30s
+		WithFactor(2.0)                       // Double the wait time each retry (exponential backoff)
 
 	return &GitHubAPI{
 		clients:     clients,
@@ -65,6 +66,20 @@ func New(clients *config.Clients, logger *slog.Logger) API {
 // The operation name is used for logging and observability.
 func (a *GitHubAPI) retryableOperation(ctx context.Context, operation string, fn func() error) error {
 	return utils.Retry(ctx, a.retryConfig, operation, fn)
+}
+
+// retryableHTTP returns a function that executes HTTP requests with retry logic.
+// It uses the RetryMiddleware from utils package to handle retries for HTTP requests.
+// This is particularly useful for direct HTTP client operations not using the GitHub SDK.
+//
+// Parameters:
+//   - client: The HTTP client to wrap with retry logic
+//   - operation: A name for the operation being retried (for logging)
+//
+// Returns:
+//   - A function that will execute an HTTP request with retries
+func (a *GitHubAPI) retryableHTTP(client *http.Client, operation string) func(req *http.Request) (*http.Response, error) {
+	return utils.RetryMiddleware(client, a.retryConfig, operation)
 }
 
 // ValidateRepository checks if a repository exists in the source organization.
@@ -666,6 +681,9 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 		Timeout: 120 * time.Minute, // Long timeout for potentially large files
 	}
 
+	// Create a retryable HTTP client
+	executeRequest := a.retryableHTTP(client, "ghos_upload")
+
 	// Download the archive from GHES
 	a.logger.Debug("Downloading migration archive from GHES",
 		"url", archiveURL,
@@ -676,7 +694,7 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 		return "", fmt.Errorf("failed to create request for archive download: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := executeRequest(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download archive from GHES: %w", err)
 	}
@@ -685,10 +703,6 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 			a.logger.Warn("Failed to close response body", "error", err)
 		}
 	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download archive, received status code: %d", resp.StatusCode)
-	}
 
 	// Get the total size of the archive
 	totalSize := resp.ContentLength
@@ -724,7 +738,12 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 	initReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
 	initReq.Header.Set("Content-Type", "application/json")
 
-	initResp, err := client.Do(initReq)
+	// Make this request reusable for retries
+	initReq.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(initBodyBytes)), nil
+	}
+
+	initResp, err := executeRequest(initReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to initialize multipart upload: %w", err)
 	}
@@ -733,12 +752,6 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 			a.logger.Warn("Failed to close init response body", "error", err)
 		}
 	}()
-
-	if initResp.StatusCode != http.StatusAccepted {
-		respBody, _ := io.ReadAll(initResp.Body)
-		return "", fmt.Errorf("failed to initialize multipart upload, received status code: %d, body: %s",
-			initResp.StatusCode, string(respBody))
-	}
 
 	// Get the location header from the response for the next part upload
 	nextPath := initResp.Header.Get("Location")
@@ -799,31 +812,26 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 		)
 
 		partURL := fmt.Sprintf("https://uploads.github.com%s", nextPath)
-		partReq, err := http.NewRequestWithContext(ctx, http.MethodPatch, partURL, bytes.NewReader(buffer[:bytesRead]))
+		partData := buffer[:bytesRead]
+		partReq, err := http.NewRequestWithContext(ctx, http.MethodPatch, partURL, bytes.NewReader(partData))
 		if err != nil {
 			return "", fmt.Errorf("failed to create part request: %w", err)
 		}
 
 		partReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
 		partReq.Header.Set("Content-Type", "application/octet-stream")
-		// Let the HTTP client set the Content-Length header automatically
 
-		partResp, err := client.Do(partReq)
+		// Make this request reusable for retries
+		partReq.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(partData)), nil
+		}
+
+		partResp, err := executeRequest(partReq)
 		if err != nil {
 			return "", fmt.Errorf("failed to upload part %d: %w", partNumber, err)
 		}
 
 		// Get the next path from the response
-		if partResp.StatusCode != http.StatusAccepted {
-			respBody, _ := io.ReadAll(partResp.Body)
-			if err := partResp.Body.Close(); err != nil {
-				a.logger.Warn("Failed to close part response body", "error", err)
-			}
-			return "", fmt.Errorf("failed to upload part %d, received status code: %d, body: %s",
-				partNumber, partResp.StatusCode, string(respBody))
-		}
-
-		// Get the next path for the next part
 		nextPath = partResp.Header.Get("Location")
 		if nextPath == "" && partNumber < numParts {
 			if err := partResp.Body.Close(); err != nil {
@@ -859,7 +867,7 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 	completeReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", ghCloudToken))
 	completeReq.Header.Set("Content-Type", "application/octet-stream")
 
-	completeResp, err := client.Do(completeReq)
+	completeResp, err := executeRequest(completeReq)
 	if err != nil {
 		return "", fmt.Errorf("failed to complete upload: %w", err)
 	}
@@ -868,12 +876,6 @@ func (a *GitHubAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, a
 			a.logger.Warn("Failed to close complete response body", "error", err)
 		}
 	}()
-
-	if completeResp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(completeResp.Body)
-		return "", fmt.Errorf("failed to complete upload, received status code: %d, body: %s",
-			completeResp.StatusCode, string(respBody))
-	}
 
 	// Construct the GEI URI from the GUID
 	geiURI := fmt.Sprintf("gei://archive/%s", guid)
