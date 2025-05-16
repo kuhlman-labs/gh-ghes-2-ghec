@@ -6,9 +6,12 @@ import (
 	"html/template"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/errors"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // ErrorStats represents error statistics grouped by category
@@ -24,91 +27,14 @@ type ErrorsData struct {
 	ChartData string // Changed from template.JS to string
 }
 
-// NewErrorsDashboard returns a handler for the errors dashboard
-func NewErrorsDashboard() http.HandlerFunc {
-	tmpl := template.Must(template.New("errors").Parse(`
-<div class="card">
-  <div class="card-header">
-    <h5 class="card-title">Error Distribution by Category</h5>
-    <h6 class="card-subtitle text-muted">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</h6>
-  </div>
-  <div class="card-body">
-    <div class="row">
-      <div class="col-md-8">
-        <canvas id="errorChart" width="400" height="300"></canvas>
-      </div>
-      <div class="col-md-4">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Count</th>
-              <th>%</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{range $category, $count := .Stats.Categories}}
-            <tr>
-              <td>{{$category}}</td>
-              <td>{{$count}}</td>
-              <td>{{percentage $count $.Stats.TotalErrors}}%</td>
-            </tr>
-            {{end}}
-          </tbody>
-          <tfoot>
-            <tr>
-              <th>Total</th>
-              <th>{{.Stats.TotalErrors}}</th>
-              <th>100%</th>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
+// RegisterErrorsDashboard creates and returns an error dashboard handler
+func RegisterErrorsDashboard(mux *http.ServeMux) {
+	errDashHandler := createErrorsDashboardHandler()
+	mux.Handle("/dashboard/errors", errDashHandler)
+}
 
-<script>
-  document.addEventListener('DOMContentLoaded', function() {
-    var ctx = document.getElementById('errorChart').getContext('2d');
-    // Safely parse the JSON string from server
-    var chartData = JSON.parse('{{.ChartData}}');
-    var errorChart = new Chart(ctx, {
-      type: 'pie',
-      data: chartData,
-      options: {
-        responsive: true,
-        plugins: {
-          legend: {
-            position: 'right',
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                var label = context.label || '';
-                var value = context.raw || 0;
-                var percentage = (value / {{.Stats.TotalErrors}} * 100).toFixed(1);
-                return label + ': ' + value + ' (' + percentage + '%)';
-              }
-            }
-          }
-        }
-      }
-    });
-  });
-</script>
-`))
-
-	// Add a function to calculate percentage
-	tmpl.Funcs(template.FuncMap{
-		"percentage": func(count, total int) string {
-			if total == 0 {
-				return "0.0"
-			}
-			return fmt.Sprintf("%.1f", float64(count)/float64(total)*100)
-		},
-	})
-
+// createErrorsDashboardHandler creates the actual handler
+func createErrorsDashboardHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get error stats
 		stats := getErrorStats()
@@ -116,13 +42,73 @@ func NewErrorsDashboard() http.HandlerFunc {
 		// Prepare chart data
 		chartData := prepareChartData(stats)
 
-		// Render template
-		if err := tmpl.Execute(w, ErrorsData{
-			Stats:     stats,
-			ChartData: chartData,
-		}); err != nil {
-			http.Error(w, "Failed to render error dashboard", http.StatusInternalServerError)
+		// Check if this is an HTMX request
+		isHtmxRequest := r.Header.Get("HX-Request") == "true"
+
+		// Create a template function map with all required functions
+		funcMap := template.FuncMap{
+			"ToLower": strings.ToLower,
+			"Title":   cases.Title(language.English).String,
+			"FormatTime": func(t time.Time) string {
+				if t.IsZero() {
+					return "-"
+				}
+				return t.Format("15:04:05")
+			},
+			"FormatDateTime": func(t time.Time) string {
+				if t.IsZero() {
+					return "-"
+				}
+				return t.Format("2006-01-02 15:04:05")
+			},
+			"FormatDuration": func(d time.Duration) string {
+				if d == 0 {
+					return "-"
+				}
+				hours := int(d.Hours())
+				minutes := int(d.Minutes()) % 60
+				seconds := int(d.Seconds()) % 60
+
+				return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
+			},
+			"percentage": func(count, total int) string {
+				if total == 0 {
+					return "0.0"
+				}
+				return fmt.Sprintf("%.1f", float64(count)/float64(total)*100)
+			},
+		}
+
+		// Create a new template with functions
+		tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
+		if err != nil {
+			http.Error(w, "Failed to parse templates: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+
+		if isHtmxRequest {
+			// For HTMX requests, only render the errors_content template
+			if err := tmpl.ExecuteTemplate(w, "errors_content", map[string]interface{}{
+				"Stats":     stats,
+				"ChartData": chartData,
+			}); err != nil {
+				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
+			}
+		} else {
+			// For full page loads, render the base template with our data
+			// Add custom data for the errors dashboard
+			customData := map[string]interface{}{
+				"Title":       "Error Dashboard",
+				"Active":      "errors",
+				"PageName":    "errors",
+				"CurrentYear": time.Now().Year(),
+				"Stats":       stats,
+				"ChartData":   chartData,
+			}
+
+			if err := tmpl.ExecuteTemplate(w, "base.html", customData); err != nil {
+				http.Error(w, "Failed to render error dashboard: "+err.Error(), http.StatusInternalServerError)
+			}
 		}
 	}
 }

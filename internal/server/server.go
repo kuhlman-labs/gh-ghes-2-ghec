@@ -384,6 +384,10 @@ func (s *Server) initDashboard(mux *http.ServeMux) error {
 	// Dashboard Handler has its own RegisterHandlers method
 	dashHandler.RegisterHandlers(mux)
 
+	// Add the errors dashboard
+	dashboard.RegisterErrorsDashboard(mux)
+	s.logger.Info("Errors dashboard initialized", "path", "/dashboard/errors")
+
 	s.logger.Info("Dashboard initialized", "path", "/")
 	return nil
 }

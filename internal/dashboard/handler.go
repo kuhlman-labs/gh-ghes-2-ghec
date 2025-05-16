@@ -112,6 +112,12 @@ func New(m *migrator.Migrator) (*Handler, error) {
 
 			return fmt.Sprintf("%dh %dm %ds", hours, minutes, seconds)
 		},
+		"percentage": func(count, total int) string {
+			if total == 0 {
+				return "0.0"
+			}
+			return fmt.Sprintf("%.1f", float64(count)/float64(total)*100)
+		},
 	}
 
 	// Parse templates

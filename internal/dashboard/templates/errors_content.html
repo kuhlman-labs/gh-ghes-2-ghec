@@ -1,0 +1,79 @@
+{{define "errors_content"}}
+<div class="container">
+  <h2>Error Distribution by Category</h2>
+  <div class="card">
+    <div class="card-header">
+      <h5 class="card-title">Error Statistics</h5>
+      <h6 class="card-subtitle text-muted">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</h6>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-8">
+          <canvas id="errorChart" width="400" height="300"></canvas>
+        </div>
+        <div class="col-md-4">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range $category, $count := .Stats.Categories}}
+              <tr>
+                <td>{{$category}}</td>
+                <td>{{$count}}</td>
+                <td>{{percentage $count $.Stats.TotalErrors}}%</td>
+              </tr>
+              {{end}}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th>{{.Stats.TotalErrors}}</th>
+                <th>100%</th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var ctx = document.getElementById('errorChart').getContext('2d');
+    // Store total errors as a JavaScript variable
+    var totalErrors = {{.Stats.TotalErrors}};
+    // Parse the JSON data - using backticks to handle quotes properly
+    var chartData = JSON.parse(`{{.ChartData}}`);
+    
+    var errorChart = new Chart(ctx, {
+      type: 'pie',
+      data: chartData,
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'right'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                var label = context.label || '';
+                var value = context.raw || 0;
+                var percentage = (value / totalErrors * 100).toFixed(1);
+                return label + ': ' + value + ' (' + percentage + '%)';
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+</script>
+{{end}} 

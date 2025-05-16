@@ -19,6 +19,7 @@
                     <li><a href="/dashboard" class="{{ if eq .Active "overview" }}active{{ end }}">Overview</a></li>
                     <li><a href="/dashboard/new" class="{{ if eq .Active "new" }}active{{ end }}">New Migration</a></li>
                     <li><a href="/dashboard/history" class="{{ if eq .Active "history" }}active{{ end }}">History</a></li>
+                    <li><a href="/dashboard/errors" class="{{ if eq .Active "errors" }}active{{ end }}">Errors</a></li>
                 </ul>
             </nav>
         </div>
@@ -33,6 +34,8 @@
             {{template "migration_detail_content_wrapper" .}}
         {{else if eq .PageName "history"}}
             {{template "history_content" .}}        
+        {{else if eq .PageName "errors"}}
+            {{template "errors_content" .}}
         {{else}}
             <p>Error: Page content not found (PageName: {{.PageName}}).</p>
         {{end}}
