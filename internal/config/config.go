@@ -28,6 +28,12 @@ type Config struct {
 		ServiceName string  `mapstructure:"service_name"`
 		SampleRate  float64 `mapstructure:"sample_rate"`
 	} `mapstructure:"tracing"`
+	Metrics struct {
+		Enabled     bool   `mapstructure:"enabled"`
+		Port        int    `mapstructure:"port"`
+		Path        string `mapstructure:"path"`
+		ServiceName string `mapstructure:"service_name"`
+	} `mapstructure:"metrics"`
 	Storage StorageConfig `mapstructure:"storage"`
 }
 
@@ -54,9 +60,23 @@ type WebhookConfig struct {
 }
 
 // LoggingConfig holds logging-specific configuration.
-// It defines the verbosity level for application logs.
+// It specifies the log format, level, and output destination.
 type LoggingConfig struct {
-	Level string `mapstructure:"level"`
+	Level      string `mapstructure:"level"`
+	Format     string `mapstructure:"format"`
+	TimeFormat string `mapstructure:"time_format"`
+	FilePath   string `mapstructure:"file_path"`
+	MaxSize    int    `mapstructure:"max_size"`    // Maximum size in MB
+	MaxBackups int    `mapstructure:"max_backups"` // Maximum number of backup files
+	MaxAge     int    `mapstructure:"max_age"`     // Maximum age in days
+	Compress   bool   `mapstructure:"compress"`    // Compress rotated files
+	Pretty     bool   `mapstructure:"pretty"`      // Use pretty output for human readability
+	Color      bool   `mapstructure:"color"`       // Use colors
+	WithCaller bool   `mapstructure:"with_caller"` // Include caller information
+	ShowSource bool   `mapstructure:"show_source"` // Show source code location
+	JSON       bool   `mapstructure:"json"`        // Output logs as JSON
+	File       bool   `mapstructure:"file"`        // Output logs to file
+	Console    bool   `mapstructure:"console"`     // Output logs to console
 }
 
 // StorageConfig holds storage-specific configuration.

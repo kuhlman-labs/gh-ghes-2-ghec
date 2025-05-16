@@ -7,6 +7,11 @@ A server application that provides an HTTP API for migrating repositories from G
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
+- [Monitoring and Observability](#monitoring-and-observability)
+  - [Metrics with Prometheus](#metrics-with-prometheus)
+  - [Distributed Tracing with OpenTelemetry](#distributed-tracing-with-opentelemetry)
+  - [Dashboards](#dashboards)
+  - [Alerting](#alerting)
 - [Usage](#usage)
   - [Docker Deployment](#docker-deployment)
   - [Migration Process](#migration-process)
@@ -179,6 +184,18 @@ tracing:
   endpoint: "localhost:4317"
   service_name: "gh-ghes-2-ghec"
   sample_rate: 1.0
+  prometheus_metrics: false
+
+metrics:
+  enabled: true
+  port: 0  # When set to 0, uses the same port as the server
+  path: "/metrics"
+  service_name: "gh-ghes-2-ghec"
+
+storage:
+  enabled: false
+  type: "sqlite"
+  connection_string: "migrations.db"
 ```
 </details>
 
@@ -197,6 +214,167 @@ Flags:
   --temp-dir string            Directory for temporary files
   --max-concurrent int         Maximum number of concurrent migrations
 ```
+</details>
+
+## Monitoring and Observability
+
+The migration server includes comprehensive monitoring and observability features to help track system health, performance, and migration progress.
+
+### Metrics with Prometheus
+
+<details>
+<summary>Configuration</summary>
+
+The application can expose Prometheus metrics for monitoring. Configure this in your `config.yaml`:
+
+```yaml
+metrics:
+  enabled: true                     # Enable Prometheus metrics collection
+  port: 9090                        # Dedicated port for metrics endpoint (optional)
+  path: "/metrics"                  # Metrics endpoint path
+  service_name: "gh-ghes-2-ghec"   # Service name for metrics namespace
+```
+
+With this configuration:
+- If `port` is specified, metrics will be exposed on a separate HTTP server on that port
+- If no `port` is specified, metrics will be exposed on the main server at the configured `path`
+- Setting `enabled: false` disables metrics collection entirely
+
+You can also configure metrics using environment variables:
+```bash
+METRICS_ENABLED=true
+METRICS_PORT=9090
+METRICS_PATH=/metrics
+METRICS_SERVICE_NAME=gh-ghes-2-ghec
+```
+</details>
+
+<details>
+<summary>Available Metrics</summary>
+
+The server exposes the following metrics categories:
+
+**Migration Metrics:**
+- `ghghe2ec_migrations_total` - Total number of migration operations
+- `ghghe2ec_migration_duration_seconds` - Duration of migration operations
+- `ghghe2ec_migration_size_bytes` - Size of migrated repositories
+
+**HTTP Metrics:**
+- `ghghe2ec_http_requests_total` - Total number of HTTP requests
+- `ghghe2ec_http_request_duration_seconds` - Duration of HTTP requests
+
+**GitHub API Metrics:**
+- `ghghe2ec_github_api_requests_total` - Total number of GitHub API requests
+- `ghghe2ec_github_api_request_duration_seconds` - Duration of GitHub API requests
+- `ghghe2ec_github_rate_limit_remaining` - Number of GitHub API rate limit calls remaining
+
+**System Metrics:**
+- `ghghe2ec_goroutines` - Number of active goroutines
+- `ghghe2ec_memory_alloc_bytes` - Memory allocation metrics
+
+**Storage Metrics:**
+- `ghghe2ec_storage_operations_total` - Total number of storage operations
+- `ghghe2ec_storage_operation_duration_seconds` - Duration of storage operations
+</details>
+
+### Distributed Tracing with OpenTelemetry
+
+<details>
+<summary>Configuration</summary>
+
+The application supports distributed tracing with OpenTelemetry. Configure this in your `config.yaml`:
+
+```yaml
+tracing:
+  enabled: true                      # Enable OpenTelemetry tracing
+  endpoint: "localhost:4317"         # OTLP gRPC endpoint
+  service_name: "gh-ghes-2-ghec"     # Service name for traces
+  sample_rate: 1.0                   # Sampling rate (1.0 = 100% of traces)
+  prometheus_metrics: true           # Export OpenTelemetry metrics to Prometheus
+```
+
+The tracing configuration can be controlled via environment variables:
+```bash
+TRACING_ENABLED=true
+TRACING_ENDPOINT=localhost:4317
+TRACING_SERVICE_NAME=gh-ghes-2-ghec
+TRACING_SAMPLE_RATE=1.0
+TRACING_PROMETHEUS_METRICS=true
+```
+</details>
+
+<details>
+<summary>Trace Coverage</summary>
+
+The application traces the following operations:
+
+- HTTP requests and responses
+- Migration lifecycles (start to completion)
+- GitHub API calls
+- Storage operations
+- Webhook deliveries
+
+Spans include useful attributes such as:
+- Operation status (success/failure)
+- Repository names
+- Source and target organizations
+- Error details
+- Operation sizes and durations
+</details>
+
+### Dashboards
+
+<details>
+<summary>Grafana Dashboard</summary>
+
+The project includes a pre-configured Grafana dashboard in `docs/dashboards/migration-dashboard.json` that you can import into your Grafana instance.
+
+The dashboard provides visualizations for:
+
+- **Migration Statistics:**
+  - Success and failure rates
+  - Duration by stage
+  - Repository sizes
+  - Current migration status
+
+- **API Metrics:**
+  - GitHub API request rates
+  - Rate limit usage
+  - API error rates
+  - API latency
+
+- **System Metrics:**
+  - Memory usage
+  - Goroutine count
+  - Request throughput
+  - Error rates
+
+To use the dashboard:
+1. Install Grafana
+2. Configure a Prometheus data source
+3. Import the dashboard JSON file
+4. (Optional) Customize panels as needed
+</details>
+
+### Alerting
+
+<details>
+<summary>Prometheus Alerting Rules</summary>
+
+The project includes a set of recommended Prometheus alerting rules in `docs/alerting/prometheus-alerts.yml`.
+
+Key alerts include:
+
+- **HighErrorRate** - Triggers when the API error rate exceeds 5%
+- **MigrationFailureRate** - Alerts when migration failures exceed threshold
+- **GitHubRateLimitNearExhaustion** - Warns when rate limits are nearing exhaustion
+- **LongRunningMigration** - Alerts on migrations taking longer than expected
+- **HighMemoryUsage** - Monitors system resource consumption
+
+To use these alerts:
+1. Include the rules file in your Prometheus configuration
+2. Configure alert manager for notifications
+3. Adjust thresholds as appropriate for your environment
 </details>
 
 ## Usage
@@ -291,6 +469,103 @@ docker run -p 8080:8080 \
   -e LOGGING_LEVEL=debug \
   ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
 ```
+</details>
+
+<details>
+<summary>Monitoring and Tracing with Docker</summary>
+
+#### Exposing Prometheus Metrics
+
+To expose Prometheus metrics from the container:
+
+```bash
+# Expose metrics on the same port as the application
+docker run -p 8080:8080 \
+  -e METRICS_ENABLED=true \
+  -e METRICS_PATH=/metrics \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+
+# Expose metrics on a dedicated port
+docker run -p 8080:8080 -p 9090:9090 \
+  -e METRICS_ENABLED=true \
+  -e METRICS_PORT=9090 \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Setting Up OpenTelemetry Tracing
+
+To enable distributed tracing with an external collector:
+
+```bash
+# Connect to an OpenTelemetry collector
+docker run -p 8080:8080 \
+  -e TRACING_ENABLED=true \
+  -e TRACING_ENDPOINT=otel-collector:4317 \
+  -e TRACING_SERVICE_NAME=gh-ghes-2-ghec \
+  -e TRACING_SAMPLE_RATE=0.5 \
+  --network monitoring-network \
+  ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+```
+
+#### Complete Monitoring Stack with Docker Compose
+
+Here's an example `docker-compose.yml` for a complete monitoring stack:
+
+```yaml
+version: '3'
+services:
+  migration-server:
+    image: ghcr.io/kuhlman-labs/gh-ghes-2-ghec:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - METRICS_ENABLED=true
+      - METRICS_PATH=/metrics
+      - TRACING_ENABLED=true
+      - TRACING_ENDPOINT=otel-collector:4317
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - otel-collector
+      - prometheus
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"   # OTLP gRPC
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command:
+      - --config=/etc/otel-collector-config.yaml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./docs/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    depends_on:
+      - prometheus
+```
+
+This setup provides:
+- Prometheus for metrics collection
+- OpenTelemetry Collector for distributed tracing
+- Grafana for visualization with our pre-configured dashboards
 </details>
 
 <details>

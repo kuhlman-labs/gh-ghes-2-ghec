@@ -10,12 +10,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/dashboard"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/metrics"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/tracing"
@@ -52,151 +52,126 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 		middleware: NewMiddleware(),
 	}
 
-	// Create router with routes
+	// Set up HTTP routes
 	mux := http.NewServeMux()
 
-	// API routes with appropriate middleware
-	migrateHandler := http.HandlerFunc(s.handleMigration)
-	statusHandler := http.HandlerFunc(s.handleStatus)
-	healthHandler := http.HandlerFunc(s.handleHealth)
+	// API routes with middleware
+	migrateHandler := s.withMiddleware(http.HandlerFunc(s.handleMigration))
+	statusHandler := s.withMiddleware(http.HandlerFunc(s.handleStatus))
+	healthHandler := s.withMiddleware(http.HandlerFunc(s.handleHealthCheck))
 
-	// Apply middleware stacks to routes based on their needs
-	mux.Handle("/migrate", s.withAPIMiddleware(migrateHandler))
-	mux.Handle("/status", s.withBaseMiddleware(statusHandler))
-	mux.Handle("/health", s.withBaseMiddleware(healthHandler))
+	mux.Handle("/api/migrate", migrateHandler)
+	mux.Handle("/api/status", statusHandler)
+	mux.Handle("/api/healthz", healthHandler)
 
-	// Initialize and register dashboard if enabled
-	if cfg.Server.Dashboard {
-		s.initDashboard(mux)
+	// Add metrics endpoint if enabled
+	if cfg.Metrics.Enabled {
+		mux.Handle(cfg.Metrics.Path, metrics.Handler())
+		s.logger.Info("Metrics endpoint enabled", "path", cfg.Metrics.Path)
 	}
 
-	// Create server with timeouts
+	// Initialize and mount the dashboard if enabled
+	if cfg.Server.Dashboard {
+		if err := s.initDashboard(mux); err != nil {
+			s.logger.Error("Failed to initialize dashboard", "error", err)
+		}
+	}
+
+	// Create HTTP server
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	s.server = &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      mux,
-		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
-		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:         addr,
+		Handler:      tracing.TraceHTTP(metrics.InstrumentHandler(mux, "server"), "http_request"),
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
 	return s
 }
 
-// withBaseMiddleware applies the base middleware stack (used for all endpoints).
-// The base middleware includes request logging, tracing and security headers.
-//
-// Parameters:
-//   - next: The handler to wrap with middleware.
-//
-// Returns:
-//   - http.Handler: The handler wrapped with base middleware.
-func (s *Server) withBaseMiddleware(next http.Handler) http.Handler {
-	// Apply tracing middleware first to capture the entire request lifecycle
-	tracedHandler := tracing.TraceHTTP(next, "http_server")
+// withMiddleware applies all necessary middleware to a handler
+func (s *Server) withMiddleware(handler http.Handler) http.Handler {
+	// First apply request logging
+	handler = s.middleware.LogRequest(handler)
 
-	return CombineMiddleware(tracedHandler,
-		s.middleware.LogRequest,
-		s.middleware.SecurityHeaders,
-		s.middleware.SanitizeInput,
-	)
-}
+	// Then security headers
+	handler = s.middleware.SecurityHeaders(handler)
 
-// withAPIMiddleware applies the full middleware stack used for API endpoints.
-// This includes all base middleware plus JSON validation, request size limiting,
-// and optional rate limiting based on configuration.
-//
-// Parameters:
-//   - next: The handler to wrap with middleware.
-//
-// Returns:
-//   - http.Handler: The handler wrapped with API middleware.
-func (s *Server) withAPIMiddleware(next http.Handler) http.Handler {
-	// Apply rate limiter only if configured
-	middlewareStack := []func(http.Handler) http.Handler{
-		s.middleware.LogRequest,
-		s.middleware.SecurityHeaders,
-		s.middleware.SanitizeInput,
-		s.middleware.JSONOnly,
-		s.middleware.RequestSizeLimit,
-	}
+	// Then sanitize input
+	handler = s.middleware.SanitizeInput(handler)
 
-	// Add rate limiting if configured (default 60 requests per minute)
+	// Then JSON validation for api endpoints
+	handler = s.middleware.JSONOnly(handler)
+
+	// Then request size limits
+	handler = s.middleware.RequestSizeLimit(handler)
+
+	// Apply rate limiting if configured
 	if s.config.Server.RateLimit > 0 {
-		middlewareStack = append(middlewareStack,
-			s.middleware.RateLimiter(s.config.Server.RateLimit))
+		handler = s.middleware.RateLimiter(s.config.Server.RateLimit)(handler)
 	}
 
-	// Apply tracing middleware only if enabled
+	// Instrument with metrics
+	handler = metrics.InstrumentHandler(handler, "api")
+
+	// Finally apply tracing
 	if s.config.Tracing.Enabled {
-		next = tracing.TraceHTTP(next, "http_api")
+		handler = tracing.TraceHTTP(handler, "api_request")
 	}
 
-	return CombineMiddleware(next, middlewareStack...)
+	return handler
 }
 
-// Start starts the HTTP server and begins listening for requests.
-// It blocks until the server shuts down or encounters an error.
-//
-// Returns:
-//   - error: An error if the server fails to start or encounters a fatal error.
+// Start begins listening for HTTP requests on the configured port.
+// It returns an error if the server fails to start.
 func (s *Server) Start() error {
-	s.logger.Info("Starting server",
-		"port", s.config.Server.Port,
-		"read_timeout", s.config.Server.ReadTimeout,
-		"write_timeout", s.config.Server.WriteTimeout,
-	)
+	s.logger.Info("Starting server", "port", s.config.Server.Port)
 	return s.server.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server with a timeout context.
-// It attempts to complete all in-flight requests before shutting down.
-// It also closes any resources used by the migrator, including storage connections.
+// Shutdown gracefully shuts down the server without interrupting active connections.
+// It waits for the configured shutdown timeout before forcibly closing connections.
 //
 // Parameters:
-//   - ctx: Context for shutdown timeout.
+//   - ctx: Context for controlling the shutdown process.
 //
 // Returns:
-//   - error: An error if the server fails to shut down gracefully.
+//   - error: An error if the shutdown process fails.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("Shutting down server")
-
-	// First shut down the HTTP server
-	if err := s.server.Shutdown(ctx); err != nil {
+	// First, shutdown the HTTP server
+	err := s.server.Shutdown(ctx)
+	if err != nil {
 		s.logger.Error("Error shutting down HTTP server", "error", err)
-		// Continue with cleanup even if HTTP shutdown fails
 	}
 
-	// Then close migrator resources (including storage)
+	// Then attempt to close migrator resources
 	if err := s.migrator.Close(); err != nil {
 		s.logger.Error("Error closing migrator resources", "error", err)
 		return err
 	}
 
-	s.logger.Info("Server shutdown completed")
 	return nil
 }
 
-// handleHealth handles requests to the /health endpoint.
-// It returns a simple status response indicating if the server is running.
-// This endpoint is useful for load balancers and monitoring systems.
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+// handleHealthCheck handles requests to the /api/healthz endpoint.
+// It returns a 200 OK response if the server is healthy.
+func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	_, span := tracing.StartSpan(r.Context(), "health_check")
+	defer span.End()
+
 	if r.Method != http.MethodGet {
 		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	// Add trace attribute for health check
-	span := trace.SpanFromContext(r.Context())
-	span.SetAttributes(attribute.String("endpoint", "health"))
-
-	s.writeJSON(w, r, http.StatusOK, map[string]string{
-		"status": "healthy",
-	})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// handleStatus handles requests to the /status endpoint.
-// It returns the status of migrations for all repositories
-// or for a specific repository if a "repository" query parameter is provided.
+// handleStatus handles requests to the /api/status endpoint.
+// It returns the status of a specific repository migration or all migrations.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	_, span := tracing.StartSpan(r.Context(), "get_migration_status")
 	defer span.End()
@@ -253,15 +228,7 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check Content-Type
-	contentType := r.Header.Get("Content-Type")
-	if !strings.Contains(contentType, "application/json") {
-		s.writeError(w, r, http.StatusUnsupportedMediaType, "Content-Type must be application/json")
-		span.SetStatus(codes.Error, "Unsupported media type")
-		return
-	}
-
-	// Read request body
+	// Read and parse the request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, "Failed to read request body")
@@ -269,51 +236,31 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.Body.Close(); err != nil {
-		s.logger.Warn("Failed to close request body", "error", err)
-	}
-
-	// Parse request
-	var req payload.MigrationRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		s.writeError(w, r, http.StatusBadRequest, "Invalid JSON payload")
+	var migrationReq payload.MigrationRequest
+	if err := json.Unmarshal(body, &migrationReq); err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "Invalid JSON in request body")
 		tracing.RecordError(ctx, err)
 		return
 	}
 
-	// Add migration request details to span
+	// Add migration details to span
 	span.SetAttributes(
-		attribute.String("migration.source_org", req.SourceOrg),
-		attribute.String("migration.target_org", req.TargetOrg),
-		attribute.Int("migration.repositories_count", len(req.Repositories)),
+		attribute.String("source_org", migrationReq.SourceOrg),
+		attribute.String("target_org", migrationReq.TargetOrg),
+		attribute.Int("repositories_count", len(migrationReq.Repositories)),
+		attribute.Bool("use_ghos", migrationReq.UseGHOS),
 	)
 
-	// Validate the request
-	if err := req.Validate(); err != nil {
+	// Validate required fields
+	if err := migrationReq.Validate(); err != nil {
 		s.writeError(w, r, http.StatusBadRequest, err.Error())
 		tracing.RecordError(ctx, err)
 		return
 	}
 
-	// Check if GHES token is provided when needed
-	ghesBaseURL := req.GHESBaseURL
-	if ghesBaseURL != "" && req.GHESToken == "" {
-		s.writeError(w, r, http.StatusBadRequest, "GHES token is required when using GHES base URL")
-		span.SetStatus(codes.Error, "Missing GHES token")
-		return
-	}
-
-	// Log migration request
-	s.logger.Info("Migration request received",
-		"source_org", req.SourceOrg,
-		"target_org", req.TargetOrg,
-		"repo_count", len(req.Repositories),
-		"use_ghos", req.UseGHOS,
-	)
-
-	// Start migration in a separate goroutine
+	// Start the migration process in a goroutine
 	go func() {
-		// Create a new context with correlation ID for the background task
+		// Create a new background context with cancellation ability
 		bgCtx := logging.ContextWithCorrelationID(context.Background())
 		if id := logging.GetCorrelationID(ctx); id != "" {
 			bgCtx = context.WithValue(bgCtx, logging.KeyCorrelationID, id)
@@ -323,41 +270,67 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		bgCtx, cancel := context.WithCancel(bgCtx)
 
 		// Start the migration
-		err := s.migrator.StartMigration(bgCtx, &req, cancel)
-		if err != nil {
-			s.logger.Error("Failed to start migration",
+		if err := s.migrator.StartMigration(bgCtx, &migrationReq, cancel); err != nil {
+			s.logger.Error("Migration failed",
+				"source_org", migrationReq.SourceOrg,
+				"target_org", migrationReq.TargetOrg,
+				"repos_count", len(migrationReq.Repositories),
 				"error", err,
-				"source_org", req.SourceOrg,
-				"target_org", req.TargetOrg,
 			)
+
+			// Record metrics for failed migration
+			metrics.RecordMigrationComplete(
+				migrationReq.SourceOrg,
+				migrationReq.TargetOrg,
+				"failed",
+				time.Second, // Minimal duration for immediate failures
+				0,
+			)
+
 			cancel() // Cancel if there was an error starting
 		}
 	}()
 
+	// Record metrics for migration start
+	metrics.RecordMigrationStart(migrationReq.SourceOrg, migrationReq.TargetOrg)
+
 	// Return accepted response
-	resp := map[string]interface{}{
+	response := map[string]interface{}{
 		"status":       "accepted",
-		"message":      fmt.Sprintf("Migration started for %d repositories", len(req.Repositories)),
+		"message":      fmt.Sprintf("Migration request accepted for %d repositories", len(migrationReq.Repositories)),
 		"timestamp":    time.Now(),
 		"request_id":   logging.GetCorrelationID(ctx),
-		"repositories": req.Repositories,
+		"repositories": migrationReq.Repositories,
 	}
-
-	span.SetStatus(codes.Ok, "Migration accepted")
-	s.writeJSON(w, r, http.StatusAccepted, resp)
+	s.writeJSON(w, r, http.StatusAccepted, response)
 }
 
-// sanitizeToken redacts most of a token for logging purposes,
-// showing only the first 4 and last 4 characters.
-func sanitizeToken(token string) string {
-	if len(token) < 8 {
-		return "***"
+// validateMigrationRequest validates that all required fields are present in the migration request.
+// It returns an error if any required field is missing.
+func (s *Server) validateMigrationRequest(req *payload.MigrationRequest) error {
+	// Check required fields
+	if req.SourceOrg == "" {
+		return fmt.Errorf("source_org is required")
 	}
-	return token[:4] + "..." + token[len(token)-4:]
+	if req.TargetOrg == "" {
+		return fmt.Errorf("target_org is required")
+	}
+	if req.GHESToken == "" {
+		return fmt.Errorf("ghes_token is required")
+	}
+	if req.GHCloudToken == "" {
+		return fmt.Errorf("gh_cloud_token is required")
+	}
+	if req.GHESBaseURL == "" {
+		return fmt.Errorf("ghes_base_url is required")
+	}
+
+	// All validations passed
+	return nil
 }
 
 // writeJSON writes a JSON response with the given status code and data.
-// It handles the error case internally and logs any issues.
+// It sets the appropriate Content-Type header and handles error logging.
 func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) {
 	ctx := r.Context()
 	span := trace.SpanFromContext(ctx)
@@ -425,15 +398,16 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, statusCode i
 }
 
 // initDashboard initializes and registers the dashboard handlers
-func (s *Server) initDashboard(mux *http.ServeMux) {
-	// Create dashboard handler
-	dashboardHandler, err := dashboard.New(s.migrator)
+func (s *Server) initDashboard(mux *http.ServeMux) error {
+	// Create a new dashboard with the migrator
+	dashHandler, err := dashboard.New(s.migrator)
 	if err != nil {
-		s.logger.Error("Failed to initialize dashboard", "error", err)
-		return
+		return fmt.Errorf("failed to create dashboard: %w", err)
 	}
 
-	// Register dashboard handlers
-	dashboardHandler.RegisterHandlers(mux)
-	s.logger.Info("Dashboard enabled and registered")
+	// Dashboard Handler has its own RegisterHandlers method
+	dashHandler.RegisterHandlers(mux)
+
+	s.logger.Info("Dashboard initialized", "path", "/")
+	return nil
 }

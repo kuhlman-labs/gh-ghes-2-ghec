@@ -1,0 +1,92 @@
+groups:
+  - name: gh-ghes-2-ghec.alerts
+    rules:
+    - alert: HighMigrationErrorRate
+      expr: sum(increase(ghghe2ec_migrations_total{status="failed"}[15m])) / sum(increase(ghghe2ec_migrations_total[15m])) > 0.2
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High migration error rate (> 20%)"
+        description: "Migration error rate is {{ $value | humanizePercentage }} over the last 15 minutes."
+        
+    - alert: HighErrorRate
+      expr: sum(increase(ghghe2ec_migrations_total{status="failed"}[15m])) / sum(increase(ghghe2ec_migrations_total[15m])) > 0.4
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Critical migration error rate (> 40%)"
+        description: "Migration error rate is {{ $value | humanizePercentage }} over the last 15 minutes."
+        
+    - alert: SlowMigrations
+      expr: histogram_quantile(0.95, sum(rate(ghghe2ec_migration_duration_seconds_bucket{stage="overall"}[30m])) by (le)) > 3600
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Slow migrations detected"
+        description: "95th percentile of migration duration is {{ $value | humanizeDuration }} over the last 30 minutes."
+        
+    - alert: LowGitHubRateLimit
+      expr: min(ghghe2ec_github_rate_limit_remaining) by (api) < 200
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Low GitHub API rate limit for {{ $labels.api }}"
+        description: "GitHub API rate limit for {{ $labels.api }} is down to {{ $value }} remaining calls."
+        
+    - alert: LowGitHubRateLimitCritical
+      expr: min(ghghe2ec_github_rate_limit_remaining) by (api) < 50
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Critical GitHub API rate limit for {{ $labels.api }}"
+        description: "GitHub API rate limit for {{ $labels.api }} is down to {{ $value }} remaining calls."
+        
+    - alert: HighMemoryUsage
+      expr: ghghe2ec_memory_alloc_bytes > 2147483648  # 2GB
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage"
+        description: "Memory usage is {{ $value | humanizeBytes }} which is above the 2GB threshold."
+        
+    - alert: MigrationStalled
+      expr: sum(ghghe2ec_migrations_total{status="in_progress"}) > 0 and rate(ghghe2ec_github_api_requests_total[15m]) == 0
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Migration appears stalled"
+        description: "Migrations are in progress but no GitHub API requests have been made in the last 15 minutes."
+        
+    - alert: ServiceDown
+      expr: up{job="gh-ghes-2-ghec"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Migration service is down"
+        description: "The migration service is not reporting metrics to Prometheus."
+        
+    - alert: StorageErrors
+      expr: increase(ghghe2ec_storage_operations_total{status="error"}[5m]) > 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Storage errors detected"
+        description: "{{ $value }} storage operation errors detected in the last 5 minutes."
+        
+    - alert: HighHTTPErrorRate
+      expr: sum(increase(ghghe2ec_http_requests_total{status=~"5.."}[5m])) / sum(increase(ghghe2ec_http_requests_total[5m])) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High HTTP 5xx error rate (> 5%)"
+        description: "HTTP 5xx error rate is {{ $value | humanizePercentage }} over the last 5 minutes." 

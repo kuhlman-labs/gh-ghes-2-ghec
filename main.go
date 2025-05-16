@@ -8,6 +8,7 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/cmd"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/metrics"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/tracing"
 )
 
@@ -30,13 +31,26 @@ func main() {
 	// Get configuration
 	cfg := config.Get()
 
+	// Initialize metrics if enabled
+	metricsCfg := metrics.Config{
+		Enabled:     cfg.Metrics.Enabled,
+		Port:        cfg.Metrics.Port,
+		Path:        cfg.Metrics.Path,
+		ServiceName: cfg.Metrics.ServiceName,
+	}
+	if err := metrics.Init(metricsCfg); err != nil {
+		logging.Get().Error("Failed to initialize metrics", "error", err)
+		// Continue execution even if metrics setup fails
+	}
+
 	// Initialize tracing if enabled
 	if cfg.Tracing.Enabled {
 		tracingCfg := tracing.Config{
-			Enabled:     cfg.Tracing.Enabled,
-			Endpoint:    cfg.Tracing.Endpoint,
-			ServiceName: cfg.Tracing.ServiceName,
-			SampleRate:  cfg.Tracing.SampleRate,
+			Enabled:           cfg.Tracing.Enabled,
+			Endpoint:          cfg.Tracing.Endpoint,
+			ServiceName:       cfg.Tracing.ServiceName,
+			SampleRate:        cfg.Tracing.SampleRate,
+			PrometheusMetrics: cfg.Metrics.Enabled,
 		}
 
 		if err := tracing.Init(tracingCfg); err != nil {
