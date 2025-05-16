@@ -119,24 +119,80 @@ Types:
 .
 ├── .github/                # GitHub-specific files (workflows, templates)
 ├── cmd/                    # Command-line applications
-│   ├── config.go          # Configuration handling
-│   ├── root.go            # Root command implementation
-│   └── validate.go        # Validation command implementation
-├── internal/              # Private application code
-│   ├── config/           # Configuration management
-│   ├── github/           # GitHub API client and operations
-│   ├── logging/          # Logging utilities
-│   ├── migrator/         # Migration logic and operations
-│   ├── payload/          # Request/response payloads
-│   ├── server/           # HTTP server implementation
-│   ├── utils/            # Utility functions
-│   └── validation/       # Input validation logic
-├── main.go               # Application entry point
-├── config.yaml           # Default configuration file
-├── go.mod               # Go module definition
-├── go.sum               # Go module checksums
-├── LICENSE              # Project license
-└── README.md            # Project documentation
+│   ├── config.go           # Configuration handling
+│   ├── config_test.go      # Configuration tests
+│   ├── dbcheck.go          # Database check command
+│   ├── root.go             # Root command implementation
+│   ├── root_test.go        # Root command tests
+│   ├── validate.go         # Validation command implementation
+│   ├── validate_test.go    # Validation tests
+│   └── version.go          # Version information
+├── docs/                   # Documentation
+│   ├── alerting/           # Alerting configuration
+│   │   └── prometheus-alerts.yml # Prometheus alert rules
+│   ├── api/                # API documentation
+│   ├── dashboards/         # Grafana dashboards
+│   │   └── migration-dashboard.json # Grafana dashboard definition
+│   ├── deployment/         # Deployment guides
+│   ├── images/             # Documentation images
+│   └── monitoring/         # Monitoring documentation
+│       ├── alerting.md     # Alerting guide
+│       ├── dashboards.md   # Dashboard guide
+│       ├── metrics.md      # Metrics guide
+│       └── tracing.md      # Tracing guide
+├── internal/               # Private application code
+│   ├── config/             # Configuration management
+│   ├── dashboard/          # Web dashboard UI
+│   │   ├── handler.go      # Dashboard request handlers
+│   │   └── templates/      # HTML templates for dashboard
+│   ├── github/             # GitHub API client and operations
+│   ├── logging/            # Logging utilities
+│   ├── metrics/            # Metrics collection and reporting
+│   ├── migrator/           # Migration logic and operations
+│   │   ├── logger.go       # Migration-specific logging
+│   │   ├── migrator.go     # Main migration orchestration
+│   │   ├── migrator_test.go # Migration tests
+│   │   ├── progress.go     # Migration progress tracking
+│   │   ├── repository.go   # Repository migration logic
+│   │   ├── status.go       # Migration status tracking
+│   │   ├── tracing.go      # Migration-specific tracing
+│   │   ├── util.go         # Migration utilities
+│   │   └── webhook.go      # Webhook notification
+│   ├── payload/            # Request/response payloads
+│   ├── sanitization/       # Input sanitization
+│   ├── server/             # HTTP server implementation
+│   ├── storage/            # Storage for migration status
+│   │   ├── health.go       # Storage health checks
+│   │   ├── mysql.go        # MySQL storage implementation
+│   │   ├── postgres.go     # PostgreSQL storage implementation
+│   │   ├── sqlite.go       # SQLite storage implementation
+│   │   ├── storage.go      # Storage interface definition
+│   │   └── storage_test.go # Storage tests
+│   ├── tracing/            # Distributed tracing
+│   │   ├── tracing.go      # Tracing implementation
+│   │   └── tracing_test.go # Tracing tests 
+│   ├── utils/              # Utility functions
+│   ├── validation/         # Input validation logic
+│   └── version/            # Version information
+├── static/                 # Static web assets
+│   ├── css/                # CSS stylesheets
+│   │   └── styles.css      # Main stylesheet
+│   └── js/                 # JavaScript files
+│       ├── dashboard.js    # Dashboard functionality
+│       └── htmx.min.js     # HTMX library for dynamic UI
+├── .dockerignore           # Docker ignore file
+├── .gitignore              # Git ignore file
+├── CONTRIBUTING.md         # Contribution guidelines
+├── Dockerfile              # Docker configuration
+├── LICENSE                 # Project license
+├── Makefile                # Build and development commands
+├── README.md               # Project documentation
+├── config.yaml             # Configuration file (gitignored local config)
+├── config.yaml.template    # Template configuration file
+├── go.mod                  # Go module definition
+├── go.sum                  # Go module checksums
+└── main.go                 # Application entry point
+ 
 ```
 
 Key directories and their purposes:
@@ -144,23 +200,40 @@ Key directories and their purposes:
 - `.github/`: Contains GitHub-specific configurations like workflows, issue templates, and PR templates
 - `cmd/`: Command-line interface implementations
   - `config.go`: Handles configuration loading and validation
+  - `dbcheck.go`: Database check and repair utilities
   - `root.go`: Main command implementation
   - `validate.go`: Migration request validation command
+  - `version.go`: Version information reporting
+- `docs/`: Project documentation
+  - `alerting/`: Alerting configuration files
+  - `api/`: API reference documentation
+  - `dashboards/`: Grafana dashboard definitions
+  - `deployment/`: Deployment guides
+  - `monitoring/`: Monitoring and observability documentation
 - `internal/`: Private application code
   - `config/`: Configuration management and validation
+  - `dashboard/`: Web dashboard UI implementation and templates
   - `github/`: GitHub API client implementation and operations
   - `logging/`: Logging utilities and configuration
+  - `metrics/`: Metrics collection and reporting with Prometheus
   - `migrator/`: Core migration logic and operations
   - `payload/`: Request and response data structures
+  - `sanitization/`: Input sanitization to prevent security issues
   - `server/`: HTTP server implementation and handlers
+  - `storage/`: Storage implementations for migration status
+  - `tracing/`: Distributed tracing with OpenTelemetry
   - `utils/`: Shared utility functions
   - `validation/`: Input validation logic
+  - `version/`: Version information
+- `static/`: Static assets for the web dashboard
+  - `css/`: CSS stylesheets
+  - `js/`: JavaScript files and libraries
 - Root files:
+  - `Dockerfile`: Container definition
+  - `Makefile`: Build and development commands
+  - `config.yaml.template`: Template configuration file
   - `main.go`: Application entry point
-  - `config.yaml`: Default configuration file
-  - `go.mod` and `go.sum`: Go module definition and checksums
-  - `LICENSE`: Project license
-  - `README.md`: Project documentation
+
 
 When adding new code:
 1. Place command-line related code in `cmd/`
@@ -168,6 +241,9 @@ When adding new code:
 3. Keep configuration in `config.yaml` or `internal/config/`
 4. Add new GitHub API operations in `internal/github/`
 5. Implement new migration features in `internal/migrator/`
+6. Add documentation in `docs/`
+7. Place web assets in `static/`
+8. Update web UI in `internal/dashboard/`
 
 ## Testing
 
