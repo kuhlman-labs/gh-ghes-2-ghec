@@ -216,7 +216,10 @@ func TestWithMiddleware(t *testing.T) {
 	// Simple handler for testing middleware
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("test"))
+		_, err := w.Write([]byte("test"))
+		if err != nil {
+			panic(err)
+		}
 	})
 
 	// Apply middleware

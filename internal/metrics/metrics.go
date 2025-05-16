@@ -9,6 +9,7 @@ import (
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -104,21 +105,6 @@ var (
 	)
 
 	// System metrics
-	goRoutinesGauge = promauto.With(registry).NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Name:      "goroutines",
-			Help:      "Number of goroutines",
-		},
-	)
-
-	memAllocBytes = promauto.With(registry).NewGauge(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Name:      "memory_alloc_bytes",
-			Help:      "Number of bytes allocated and not yet freed",
-		},
-	)
 
 	// Storage metrics
 	storageOperationsTotal = promauto.With(registry).NewCounterVec(
@@ -166,8 +152,8 @@ func Init(cfg Config) error {
 	}
 
 	// Register default Go collectors
-	registry.MustRegister(prometheus.NewGoCollector())
-	registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+	registry.MustRegister(collectors.NewGoCollector())
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	// Start metrics server on separate port if configured
 	if cfg.Port > 0 {
@@ -185,8 +171,9 @@ func Init(cfg Config) error {
 		go func() {
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			server := &http.Server{
-				Addr:    addr,
-				Handler: mux,
+				Addr:              addr,
+				Handler:           mux,
+				ReadHeaderTimeout: 10 * time.Second,
 			}
 
 			logging.Get().Info("Starting metrics server", "address", addr, "path", path)

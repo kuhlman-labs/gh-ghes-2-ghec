@@ -305,30 +305,6 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, r, http.StatusAccepted, response)
 }
 
-// validateMigrationRequest validates that all required fields are present in the migration request.
-// It returns an error if any required field is missing.
-func (s *Server) validateMigrationRequest(req *payload.MigrationRequest) error {
-	// Check required fields
-	if req.SourceOrg == "" {
-		return fmt.Errorf("source_org is required")
-	}
-	if req.TargetOrg == "" {
-		return fmt.Errorf("target_org is required")
-	}
-	if req.GHESToken == "" {
-		return fmt.Errorf("ghes_token is required")
-	}
-	if req.GHCloudToken == "" {
-		return fmt.Errorf("gh_cloud_token is required")
-	}
-	if req.GHESBaseURL == "" {
-		return fmt.Errorf("ghes_base_url is required")
-	}
-
-	// All validations passed
-	return nil
-}
-
 // writeJSON writes a JSON response with the given status code and data.
 // It sets the appropriate Content-Type header and handles error logging.
 func (s *Server) writeJSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) {
