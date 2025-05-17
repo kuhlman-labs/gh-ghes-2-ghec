@@ -30,8 +30,7 @@ lint:
 
 # Run Go Sec
 sec:
-	go install github.com/securego/gosec/v2/cmd/gosec@latest
-	$(shell go env GOPATH)/bin/gosec ./...
+	go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
 
 # Run go vet
 vet:
