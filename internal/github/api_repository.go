@@ -45,11 +45,6 @@ func (a *GitHubAPI) ValidateRepository(ctx context.Context, org, repo string) er
 		// Use the error classification system to properly categorize this error
 		classifiedErr := a.classifyGitHubError(err)
 
-		// For 404 errors, keep the "repository not found" message for compatibility
-		if respStatus == 404 {
-			return a.classifyGitHubError(err)
-		}
-
 		// For all other errors, return the properly classified error
 		return classifiedErr
 	}
