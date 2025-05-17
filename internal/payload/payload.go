@@ -122,6 +122,9 @@ type MigrationStatus struct {
 	CompletedStages   []string      `json:"completed_stages,omitempty"`    // List of completed stages
 	TotalStages       int           `json:"total_stages,omitempty"`        // Total number of stages in the migration process
 	CurrentStageIndex int           `json:"current_stage_index,omitempty"` // Index of current stage (1-based)
+	TargetOrg         string        `json:"target_org,omitempty"`          // Target organization for the migration
+	GHESBaseURL       string        `json:"ghes_base_url,omitempty"`       // GitHub Enterprise Server base URL
+	UseGHOS           bool          `json:"use_ghos,omitempty"`            // Whether GitHub Owned Storage is used
 }
 
 // MigrationStages defines the sequential stages in the migration process.

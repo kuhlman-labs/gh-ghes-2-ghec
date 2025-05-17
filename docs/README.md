@@ -23,6 +23,9 @@ Welcome to the documentation for the GitHub GHES to GHEC Migration Server. This 
 - **Storage & Management**
   - [Storage Options](storage.md)
 
+- **Features**
+  - [Migration Retry](retry.md)
+
 ## Screenshots
 
 ![Migration Dashboard](images/dashboard.png)

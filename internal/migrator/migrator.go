@@ -18,6 +18,7 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/storage"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/tracing"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -204,6 +205,9 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 						Stage:       "init",
 						State:       "starting",
 						TotalStages: len(payload.MigrationStages), // Initialize TotalStages
+						TargetOrg:   currentReq.TargetOrg,         // Save target org for future use
+						GHESBaseURL: currentReq.GHESBaseURL,       // Save GHES URL for future use
+						UseGHOS:     currentReq.UseGHOS,           // Save GHOS setting
 					}
 					m.migrations[rfn] = initialStatus // Replace with new status
 				}
@@ -218,6 +222,9 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 					Stage:       "init",
 					State:       "starting",
 					TotalStages: len(payload.MigrationStages), // Initialize TotalStages
+					TargetOrg:   currentReq.TargetOrg,         // Save target org for future use
+					GHESBaseURL: currentReq.GHESBaseURL,       // Save GHES URL for future use
+					UseGHOS:     currentReq.UseGHOS,           // Save GHOS setting
 				}
 				m.migrations[rfn] = initialStatus // Use sourceRepoFullName
 				m.logger.Info("Initialized new migration status", "repository_full_name", rfn)
@@ -266,8 +273,8 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 	return multiErr.ErrorOrNil()
 }
 
-// performMigration is the high-level workflow for a single repository migration.
-// It is run in a goroutine.
+// updateStatus is implemented in status.go
+
 func (m *Migrator) performMigration(
 	ctx context.Context,
 	req *payload.MigrationRequest,
@@ -303,9 +310,52 @@ func (m *Migrator) performMigration(
 
 	err := m.migrateRepository(ctx, req, repoName, sourceRepoFullName, attemptStartTime)
 	if err != nil {
-		// Error and status are already updated within migrateRepository or its sub-calls.
-		// Log the completion of this attempt with failure.
-		m.logger.Error("Migration attempt failed for repository", "repository_full_name", sourceRepoFullName, "error", err)
+		// Capture the raw error message - this will preserve the detailed GitHub API error information
+		fullErrorMessage := err.Error()
+
+		// Check for specific error types and provide more useful messages but preserve the raw error details
+		errLower := strings.ToLower(fullErrorMessage)
+
+		// Repository conflict error
+		if strings.Contains(errLower, "already exists") || strings.Contains(errLower, "conflict") {
+			conflictMsg := fmt.Sprintf("Repository already exists: %s", fullErrorMessage)
+			m.logger.Error("Migration failed due to repository conflict",
+				"repository_full_name", sourceRepoFullName,
+				"error", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+			return err
+		}
+
+		// Authentication error
+		if strings.Contains(errLower, "unauthorized") || strings.Contains(errLower, "authentication") ||
+			strings.Contains(errLower, "credential") || strings.Contains(errLower, "token") {
+			authMsg := fmt.Sprintf("Authentication failed: %s", fullErrorMessage)
+			m.logger.Error("Migration failed due to authentication error",
+				"repository_full_name", sourceRepoFullName,
+				"error", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, authMsg, time.Now(), attemptStartTime)
+			return err
+		}
+
+		// Permission error
+		if strings.Contains(errLower, "permission") || strings.Contains(errLower, "forbidden") ||
+			strings.Contains(errLower, "access denied") {
+			permMsg := fmt.Sprintf("Permission denied: %s", fullErrorMessage)
+			m.logger.Error("Migration failed due to permission error",
+				"repository_full_name", sourceRepoFullName,
+				"error", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, permMsg, time.Now(), attemptStartTime)
+			return err
+		}
+
+		// For other error types, include the full raw error message to preserve all GitHub API details
+		m.logger.Error("Migration attempt failed for repository",
+			"repository_full_name", sourceRepoFullName,
+			"error", err)
+
+		// Create a more user-friendly error message but include the full raw error
+		errorMsg := fmt.Sprintf("Migration failed: %v", fullErrorMessage)
+		m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
 		return err // Propagate error for potential cleanup or higher-level error aggregation if any.
 	}
 
@@ -400,4 +450,137 @@ func (m *Migrator) GetArchivedMigrationAttempts(sourceRepoFullName string) ([]*p
 
 	m.logger.Debug("Migrator: Successfully retrieved archived migration attempts from storage", "repository_full_name", sourceRepoFullName, "count", len(archivedAttempts))
 	return archivedAttempts, nil
+}
+
+// RetryMigration initiates a retry for a failed migration.
+// It validates that the repository exists, archives the current failed status,
+// and starts a new migration attempt. It uses stored configuration values from
+// the original migration status, but can be updated with new credentials.
+//
+// Parameters:
+//   - ctx: Context for controlling the retry operation (should be a background context with no timeout)
+//   - sourceRepoFullName: Full repository name (org/repo) to retry
+//   - ghesToken: Optional GitHub Enterprise Server token (can be empty to use stored values)
+//   - ghCloudToken: Optional GitHub Cloud token (can be empty to use stored values)
+//   - ghesBaseURL: Optional GitHub Enterprise Server URL (can be empty to use stored values)
+//   - targetOrg: Optional target organization (can be empty to use stored values)
+//
+// Returns:
+//   - error: An error if the retry fails or the repository isn't in a failed state
+func (m *Migrator) RetryMigration(ctx context.Context, sourceRepoFullName string, ghesToken, ghCloudToken, ghesBaseURL, targetOrg string) error {
+	m.logger.Info("Attempting to retry migration", "repository", sourceRepoFullName)
+
+	_, span := tracing.StartSpan(ctx, "retry_migration")
+	defer span.End()
+
+	// We need to acquire a write lock since we'll be modifying the migrations map
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 1. Check if the repository exists in our migrations map
+	existingStatus, exists := m.migrations[sourceRepoFullName]
+	if !exists {
+		err := fmt.Errorf("no migration found for repository %s", sourceRepoFullName)
+		span.RecordError(err)
+		return err
+	}
+
+	// 2. Check if the repository is in a failed state
+	if existingStatus.Status != payload.StatusFailed {
+		err := fmt.Errorf("repository %s is not in a failed state, current status: %s", sourceRepoFullName, existingStatus.Status)
+		span.RecordError(err)
+		return err
+	}
+
+	// 3. Archive the current failed status
+	attemptStartTime := time.Now()
+	statusToArchive := deepCopyMigrationStatus(existingStatus)
+
+	// Create a context with timeout for archiving
+	archiveCtx, archiveCtxCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer archiveCtxCancel()
+
+	if err := m.storage.ArchiveMigrationAttempt(archiveCtx, statusToArchive); err != nil {
+		m.logger.Error("Failed to archive previous failed migration status", "repository", sourceRepoFullName, "error", err)
+		span.RecordError(err)
+		// Continue with the retry even if archiving fails - not a blocking error
+	} else {
+		m.logger.Info("Successfully archived previous failed migration status", "repository", sourceRepoFullName)
+	}
+
+	// 4. Reset the migration status for a new attempt
+	existingStatus.Status = payload.StatusInProgress
+	existingStatus.Error = ""
+	existingStatus.StartedAt = attemptStartTime
+	existingStatus.UpdatedAt = attemptStartTime
+	existingStatus.Duration = 0
+	existingStatus.MigrationID = ""
+	existingStatus.Progress = 0
+	existingStatus.StageProgress = 0
+	existingStatus.Stage = "preparation"
+	existingStatus.State = "starting"
+	existingStatus.CompletedStages = []string{}
+
+	// Update GHES URL from parameter if provided
+	if ghesBaseURL != "" {
+		existingStatus.GHESBaseURL = ghesBaseURL
+	}
+
+	// Update target org from parameter if provided
+	if targetOrg != "" {
+		existingStatus.TargetOrg = targetOrg
+	}
+
+	// 5. Parse the repository name to get the org and repo
+	parts := strings.Split(sourceRepoFullName, "/")
+	if len(parts) != 2 {
+		err := fmt.Errorf("invalid repository name format: %s", sourceRepoFullName)
+		span.RecordError(err)
+		return err
+	}
+
+	orgName := parts[0]
+	repoName := parts[1]
+
+	// 6. Create a request using stored and provided values
+	req := &payload.MigrationRequest{
+		SourceOrg:    orgName,
+		TargetOrg:    existingStatus.TargetOrg,
+		GHESToken:    ghesToken,
+		GHCloudToken: ghCloudToken,
+		GHESBaseURL:  existingStatus.GHESBaseURL,
+		UseGHOS:      existingStatus.UseGHOS,
+		Repositories: []string{repoName},
+	}
+
+	// 7. Start the migration in a new goroutine with a detached context
+	go func(rfn string, startTime time.Time) {
+		// Create a truly detached background context with no parent timeouts or deadlines
+		migrationCtx := context.Background()
+
+		// Create a separate cancel function not tied to any timeout
+		migrationCtx, migrationCancel := context.WithCancel(migrationCtx)
+		defer migrationCancel()
+
+		// Add correlation ID for tracking
+		if id := logging.GetCorrelationID(ctx); id != "" {
+			migrationCtx = context.WithValue(migrationCtx, logging.KeyCorrelationID, id)
+		}
+
+		// Log the start of the retry operation
+		m.logger.Info("Starting retry migration operation in background",
+			"repository", rfn,
+			"start_time", startTime.Format(time.RFC3339))
+
+		if err := m.performMigration(migrationCtx, req, rfn, startTime, migrationCancel); err != nil {
+			// Error handling is already done within performMigration, but we can add additional logging
+			// Include the error type in the log to help with troubleshooting
+			m.logger.Error("Failed to retry migration",
+				"repository", rfn,
+				"error", err)
+		}
+	}(sourceRepoFullName, attemptStartTime)
+
+	m.logger.Info("Migration retry initiated successfully", "repository", sourceRepoFullName)
+	return nil
 }

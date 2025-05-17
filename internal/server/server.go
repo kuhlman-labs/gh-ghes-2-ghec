@@ -59,10 +59,12 @@ func New(cfg *config.Config, m *migrator.Migrator) *Server {
 	migrateHandler := s.withMiddleware(http.HandlerFunc(s.handleMigration))
 	statusHandler := s.withMiddleware(http.HandlerFunc(s.handleStatus))
 	healthHandler := s.withMiddleware(http.HandlerFunc(s.handleHealthCheck))
+	retryHandler := s.withMiddleware(http.HandlerFunc(s.handleRetryMigration))
 
 	mux.Handle("/api/migrate", migrateHandler)
 	mux.Handle("/api/status", statusHandler)
 	mux.Handle("/api/healthz", healthHandler)
+	mux.Handle("/api/retry", retryHandler)
 
 	// Add metrics endpoint if enabled
 	if cfg.Metrics.Enabled {
@@ -303,6 +305,68 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		"repositories": migrationReq.Repositories,
 	}
 	s.writeJSON(w, r, http.StatusAccepted, response)
+}
+
+// handleRetryMigration handles requests to retry a failed migration.
+// It accepts a repository name as a query parameter and attempts to retry the migration.
+func (s *Server) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracing.StartSpan(r.Context(), "retry_migration_api")
+	defer span.End()
+
+	if r.Method != http.MethodPost {
+		s.writeError(w, r, http.StatusMethodNotAllowed, "Method not allowed")
+		span.SetStatus(codes.Error, "Method not allowed")
+		return
+	}
+
+	// Get repository name from query parameter
+	repoFullName := r.URL.Query().Get("repository")
+	if repoFullName == "" {
+		errMsg := "Missing repository parameter"
+		s.writeError(w, r, http.StatusBadRequest, errMsg)
+		span.SetStatus(codes.Error, errMsg)
+		return
+	}
+
+	span.SetAttributes(attribute.String("repository", repoFullName))
+
+	// Read request body for additional parameters if present
+	var params struct {
+		GHESToken    string `json:"ghes_token"`
+		GHCloudToken string `json:"gh_cloud_token"`
+		GHESBaseURL  string `json:"ghes_base_url"`
+		TargetOrg    string `json:"target_org"`
+	}
+
+	// Try to read the body but don't fail if it's not present
+	body, err := io.ReadAll(r.Body)
+	if err == nil && len(body) > 0 {
+		_ = json.Unmarshal(body, &params)
+	}
+
+	// Attempt to retry the migration with provided parameters
+	err = s.migrator.RetryMigration(ctx, repoFullName, params.GHESToken, params.GHCloudToken, params.GHESBaseURL, params.TargetOrg)
+	if err != nil {
+		errMsg := fmt.Sprintf("Failed to retry migration: %v", err)
+		s.writeError(w, r, http.StatusBadRequest, errMsg)
+		span.SetStatus(codes.Error, errMsg)
+		return
+	}
+
+	// Return success response
+	response := struct {
+		Success    bool   `json:"success"`
+		Message    string `json:"message"`
+		Status     string `json:"status"`
+		Repository string `json:"repository"`
+	}{
+		Success:    true,
+		Message:    "Migration retry initiated successfully",
+		Status:     "in_progress",
+		Repository: repoFullName,
+	}
+
+	s.writeJSON(w, r, http.StatusOK, response)
 }
 
 // writeJSON writes a JSON response with the given status code and data.

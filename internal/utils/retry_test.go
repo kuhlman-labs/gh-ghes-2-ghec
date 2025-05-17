@@ -96,7 +96,7 @@ func TestRetry_MaxRetriesExceeded(t *testing.T) {
 	config := DefaultRetryConfig(slog.Default())
 	ctx := context.Background()
 	attempts := 0
-	expectedErr := errors.New("permanent error")
+	expectedErr := errors.New("transient network error")
 
 	err := Retry(ctx, config, "test", func() error {
 		attempts++
@@ -403,5 +403,78 @@ func TestRetryMiddleware_BodyPreservation(t *testing.T) {
 	assert.Equal(t, maxAttempts, len(requestBodies))
 	for _, body := range requestBodies {
 		assert.Equal(t, bodyContent, body)
+	}
+}
+
+func TestIsPermanentError(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		isPermanent bool
+	}{
+		{
+			name:        "Repository already exists error",
+			err:         errors.New("Failed to create repository: A repository called org/repo already exists"),
+			isPermanent: true,
+		},
+		{
+			name:        "Repository conflict error",
+			err:         errors.New("Repository conflict detected"),
+			isPermanent: true,
+		},
+		{
+			name:        "Authentication error",
+			err:         errors.New("Unauthorized access: invalid token"),
+			isPermanent: true,
+		},
+		{
+			name:        "Permission error",
+			err:         errors.New("Permission denied to access resource"),
+			isPermanent: true,
+		},
+		{
+			name:        "Resource not found",
+			err:         errors.New("Repository not found"),
+			isPermanent: true,
+		},
+		{
+			name:        "Bad request error",
+			err:         errors.New("Bad request: invalid parameter"),
+			isPermanent: true,
+		},
+		{
+			name:        "Status code 404",
+			err:         errors.New("HTTP request failed with status code: 404"),
+			isPermanent: true,
+		},
+		{
+			name:        "Status code 401",
+			err:         errors.New("HTTP request failed with status code: 401"),
+			isPermanent: true,
+		},
+		{
+			name:        "Transient network error",
+			err:         errors.New("Failed to connect: timeout"),
+			isPermanent: false,
+		},
+		{
+			name:        "Rate limit error",
+			err:         errors.New("Rate limit exceeded, retry after 60 seconds"),
+			isPermanent: false,
+		},
+		{
+			name:        "Internal server error",
+			err:         errors.New("Internal server error"),
+			isPermanent: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isPermanentError(tt.err)
+			if result != tt.isPermanent {
+				t.Errorf("isPermanentError(%v) = %v, want %v", tt.err, result, tt.isPermanent)
+			}
+		})
 	}
 }

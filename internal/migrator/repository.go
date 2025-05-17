@@ -4,11 +4,13 @@ package migrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	apierrors "github.com/kuhlman-labs/gh-ghes-2-ghec/internal/errors"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 )
@@ -75,8 +77,55 @@ func (m *Migrator) prepareForMigration(
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "validating source repository", time.Now(), attemptStartTime)
 	err := githubAPI.ValidateRepository(ctx, req.SourceOrg, sourceRepoName)
 	if err != nil {
-		m.updateStatus(sourceRepoFullName, payload.StatusFailed, fmt.Sprintf("source repository not found: %v", err), time.Now(), attemptStartTime)
+		// Source repository must exist - this is a critical error
+		errorMsg := fmt.Sprintf("source repository not found: %v", err)
+		m.logger.Error("Source repository validation failed",
+			"repo", sourceRepoFullName,
+			"error", err)
+		m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
 		return fmt.Errorf("source repository not found: %w", err)
+	}
+
+	m.logger.Info("Source repository validated successfully",
+		"repo", sourceRepoFullName)
+
+	// Check if repository exists in the target organization
+	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "checking if repository exists in target organization", time.Now(), attemptStartTime)
+	err = githubAPI.ValidateCloudRepository(ctx, req.TargetOrg, sourceRepoName)
+	if err == nil {
+		// If no error, the repository was found in the target organization, so we should fail
+		conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+		m.logger.Error("Repository already exists in target organization",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
+		m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+		return fmt.Errorf("repository conflict: %s", conflictMsg)
+	} else {
+		// Import the errors package to check for specific error categories
+		var classifiedErr *apierrors.ClassifiedError
+
+		// Check if this is a ResourceNotFound error - that's what we want
+		if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceNotFound {
+			// This is the expected case - repository doesn't exist in target, proceed with migration
+			m.logger.Info("Target repository validation successful - repository does not exist in target organization",
+				"source_repo", sourceRepoFullName,
+				"target_org", req.TargetOrg)
+		} else if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceConflict {
+			// This is a conflict error, explicitly handle it
+			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+			m.logger.Error("Repository conflict detected",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+				"error", classifiedErr)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+			return fmt.Errorf("repository conflict: %s", conflictMsg)
+		} else {
+			// Some other error occurred during validation
+			errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
+			m.logger.Error("Target repository validation failed with unexpected error",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+				"error", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+			return err
+		}
 	}
 
 	// Get the owner ID for the destination organization
@@ -96,6 +145,17 @@ func (m *Migrator) prepareForMigration(
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "creating migration source in GHEC", time.Now(), attemptStartTime)
 	migrationSourceID, err := githubAPI.CreateMigrationSource(ctx, sourceRepoName, baseURL, ownerID)
 	if err != nil {
+		// Check for repository conflict errors in the migrationSource creation
+		var classifiedErr *apierrors.ClassifiedError
+		if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceConflict {
+			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+			m.logger.Error("Repository conflict detected during migration source creation",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+				"error", classifiedErr)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+			return fmt.Errorf("repository conflict: %s", conflictMsg)
+		}
+
 		m.updateStatus(sourceRepoFullName, payload.StatusFailed, fmt.Sprintf("failed to create migration source: %v", err), time.Now(), attemptStartTime)
 		return fmt.Errorf("failed to create migration source: %w", err)
 	}
@@ -221,6 +281,37 @@ func (m *Migrator) startMigration(
 	attemptStartTime time.Time,
 ) (string, error) {
 	sourceRepoFullName := fmt.Sprintf("%s/%s", req.SourceOrg, sourceRepoName)
+
+	// Double-check that repository doesn't exist in target to avoid race conditions
+	err := githubAPI.ValidateCloudRepository(ctx, req.TargetOrg, sourceRepoName)
+	if err == nil {
+		// If no error, the repository was found in the target organization, so we should fail
+		conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+		m.logger.Error("Repository already exists in target organization (detected during start migration)",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
+		m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+		return "", fmt.Errorf("repository conflict: %s", conflictMsg)
+	} else {
+		// Check for non-404 errors, but allow 404 Not Found to proceed
+		var classifiedErr *apierrors.ClassifiedError
+		if errors.As(err, &classifiedErr) && classifiedErr.Category != apierrors.CategoryResourceNotFound {
+			if classifiedErr.Category == apierrors.CategoryResourceConflict {
+				// This is a conflict error
+				conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+				m.logger.Error("Repository conflict detected during start migration",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+					"error", classifiedErr)
+				m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+				return "", fmt.Errorf("repository conflict: %s", conflictMsg)
+			}
+			// Some other non-404 error occurred during validation
+			errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+			return "", err
+		}
+		// 404 Not Found is expected and we can proceed
+	}
+
 	// Get the necessary IDs
 	ownerID, databaseID, err := githubAPI.GetOrganizationID(ctx, req.TargetOrg)
 	if err != nil {
@@ -234,6 +325,16 @@ func (m *Migrator) startMigration(
 	baseURL := strings.TrimSuffix(req.GHESBaseURL, "/")
 	migrationSourceID, err = githubAPI.CreateMigrationSource(ctx, sourceRepoName, baseURL, ownerID)
 	if err != nil {
+		// Check for repository conflict errors in the migrationSource creation
+		var classifiedErr *apierrors.ClassifiedError
+		if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceConflict {
+			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+			m.logger.Error("Repository conflict detected during migration source creation",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+				"error", classifiedErr)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+			return "", fmt.Errorf("repository conflict: %s", conflictMsg)
+		}
 		m.updateStatus(sourceRepoFullName, payload.StatusFailed, fmt.Sprintf("failed to create migration source: %v", err), time.Now(), attemptStartTime)
 		return "", fmt.Errorf("failed to create migration source: %w", err)
 	}
@@ -260,7 +361,20 @@ func (m *Migrator) startMigration(
 		// Start the migration using the GEI URI as both the archive URL and metadata URL
 		migrationID, err = githubAPI.StartRepositoryMigration(ctx, migrationSourceID, ownerID, sourceRepoName, sourceRepoURL, geiURI, geiURI, req.GHESToken, req.GHCloudToken)
 		if err != nil {
-			m.updateStatus(sourceRepoFullName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration with GHOS archive: %v", err), time.Now(), attemptStartTime)
+			// Check specifically for repository conflict errors
+			var classifiedErr *apierrors.ClassifiedError
+			if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceConflict {
+				// Format a more specific error message for repository conflicts
+				conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+				m.logger.Error("Repository conflict detected during migration start with GHOS",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+					"error", classifiedErr)
+				m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+				return "", fmt.Errorf("repository conflict: %s", conflictMsg)
+			}
+
+			errMsg := fmt.Sprintf("failed to start repository migration with GHOS archive: %v", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 			return "", fmt.Errorf("failed to start repository migration with GHOS archive: %w", err)
 		}
 	} else {
@@ -277,7 +391,20 @@ func (m *Migrator) startMigration(
 		m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "starting repository migration", time.Now(), attemptStartTime)
 		migrationID, err = githubAPI.StartRepositoryMigration(ctx, migrationSourceID, ownerID, sourceRepoName, sourceRepoURL, archiveURL, archiveURL, req.GHESToken, req.GHCloudToken)
 		if err != nil {
-			m.updateStatus(sourceRepoFullName, payload.StatusFailed, fmt.Sprintf("failed to start repository migration: %v", err), time.Now(), attemptStartTime)
+			// Check specifically for repository conflict errors
+			var classifiedErr *apierrors.ClassifiedError
+			if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceConflict {
+				// Format a more specific error message for repository conflicts
+				conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+				m.logger.Error("Repository conflict detected during direct migration start",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+					"error", classifiedErr)
+				m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+				return "", fmt.Errorf("repository conflict: %s", conflictMsg)
+			}
+
+			errMsg := fmt.Sprintf("failed to start repository migration: %v", err)
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 			return "", fmt.Errorf("failed to start repository migration: %w", err)
 		}
 	}

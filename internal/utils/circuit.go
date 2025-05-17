@@ -265,6 +265,7 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 
 	// Set up timeout if specified
 	var err error
+	var timeoutErr error
 	done := make(chan struct{})
 
 	go func() {
@@ -281,7 +282,10 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 			cb.mutex.Lock()
 			cb.timeoutCalls++
 			cb.mutex.Unlock()
-			return fmt.Errorf("circuit breaker '%s' request timed out after %s", cb.config.Name, cb.config.RequestTimeout)
+			// Create a timeout error but don't return it yet - check if the function
+			// has returned an error of its own first
+			timeoutErr = fmt.Errorf("circuit breaker '%s' request timed out after %s - this may mask an underlying error",
+				cb.config.Name, cb.config.RequestTimeout)
 		}
 	} else {
 		<-done // Wait for function to complete without timeout
@@ -291,6 +295,7 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
 
+	// Always prioritize returning the original error if both timeout and function error occurred
 	if err != nil {
 		// Request failed
 		cb.failedCalls++
@@ -305,11 +310,41 @@ func (cb *CircuitBreaker) Execute(fn func() error) error {
 			cb.failureCount++
 			if cb.failureCount >= cb.config.FailureThreshold {
 				cb.toState(StateOpen)
+
+				// Add circuit breaker context to the error but don't mask the original error
+				// This helps trace that the circuit breaker tripped while still preserving the original error
+				err = fmt.Errorf("%w (circuit breaker '%s' has now tripped open due to failure threshold reached)",
+					err, cb.config.Name)
+			}
+		case StateHalfOpen:
+			cb.toState(StateOpen)
+
+			// Add circuit breaker context to the error
+			err = fmt.Errorf("%w (circuit breaker '%s' has returned to open state from half-open)",
+				err, cb.config.Name)
+		}
+		return err
+	}
+
+	// If we timed out and the function didn't return its own error, return the timeout error
+	if timeoutErr != nil {
+		cb.config.Logger.Debug("Circuit breaker timeout occurred with no error from function",
+			"name", cb.config.Name,
+			"timeout", cb.config.RequestTimeout.String(),
+		)
+
+		// Update circuit state after timeout
+		switch cb.state {
+		case StateClosed:
+			cb.failureCount++
+			if cb.failureCount >= cb.config.FailureThreshold {
+				cb.toState(StateOpen)
 			}
 		case StateHalfOpen:
 			cb.toState(StateOpen)
 		}
-		return err
+
+		return timeoutErr
 	}
 
 	// Request succeeded
