@@ -956,11 +956,10 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	var migrationErr error
 	if err := h.migrator.RetryMigration(bgCtx, repoPath, ghesToken, ghCloudToken, ghesBaseURL, targetOrg); err != nil {
 		migrationErr = err
-		// We don't have a logger in this handler, so we'll use a simple fmt.Printf for now
-		// The migrator will log the detailed error
-		fmt.Printf("Failed to initiate migration retry for %s: %v (%T)\n", repoPath, err, err)
+		// Log the error using the structured logger
+		logging.FromContext(bgCtx).Errorf("Failed to initiate migration retry for %s: %v (%T)", repoPath, err, err)
 	} else {
-		fmt.Printf("Migration retry initiated successfully for %s\n", repoPath)
+		logging.FromContext(bgCtx).Infof("Migration retry initiated successfully for %s", repoPath)
 	}
 
 	// Since RetryMigration already starts the actual work in a background goroutine,
