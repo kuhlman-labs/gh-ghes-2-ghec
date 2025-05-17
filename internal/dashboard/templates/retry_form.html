@@ -1,0 +1,38 @@
+{{define "retry_form"}}
+<form hx-post="/dashboard/migration/{{.Repository}}/retry" hx-target="#migration-detail" hx-swap="outerHTML">
+    <div class="form-group">
+        <label for="target_org">Target Organization:</label>
+        <input type="text" id="target_org" name="target_org" class="form-control" required 
+               value="{{.TargetOrg}}" placeholder="Enter target organization name" />
+        <small class="form-text text-muted">Organization where the repository will be migrated to (different from source org)</small>
+    </div>
+    <div class="form-group">
+        <label for="ghes_base_url">GitHub Enterprise Server URL:</label>
+        <input type="text" id="ghes_base_url" name="ghes_base_url" class="form-control" required 
+               value="{{.GHESBaseURL}}" placeholder="https://github.example.com" />
+        <small class="form-text text-muted">The base URL of your GitHub Enterprise Server instance (https://github.example.com)</small>
+    </div>
+    <div class="form-group">
+        <label for="ghes_token">GitHub Enterprise Server Token:</label>
+        <input type="password" id="ghes_token" name="ghes_token" class="form-control" required />
+        <small class="form-text text-muted">Personal access token with appropriate permissions</small>
+    </div>
+    <div class="form-group">
+        <label for="gh_cloud_token">GitHub Cloud Token:</label>
+        <input type="password" id="gh_cloud_token" name="gh_cloud_token" class="form-control" required />
+        <small class="form-text text-muted">GitHub Cloud token with appropriate permissions</small>
+    </div>
+    <div class="form-group">
+        <div class="form-check">
+            <input type="checkbox" id="use_ghos" name="use_ghos" class="form-check-input" value="true" {{if .UseGHOS}}checked{{end}} />
+            <label for="use_ghos" class="form-check-label">Use GitHub Owned Storage (GHOS)</label>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('retry-modal').style.display='none'">Cancel</button>
+        <button type="submit" class="btn btn-primary">Retry Migration</button>
+    </div>
+</form>
+
+{{template "form_styles"}}
+{{end}} 

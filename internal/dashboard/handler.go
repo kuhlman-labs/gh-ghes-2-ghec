@@ -6,8 +6,10 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"html"
 	"html/template"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -297,6 +299,9 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 	path := strings.TrimPrefix(r.URL.Path, "/dashboard/migration/")
 	path = strings.TrimSuffix(path, "/")
 
+	// Sanitize the path to prevent XSS
+	path = sanitizeInput(path)
+
 	parts := strings.Split(path, "/")
 
 	var repoFullName string
@@ -331,7 +336,9 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		// Log the error but don't necessarily fail the entire page load, especially if current status is available.
 		// The template can show an error message for the archive section.
-		fmt.Printf("Error fetching archived attempts for %s: %v\n", repoFullName, err) // TODO: Use logger
+		logging.Get().Warn("Error fetching archived attempts",
+			"repository", repoFullName,
+			"error", err.Error())
 		// Optionally, set an error in TemplateData to display in the template
 	}
 
@@ -425,8 +432,8 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get search query parameter
-	searchQuery := r.URL.Query().Get("search")
+	// Get and sanitize search query parameter
+	searchQuery := sanitizeInput(r.URL.Query().Get("search"))
 
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
@@ -488,18 +495,23 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Extract form fields
-	sourceOrg := r.FormValue("source_org")
-	targetOrg := r.FormValue("target_org")
-	ghesBaseURL := r.FormValue("ghes_base_url")
-	ghesToken := r.FormValue("ghes_token")
+	// Extract and sanitize form fields
+	sourceOrg := sanitizeInput(r.FormValue("source_org"))
+	targetOrg := sanitizeInput(r.FormValue("target_org"))
+	ghesBaseURL := sanitizeInput(r.FormValue("ghes_base_url"))
+	ghesToken := r.FormValue("ghes_token") // Tokens don't need sanitization for XSS
 	ghCloudToken := r.FormValue("gh_cloud_token")
-	maxDuration := r.FormValue("max_duration")
+	maxDuration := sanitizeInput(r.FormValue("max_duration"))
 	useGHOS := r.FormValue("use_ghos") == "true"
 
 	// Parse repositories (one per line)
 	repoText := r.FormValue("repositories")
 	repositories := parseRepositories(repoText)
+
+	// Sanitize repository names
+	for i, repo := range repositories {
+		repositories[i] = sanitizeInput(repo)
+	}
 
 	// Create migration request
 	migrationReq := &payload.MigrationRequest{
@@ -519,7 +531,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 			Title:       "New Migration",
 			Active:      "new",
 			CurrentYear: time.Now().Year(),
-			Error:       "Validation error: " + err.Error(),
+			Error:       "Validation error: " + html.EscapeString(err.Error()),
 		}
 		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
 			http.Error(w, "Failed to render template", http.StatusInternalServerError)
@@ -538,7 +550,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 			Title:       "New Migration",
 			Active:      "new",
 			CurrentYear: time.Now().Year(),
-			Error:       "Failed to start migration: " + err.Error(),
+			Error:       "Failed to start migration: " + html.EscapeString(err.Error()),
 		}
 		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
 			http.Error(w, "Failed to render template", http.StatusInternalServerError)
@@ -559,6 +571,7 @@ func parseRepositories(repoText string) []string {
 		// Trim whitespace
 		repo := strings.TrimSpace(line)
 		if repo != "" {
+			// No sanitization here, as we sanitize in the calling function
 			repos = append(repos, repo)
 		}
 	}
@@ -724,7 +737,7 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 		</div>
 	`
 
-	// Parse and execute the template
+	// Parse and execute the template using html/template which auto-escapes
 	tmpl, err := template.New("stats").Parse(statsTemplate)
 	if err != nil {
 		http.Error(w, "Failed to parse stats template", http.StatusInternalServerError)
@@ -748,6 +761,9 @@ func (h *Handler) handleRetryForm(w http.ResponseWriter, r *http.Request) {
 	repoPath := strings.TrimPrefix(path, "/dashboard/migration/")
 	repoPath = strings.TrimSuffix(repoPath, "/retry-form")
 
+	// Sanitize the repository path
+	repoPath = sanitizeInput(repoPath)
+
 	// Check if we have a valid repository path
 	if repoPath == "" || !strings.Contains(repoPath, "/") {
 		http.Error(w, "Invalid repository path", http.StatusBadRequest)
@@ -757,125 +773,30 @@ func (h *Handler) handleRetryForm(w http.ResponseWriter, r *http.Request) {
 	// Get the current migration status to populate the form with saved values
 	status := h.migrator.GetMigrationStatus(repoPath)
 
-	// Default values
-	targetOrg := ""
-	ghesBaseURL := ""
-	useGHOSChecked := ""
+	// Create a template data struct to pass to the template
+	templateData := struct {
+		Repository  string
+		TargetOrg   string
+		GHESBaseURL string
+		UseGHOS     bool
+	}{
+		Repository: repoPath,
+	}
 
-	// No need to extract parts, we're just using stored values
-
+	// If we have a status, populate the template data with saved values
 	if status != nil {
-		// Use stored values if available
-		if status.TargetOrg != "" {
-			targetOrg = status.TargetOrg
-		}
-		if status.GHESBaseURL != "" {
-			ghesBaseURL = status.GHESBaseURL
-		}
-		if status.UseGHOS {
-			useGHOSChecked = "checked"
-		}
+		templateData.TargetOrg = status.TargetOrg
+		templateData.GHESBaseURL = status.GHESBaseURL
+		templateData.UseGHOS = status.UseGHOS
 	}
 
-	// Create form HTML with pre-populated values
-	formHTML := `
-	<form hx-post="/dashboard/migration/` + repoPath + `/retry" hx-target="#migration-detail" hx-swap="outerHTML">
-		<div class="form-group">
-			<label for="target_org">Target Organization:</label>
-			<input type="text" id="target_org" name="target_org" class="form-control" required 
-			       value="` + targetOrg + `" placeholder="Enter target organization name" />
-			<small class="form-text text-muted">Organization where the repository will be migrated to (different from source org)</small>
-		</div>
-		<div class="form-group">
-			<label for="ghes_base_url">GitHub Enterprise Server URL:</label>
-			<input type="text" id="ghes_base_url" name="ghes_base_url" class="form-control" required 
-			       value="` + ghesBaseURL + `" placeholder="https://github.example.com" />
-			<small class="form-text text-muted">The base URL of your GitHub Enterprise Server instance (https://github.example.com)</small>
-		</div>
-		<div class="form-group">
-			<label for="ghes_token">GitHub Enterprise Server Token:</label>
-			<input type="password" id="ghes_token" name="ghes_token" class="form-control" required />
-			<small class="form-text text-muted">Personal access token with appropriate permissions</small>
-		</div>
-		<div class="form-group">
-			<label for="gh_cloud_token">GitHub Cloud Token:</label>
-			<input type="password" id="gh_cloud_token" name="gh_cloud_token" class="form-control" required />
-			<small class="form-text text-muted">GitHub Cloud token with appropriate permissions</small>
-		</div>
-		<div class="form-group">
-			<div class="form-check">
-				<input type="checkbox" id="use_ghos" name="use_ghos" class="form-check-input" value="true" ` + useGHOSChecked + ` />
-				<label for="use_ghos" class="form-check-label">Use GitHub Owned Storage (GHOS)</label>
-			</div>
-		</div>
-		<div class="form-actions">
-			<button type="button" class="btn btn-secondary" onclick="document.getElementById('retry-modal').style.display='none'">Cancel</button>
-			<button type="submit" class="btn btn-primary">Retry Migration</button>
-		</div>
-	</form>
-	<style>
-	.form-group {
-		margin-bottom: 1rem;
+	// Use the templates to render the retry form
+	if err := h.templates.ExecuteTemplate(w, "retry_form", templateData); err != nil {
+		logging.Get().Error("Failed to render retry form template",
+			"repository", repoPath,
+			"error", err.Error())
+		http.Error(w, "Failed to render retry form", http.StatusInternalServerError)
 	}
-	.form-control {
-		display: block;
-		width: 100%;
-		padding: 0.375rem 0.75rem;
-		font-size: 1rem;
-		line-height: 1.5;
-		color: #495057;
-		background-color: #fff;
-		border: 1px solid #ced4da;
-		border-radius: 0.25rem;
-		margin-top: 0.25rem;
-	}
-	.form-text {
-		display: block;
-		margin-top: 0.25rem;
-		font-size: 0.875em;
-		color: #6c757d;
-	}
-	.form-check {
-		position: relative;
-		display: block;
-		padding-left: 1.25rem;
-	}
-	.form-check-input {
-		position: absolute;
-		margin-top: 0.3rem;
-		margin-left: -1.25rem;
-	}
-	.form-check-label {
-		margin-bottom: 0;
-	}
-	.form-actions {
-		margin-top: 1.5rem;
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.5rem;
-	}
-	.btn {
-		cursor: pointer;
-		padding: 0.375rem 0.75rem;
-		font-size: 1rem;
-		line-height: 1.5;
-		border-radius: 0.25rem;
-		text-align: center;
-	}
-	.btn-primary {
-		color: #fff;
-		background-color: #0d6efd;
-		border-color: #0d6efd;
-	}
-	.btn-secondary {
-		color: #fff;
-		background-color: #6c757d;
-		border-color: #6c757d;
-	}
-	</style>
-	`
-
-	_, _ = w.Write([]byte(formHTML))
 }
 
 // handleRetryMigration handles the retry button click on the migration detail page
@@ -896,6 +817,9 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	repoPath := strings.TrimPrefix(path, "/dashboard/migration/")
 	repoPath = strings.TrimSuffix(repoPath, "/retry")
 
+	// Sanitize the repository path
+	repoPath = sanitizeInput(repoPath)
+
 	// Check if we have a valid repository path
 	if repoPath == "" || !strings.Contains(repoPath, "/") {
 		http.Error(w, "Invalid repository path", http.StatusBadRequest)
@@ -908,9 +832,9 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract the required form fields
-	ghesBaseURL := r.FormValue("ghes_base_url")
-	ghesToken := r.FormValue("ghes_token")
+	// Extract and sanitize the required form fields
+	ghesBaseURL := sanitizeInput(r.FormValue("ghes_base_url"))
+	ghesToken := r.FormValue("ghes_token") // No need to sanitize tokens as they're not displayed
 	ghCloudToken := r.FormValue("gh_cloud_token")
 	useGHOS := r.FormValue("use_ghos") == "true"
 
@@ -927,11 +851,11 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract target org - either from form or default to source org
-	targetOrg := r.FormValue("target_org")
+	// Extract and sanitize target org - either from form or default to source org
+	targetOrg := sanitizeInput(r.FormValue("target_org"))
 	if targetOrg == "" {
 		// If not provided, default to source org
-		targetOrg = parts[0] // parts[0] is the source org name
+		targetOrg = sanitizeInput(parts[0]) // parts[0] is the source org name
 	}
 
 	// Note: We'll update the existing migration record with the provided credentials
@@ -957,9 +881,12 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	if err := h.migrator.RetryMigration(bgCtx, repoPath, ghesToken, ghCloudToken, ghesBaseURL, targetOrg); err != nil {
 		migrationErr = err
 		// Log the error using the structured logger
-		logging.FromContext(bgCtx).Errorf("Failed to initiate migration retry for %s: %v (%T)", repoPath, err, err)
+		logging.Get().Error("Failed to initiate migration retry",
+			"repository", repoPath,
+			"error", err.Error())
 	} else {
-		logging.FromContext(bgCtx).Infof("Migration retry initiated successfully for %s", repoPath)
+		logging.Get().Info("Migration retry initiated successfully",
+			"repository", repoPath)
 	}
 
 	// Since RetryMigration already starts the actual work in a background goroutine,
@@ -975,7 +902,7 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	// Add error message if migration failed to start
 	var errorMessage string
 	if migrationErr != nil {
-		errorMessage = fmt.Sprintf("Warning: Migration may have issues: %v", migrationErr)
+		errorMessage = html.EscapeString(fmt.Sprintf("Warning: Migration may have issues: %v", migrationErr))
 	}
 
 	// Get archived migration attempts
@@ -985,7 +912,9 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	archivedAttempts, templateErr = h.migrator.GetArchivedMigrationAttempts(repoPath)
 	if templateErr != nil {
 		// Log error but continue - archived attempts are non-critical
-		fmt.Printf("Error getting archived attempts: %v\n", templateErr)
+		logging.Get().Warn("Error getting archived attempts",
+			"repository", repoPath,
+			"error", templateErr.Error())
 	}
 	attemptCount = len(archivedAttempts)
 
@@ -1012,4 +941,17 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to render template: %v", err), http.StatusInternalServerError)
 		return
 	}
+}
+
+// sanitizeInput sanitizes user input to prevent XSS attacks
+func sanitizeInput(input string) string {
+	// HTML escape the input to prevent XSS
+	escaped := html.EscapeString(input)
+
+	// Only allow alphanumeric characters, slashes, hyphens, underscores, periods, and colons
+	// This is suitable for repository paths, URLs, and organization names
+	re := regexp.MustCompile(`[^a-zA-Z0-9/\-_.:]`)
+	sanitized := re.ReplaceAllString(escaped, "")
+
+	return sanitized
 }
