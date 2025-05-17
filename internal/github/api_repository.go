@@ -47,7 +47,7 @@ func (a *GitHubAPI) ValidateRepository(ctx context.Context, org, repo string) er
 
 		// For 404 errors, keep the "repository not found" message for compatibility
 		if respStatus == 404 {
-			return fmt.Errorf("repository not found: %w", classifiedErr)
+			return a.classifyGitHubError(err)
 		}
 
 		// For all other errors, return the properly classified error
