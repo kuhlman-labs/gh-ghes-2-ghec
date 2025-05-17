@@ -125,6 +125,16 @@ var (
 		},
 		[]string{"operation"},
 	)
+
+	// Error tracking metrics
+	errorCategoryCounts = promauto.With(registry).NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "errors_by_category",
+			Help:      "Count of errors by category",
+		},
+		[]string{"category"},
+	)
 )
 
 // Config holds configuration for the metrics system.
@@ -269,6 +279,57 @@ func RecordStorageOperation(operation, status string, duration time.Duration) {
 	}
 	storageOperationsTotal.WithLabelValues(operation, status).Inc()
 	storageOperationDuration.WithLabelValues(operation).Observe(duration.Seconds())
+}
+
+// RecordError records an error with its category
+func RecordError(category string) {
+	if !enabled {
+		return
+	}
+	errorCategoryCounts.WithLabelValues(category).Inc()
+}
+
+// GetErrorCategoryCounts returns the counts of errors by category
+func GetErrorCategoryCounts() map[string]int {
+	if !enabled {
+		return make(map[string]int)
+	}
+
+	// Initialize the map with all error categories
+	result := make(map[string]int)
+
+	// Gather metrics
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		logging.Get().Error("Failed to gather metrics", "error", err)
+		return result
+	}
+
+	// Find the error category counter
+	for _, mf := range metricFamilies {
+		if mf.GetName() == namespace+"_errors_by_category" {
+			for _, m := range mf.GetMetric() {
+				// Extract category from label
+				category := ""
+				for _, label := range m.GetLabel() {
+					if label.GetName() == "category" {
+						category = label.GetValue()
+						break
+					}
+				}
+				if category != "" {
+					// Get the counter value
+					counter := m.GetCounter()
+					if counter != nil {
+						result[category] = int(counter.GetValue())
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return result
 }
 
 // responseWriter wraps an http.ResponseWriter to capture the status code.

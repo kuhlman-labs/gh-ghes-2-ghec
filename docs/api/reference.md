@@ -151,6 +151,60 @@ GET /api/status
 | 404 | Repository migration not found |
 | 500 | Server error |
 
+### Retry Failed Migration
+
+Retries a failed repository migration.
+
+```
+POST /api/retry
+```
+
+#### Request Body
+
+```json
+{
+  "repository": "source-org/repo1",
+  "ghes_token": "your-ghes-token",
+  "gh_cloud_token": "your-gh-cloud-token",
+  "ghes_base_url": "https://github.example.com",
+  "target_org": "target-org",
+  "use_ghos": true
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `repository` | string | Yes | Full repository name (org/repo) to retry |
+| `ghes_token` | string | Yes | Token for authenticating with GitHub Enterprise Server |
+| `gh_cloud_token` | string | Yes | Token for authenticating with GitHub Enterprise Cloud |
+| `ghes_base_url` | string | No | Base URL of your GitHub Enterprise Server instance |
+| `target_org` | string | No | The target organization in GitHub Enterprise Cloud |
+| `use_ghos` | boolean | No | When set to `true`, uses GitHub Owned Storage (GHOS) for migration archives |
+
+#### Response
+
+```json
+{
+  "status": "accepted",
+  "message": "Migration retry request accepted for source-org/repo1",
+  "timestamp": "2023-05-16T14:25:30Z",
+  "request_id": "7f8d9e2a-1b3c-4d5e-6f7g-8h9i0j1k2l3m",
+  "repository": "source-org/repo1"
+}
+```
+
+#### Status Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| 202 | Migration retry request accepted |
+| 400 | Invalid request parameters |
+| 401 | Authentication failed |
+| 404 | Repository not found or not in failed state |
+| 500 | Server error |
+
 ### Health Check
 
 Returns the health status of the server.

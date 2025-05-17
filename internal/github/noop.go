@@ -29,6 +29,14 @@ func (n *NoopAPI) ValidateRepository(ctx context.Context, org, repo string) erro
 	return fmt.Errorf("ValidateRepository not implemented in NoopAPI")
 }
 
+// ValidateCloudRepository is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ValidateCloudRepository(ctx context.Context, org, repo string) error {
+	n.logger.Warn("NoopAPI: ValidateCloudRepository called but not implemented",
+		"org", org,
+		"repo", repo)
+	return fmt.Errorf("ValidateCloudRepository not implemented in NoopAPI")
+}
+
 // GetOrganizationID is a no-op implementation that logs the call and returns an error.
 func (n *NoopAPI) GetOrganizationID(ctx context.Context, org string) (string, int64, error) {
 	n.logger.Warn("NoopAPI: GetOrganizationID called but not implemented",

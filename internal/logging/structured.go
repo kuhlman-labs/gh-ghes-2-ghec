@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/google/uuid"
+	myerrors "github.com/kuhlman-labs/gh-ghes-2-ghec/internal/errors"
 )
 
 // contextKey is a custom type for keys in the context to avoid collisions
@@ -35,9 +36,10 @@ const (
 	FieldProgress = "progress"    // Progress percentage
 
 	// Error-related fields
-	FieldError     = "error"        // Error message
-	FieldErrorCode = "error_code"   // Error code for categorization
-	FieldRetryable = "is_retryable" // Whether the error is retryable
+	FieldError         = "error"          // Error message
+	FieldErrorCode     = "error_code"     // Error code for categorization
+	FieldErrorCategory = "error_category" // Error classification category
+	FieldRetryable     = "is_retryable"   // Whether the error is retryable
 
 	// Context fields
 	FieldSource = "source" // Code location (file:line)
@@ -152,6 +154,27 @@ func (o *OperationLogger) Error(msg string, err error, args ...any) {
 	o.logger.Error(msg, newArgs...)
 }
 
+// ErrorWithCategory logs an error with its classification category
+func (o *OperationLogger) ErrorWithCategory(msg string, err error, args ...any) {
+	if err == nil {
+		return
+	}
+
+	// Classify the error and report it
+	category := myerrors.Classify(err)
+	myerrors.ReportError(err)
+
+	// Add error information and category to the attributes
+	newArgs := append([]any{
+		FieldError, err,
+		FieldErrorCategory, string(category),
+		FieldSource, getCallerInfo(),
+	}, args...)
+
+	// Log the error with its category
+	o.logger.Error(msg, newArgs...)
+}
+
 // StageUpdate logs a migration stage update with consistent fields.
 func (o *OperationLogger) StageUpdate(stage, state string, progress int, args ...any) {
 	newArgs := append([]any{
@@ -193,6 +216,32 @@ func (o *OperationLogger) OperationFailed(action string, err error, durationMs i
 		FieldRetryable, retryable,
 		FieldSource, getCallerInfo(),
 	}, args...)
+	o.logger.Error("Operation failed", newArgs...)
+}
+
+// OperationFailedWithCategory logs a failed operation with error classification.
+func (o *OperationLogger) OperationFailedWithCategory(action string, err error, durationMs int64, args ...any) {
+	if err == nil {
+		return
+	}
+
+	// Classify the error and report it
+	category := myerrors.Classify(err)
+	myerrors.ReportError(err)
+
+	// Determine if the error is retryable
+	retryable := myerrors.IsTransient(err)
+
+	newArgs := append([]any{
+		FieldAction, action,
+		FieldStatus, "failed",
+		FieldError, err,
+		FieldErrorCategory, string(category),
+		FieldDuration, durationMs,
+		FieldRetryable, retryable,
+		FieldSource, getCallerInfo(),
+	}, args...)
+
 	o.logger.Error("Operation failed", newArgs...)
 }
 

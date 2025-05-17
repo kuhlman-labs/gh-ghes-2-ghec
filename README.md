@@ -18,6 +18,7 @@ A server application that provides an HTTP API for migrating repositories from G
 - Web dashboard for visualizing migration status
 - Comprehensive logging and monitoring
 - Automatic retry mechanism for API calls
+- Failed migration retry functionality via both API and UI
 - Concurrent migration support
 - Works with GHOS based migrations
 

@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"math"
 	"math/big"
+	"net/http"
+	"strings"
 	"time"
 )
 
@@ -101,89 +103,238 @@ func (c *RetryConfig) WithFactor(factor float64) *RetryConfig {
 	return c
 }
 
-// Retry executes the provided function with retries according to the config.
-// It implements exponential backoff with jitter, and respects context cancellation.
-// Operation failures and retries are logged based on the config's logger.
+// calculateBackoffWithJitter calculates backoff duration with jitter for retries.
+// It uses exponential backoff with a random jitter component to prevent thundering herd problems.
 //
 // Parameters:
-//   - ctx: Context for cancellation control.
-//   - config: The retry configuration to use.
-//   - operation: A name for the operation being retried (for logging).
-//   - fn: The function to execute with retries.
+//   - config: The retry configuration
+//   - attempt: Current retry attempt number (1-based)
 //
 // Returns:
-//   - error: The last error returned by the function, or nil if successful.
-func Retry(ctx context.Context, config *RetryConfig, operation string, fn func() error) error {
-	var err error
+//   - time.Duration: The backoff duration to wait before the next retry
+func calculateBackoffWithJitter(config *RetryConfig, attempt int) time.Duration {
+	// Calculate base backoff using exponential formula
+	backoff := float64(config.InitialInterval) * math.Pow(config.Factor, float64(attempt-1))
 
-	// Calculate backoff for each attempt
-	nextBackoff := func(attempt int) time.Duration {
-		if attempt == 0 {
-			return 0
-		}
-
-		backoff := float64(config.InitialInterval) * math.Pow(config.Factor, float64(attempt-1))
-		if backoff > float64(config.MaxInterval) {
-			backoff = float64(config.MaxInterval)
-		}
-
-		// Add some jitter (0-10% extra) - ensure we never go below the calculated backoff
-		jitter := 0.1 * backoff
-		randomValue, err := rand.Int(rand.Reader, big.NewInt(1000))
-		if err != nil {
-			// Fall back to a simpler approach if crypto/rand fails
-			backoff = backoff + jitter/2
-		} else {
-			// Convert to float64 between 0 and 1, and only add jitter (don't subtract)
-			randFloat := float64(randomValue.Int64()) / 1000.0
-			backoff = backoff + jitter*randFloat
-		}
-
-		return time.Duration(backoff)
+	// Cap at max interval
+	if backoff > float64(config.MaxInterval) {
+		backoff = float64(config.MaxInterval)
 	}
 
-	// Attempt the operation with retries
-	for attempt := 0; attempt <= config.MaxRetries; attempt++ {
-		// If this is a retry, wait before the next attempt
-		if attempt > 0 {
-			backoff := nextBackoff(attempt)
-			config.Logger.Debug("Retrying operation",
-				"operation", operation,
-				"attempt", attempt,
-				"max_attempts", config.MaxRetries,
-				"backoff_ms", backoff.Milliseconds(),
-				"error", err.Error(),
-			)
+	// Add some jitter (0-10% extra) - ensure we never go below the calculated backoff
+	jitter := 0.1 * backoff
 
-			// Wait for backoff period or until context is canceled
-			select {
-			case <-time.After(backoff):
-				// Continue with retry
-			case <-ctx.Done():
-				return fmt.Errorf("operation %s canceled during retry: %w", operation, ctx.Err())
+	// Generate a random number between 0 and 999 using crypto/rand
+	randomBig, err := rand.Int(rand.Reader, big.NewInt(1000))
+	if err != nil {
+		// Fall back to a simpler approach if crypto/rand fails
+		backoff = backoff + jitter/2
+	} else {
+		// Convert to float64 between 0 and 1, and only add jitter (don't subtract)
+		randFloat := float64(randomBig.Int64()) / 1000.0
+		backoff = backoff + jitter*randFloat
+	}
+
+	return time.Duration(backoff)
+}
+
+// Retry executes the provided function with retry logic. It will retry the function
+// up to the configured maximum number of retries, with exponential backoff.
+//
+// Parameters:
+//   - ctx: Context that can be used to cancel retries
+//   - config: Retry configuration (max retries, backoff, etc.)
+//   - operation: A name for the operation being retried (for logging)
+//   - fn: The function to retry
+//
+// Returns:
+//   - error: The last error from the function or nil if successful
+func Retry(ctx context.Context, config *RetryConfig, operation string, fn func() error) error {
+	if config == nil {
+		// If no config, just execute without retry
+		return fn()
+	}
+
+	var err error
+	var attempt int
+
+	for attempt = 0; attempt <= config.MaxRetries; attempt++ {
+		// For the first attempt, just execute
+		if attempt == 0 {
+			err = fn()
+			if err == nil {
+				return nil
 			}
+
+			// Check if this is a permanent error that should not be retried
+			if isPermanentError(err) {
+				config.Logger.Debug("Not retrying permanent error",
+					"operation", operation,
+					"error", err.Error(),
+				)
+				return err
+			}
+
+			continue
 		}
 
-		// Attempt the operation
+		// Calculate backoff with jitter for subsequent attempts
+		backoff := calculateBackoffWithJitter(config, attempt)
+
+		// Log retry
+		config.Logger.Debug("Retrying operation",
+			"operation", operation,
+			"attempt", attempt,
+			"max_attempts", config.MaxRetries,
+			"backoff_ms", backoff.Milliseconds(),
+			"error", err.Error(),
+		)
+
+		// Create a timer for the backoff
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return fmt.Errorf("operation %s canceled during retry: %w", operation, ctx.Err())
+		case <-timer.C:
+			// Timer expired, proceed with retry
+		}
+
+		// Execute the function
 		err = fn()
 		if err == nil {
-			// Success
-			if attempt > 0 {
-				config.Logger.Info("Operation succeeded after retries",
-					"operation", operation,
-					"attempts", attempt+1,
-				)
-			}
 			return nil
+		}
+
+		// Check if this is a permanent error that should not be retried further
+		if isPermanentError(err) {
+			config.Logger.Debug("Not retrying permanent error",
+				"operation", operation,
+				"attempt", attempt,
+				"error", err.Error(),
+			)
+			return err
 		}
 	}
 
-	// All retries failed
-	config.Logger.Error("Operation failed after all retry attempts",
-		"operation", operation,
-		"max_attempts", config.MaxRetries+1,
-		"error", err.Error(),
-	)
+	// If we get here, we've exhausted all retries
+	if err != nil {
+		return fmt.Errorf("operation %s failed after %d attempts: %w", operation, attempt, err)
+	}
 
-	return fmt.Errorf("operation %s failed after %d attempts: %w", operation, config.MaxRetries+1, err)
+	return nil
+}
+
+// isPermanentError determines if an error should be considered permanent and not retried.
+// Examples of permanent errors include authentication failures, permission issues,
+// resource conflicts, and validation errors.
+func isPermanentError(err error) bool {
+	// Check the error message for common permanent error indications
+	errMsg := strings.ToLower(err.Error())
+
+	// Repository conflicts (already exists)
+	if strings.Contains(errMsg, "already exists") ||
+		strings.Contains(errMsg, "repository conflict") ||
+		strings.Contains(errMsg, "conflict") {
+		return true
+	}
+
+	// Authentication errors
+	if strings.Contains(errMsg, "unauthorized") ||
+		strings.Contains(errMsg, "authentication") ||
+		strings.Contains(errMsg, "unauthenticated") ||
+		strings.Contains(errMsg, "auth") {
+		return true
+	}
+
+	// Permission errors
+	if strings.Contains(errMsg, "permission denied") ||
+		strings.Contains(errMsg, "forbidden") ||
+		strings.Contains(errMsg, "access denied") {
+		return true
+	}
+
+	// Resource not found errors
+	if strings.Contains(errMsg, "not found") ||
+		strings.Contains(errMsg, "404") {
+		return true
+	}
+
+	// Bad request / validation errors
+	if strings.Contains(errMsg, "bad request") ||
+		strings.Contains(errMsg, "validation") ||
+		strings.Contains(errMsg, "invalid") {
+		return true
+	}
+
+	// Check for errors that explicitly indicate they are permanent
+	if strings.Contains(errMsg, "permanent error") ||
+		strings.Contains(errMsg, "non-retryable") {
+		return true
+	}
+
+	// If we have a GitHub API error, check the status code
+	if strings.Contains(errMsg, "status code") {
+		// Most 4xx errors are permanent (except 429 Too Many Requests)
+		if strings.Contains(errMsg, "status code: 4") && !strings.Contains(errMsg, "status code: 429") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// RetryMiddleware creates an HTTP client middleware that adds retry capability to HTTP requests.
+// It handles common transient errors and retries requests based on the provided retry configuration.
+//
+// Parameters:
+//   - client: The base HTTP client to wrap with retry logic
+//   - config: The retry configuration to use
+//   - operation: A name for the operation being retried (for logging)
+//
+// Returns:
+//   - A function that will execute an HTTP request with retries
+func RetryMiddleware(client *http.Client, config *RetryConfig, operation string) func(req *http.Request) (*http.Response, error) {
+	return func(req *http.Request) (*http.Response, error) {
+		var resp *http.Response
+		err := Retry(req.Context(), config, operation, func() error {
+			// Clone the request body for each retry attempt if it's not nil
+			// This is necessary because the body may be consumed by the previous attempt
+			if req.Body != nil && req.GetBody != nil {
+				// Use GetBody to get a fresh reader for the body
+				body, err := req.GetBody()
+				if err != nil {
+					return fmt.Errorf("failed to get fresh request body: %w", err)
+				}
+				req.Body = body
+			}
+
+			var err error
+			resp, err = client.Do(req)
+			if err != nil {
+				return err
+			}
+
+			// Treat certain status codes as retryable errors
+			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+				// For server errors and rate limiting, we want to retry
+				err = fmt.Errorf("server returned status code %d", resp.StatusCode)
+
+				// We need to drain and close the body to avoid resource leaks
+				if resp.Body != nil {
+					_ = resp.Body.Close()
+				}
+
+				return err
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+
+		return resp, nil
+	}
 }
