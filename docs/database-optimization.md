@@ -80,7 +80,6 @@ Automatic maintenance routines keep the database performing optimally:
 ### Maintenance Operations
 
 - **ANALYZE**: Updates statistics for the query planner
-- **REINDEX**: Rebuilds indexes for optimal performance
 - **VACUUM**: Reclaims unused space and defragments the database
 - **Integrity Checks**: Regular checks ensure database integrity
 
