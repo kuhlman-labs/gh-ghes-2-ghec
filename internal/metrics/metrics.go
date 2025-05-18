@@ -126,6 +126,44 @@ var (
 		[]string{"operation"},
 	)
 
+	// Database connection pool metrics
+	databaseConnections = promauto.With(registry).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "database_connections",
+			Help:      "Current number of database connections",
+		},
+		[]string{"db_type", "state"},
+	)
+
+	databaseWaitCount = promauto.With(registry).NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "database_wait_count_total",
+			Help:      "Total number of connection waits due to pool exhaustion",
+		},
+		[]string{"db_type"},
+	)
+
+	databaseWaitDuration = promauto.With(registry).NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "database_wait_duration_seconds",
+			Help:      "Total time waiting for database connections",
+		},
+		[]string{"db_type"},
+	)
+
+	databaseQueryDuration = promauto.With(registry).NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "database_query_duration_seconds",
+			Help:      "Duration of database queries in seconds",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
+		},
+		[]string{"db_type", "operation"},
+	)
+
 	// Error tracking metrics
 	errorCategoryCounts = promauto.With(registry).NewCounterVec(
 		prometheus.CounterOpts{
@@ -198,35 +236,31 @@ func Init(cfg Config) error {
 	return nil
 }
 
-// Handler returns an HTTP handler for exposing metrics.
-// This can be used to expose metrics on the main server.
+// Handler returns the Prometheus HTTP handler for metrics.
 func Handler() http.Handler {
 	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }
 
-// InstrumentHandler wraps an HTTP handler to record request metrics.
+// InstrumentHandler wraps an HTTP handler with metrics collection.
 func InstrumentHandler(handler http.Handler, name string) http.Handler {
 	if !enabled {
 		return handler
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		method := r.Method
 		start := time.Now()
 
-		// Create a response writer wrapper to capture the status code
-		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-
-		// Call the original handler
 		handler.ServeHTTP(rw, r)
 
-		// Record metrics
-		duration := time.Since(start).Seconds()
-		httpRequestsTotal.WithLabelValues(name, r.Method, fmt.Sprintf("%d", rw.statusCode)).Inc()
-		httpRequestDuration.WithLabelValues(name, r.Method).Observe(duration)
+		duration := time.Since(start)
+		httpRequestsTotal.WithLabelValues(name, method, fmt.Sprintf("%d", rw.statusCode)).Inc()
+		httpRequestDuration.WithLabelValues(name, method).Observe(duration.Seconds())
 	})
 }
 
-// RecordMigrationStart records the start of a migration operation.
+// RecordMigrationStart records the start of a migration.
 func RecordMigrationStart(sourceOrg, targetOrg string) {
 	if !enabled {
 		return
@@ -234,7 +268,7 @@ func RecordMigrationStart(sourceOrg, targetOrg string) {
 	migrationTotal.WithLabelValues(sourceOrg, targetOrg, "started").Inc()
 }
 
-// RecordMigrationComplete records the completion of a migration operation.
+// RecordMigrationComplete records the completion of a migration.
 func RecordMigrationComplete(sourceOrg, targetOrg, status string, duration time.Duration, sizeBytes int64) {
 	if !enabled {
 		return
@@ -247,7 +281,7 @@ func RecordMigrationComplete(sourceOrg, targetOrg, status string, duration time.
 	}
 }
 
-// RecordMigrationStage records metrics for a specific migration stage.
+// RecordMigrationStage records the duration of a migration stage.
 func RecordMigrationStage(sourceOrg, targetOrg, stage, status string, duration time.Duration) {
 	if !enabled {
 		return
@@ -255,7 +289,7 @@ func RecordMigrationStage(sourceOrg, targetOrg, stage, status string, duration t
 	migrationDuration.WithLabelValues(sourceOrg, targetOrg, stage, status).Observe(duration.Seconds())
 }
 
-// RecordGitHubAPIRequest records metrics for a GitHub API request.
+// RecordGitHubAPIRequest records information about a GitHub API request.
 func RecordGitHubAPIRequest(api, endpoint, status string, duration time.Duration) {
 	if !enabled {
 		return
@@ -272,7 +306,7 @@ func SetGitHubRateLimit(api string, remaining int) {
 	githubRateLimitRemaining.WithLabelValues(api).Set(float64(remaining))
 }
 
-// RecordStorageOperation records metrics for a storage operation.
+// RecordStorageOperation records information about a storage operation.
 func RecordStorageOperation(operation, status string, duration time.Duration) {
 	if !enabled {
 		return
@@ -281,7 +315,41 @@ func RecordStorageOperation(operation, status string, duration time.Duration) {
 	storageOperationDuration.WithLabelValues(operation).Observe(duration.Seconds())
 }
 
-// RecordError records an error with its category
+// SetDatabaseConnections sets the current database connection metrics
+func SetDatabaseConnections(dbType, state string, value float64) {
+	if !enabled {
+		return
+	}
+	databaseConnections.WithLabelValues(dbType, state).Set(value)
+}
+
+// SetDatabaseWaitCount sets the current database wait count metric
+func SetDatabaseWaitCount(dbType string, count int64) {
+	if !enabled {
+		return
+	}
+	// This is a counter but we want to set it directly to the current value
+	// Reset it first by initializing a new series
+	databaseWaitCount.WithLabelValues(dbType).Add(float64(count))
+}
+
+// SetDatabaseWaitDuration sets the current database wait duration metric
+func SetDatabaseWaitDuration(dbType string, seconds float64) {
+	if !enabled {
+		return
+	}
+	databaseWaitDuration.WithLabelValues(dbType).Set(seconds)
+}
+
+// RecordDatabaseQuery records information about a database query
+func RecordDatabaseQuery(dbType, operation string, duration time.Duration) {
+	if !enabled {
+		return
+	}
+	databaseQueryDuration.WithLabelValues(dbType, operation).Observe(duration.Seconds())
+}
+
+// RecordError records an error by category.
 func RecordError(category string) {
 	if !enabled {
 		return
@@ -289,56 +357,48 @@ func RecordError(category string) {
 	errorCategoryCounts.WithLabelValues(category).Inc()
 }
 
-// GetErrorCategoryCounts returns the counts of errors by category
+// GetErrorCategoryCounts returns the current error counts by category.
 func GetErrorCategoryCounts() map[string]int {
 	if !enabled {
-		return make(map[string]int)
+		return nil
 	}
 
-	// Initialize the map with all error categories
-	result := make(map[string]int)
-
-	// Gather metrics
+	// This is a bit hacky but allows us to extract the error counts for the dashboard
 	metricFamilies, err := registry.Gather()
 	if err != nil {
 		logging.Get().Error("Failed to gather metrics", "error", err)
-		return result
+		return nil
 	}
 
-	// Find the error category counter
+	counts := make(map[string]int)
 	for _, mf := range metricFamilies {
-		if mf.GetName() == namespace+"_errors_by_category" {
+		if mf.GetName() == fmt.Sprintf("%s_errors_by_category", namespace) {
 			for _, m := range mf.GetMetric() {
-				// Extract category from label
-				category := ""
-				for _, label := range m.GetLabel() {
-					if label.GetName() == "category" {
-						category = label.GetValue()
+				var category string
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "category" {
+						category = l.GetValue()
 						break
 					}
 				}
 				if category != "" {
-					// Get the counter value
-					counter := m.GetCounter()
-					if counter != nil {
-						result[category] = int(counter.GetValue())
-					}
+					counts[category] = int(m.GetCounter().GetValue())
 				}
 			}
 			break
 		}
 	}
 
-	return result
+	return counts
 }
 
-// responseWriter wraps an http.ResponseWriter to capture the status code.
+// responseWriter is a custom response writer that captures the status code.
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
 }
 
-// WriteHeader captures the status code and passes it to the wrapped ResponseWriter.
+// WriteHeader captures the status code.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)

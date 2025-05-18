@@ -446,9 +446,11 @@ func (s *MySQLStorage) CheckAndRepairDatabase(ctx context.Context) (string, erro
 	tableName := s.getTableName("migration_status")
 	report.WriteString(fmt.Sprintf("\nChecking table: %s\n", tableName))
 
-	// Check if table exists
+	// Check if table exists - use safer method with prepared statements
 	var tableExists int
-	err = s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '%s'", tableName)).Scan(&tableExists)
+	err = s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+		tableName).Scan(&tableExists)
 	if err != nil {
 		report.WriteString(fmt.Sprintf("✗ Failed to check if table exists: %s\n", err))
 	} else if tableExists == 0 {
@@ -456,9 +458,11 @@ func (s *MySQLStorage) CheckAndRepairDatabase(ctx context.Context) (string, erro
 	} else {
 		report.WriteString(fmt.Sprintf("✓ Table %s exists\n", tableName))
 
-		// Get record count
+		// Get record count - use properly quoted table name
 		var count int
-		err = s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+		quotedTableName := s.getQuotedTableName("migration_status")
+		countQuery := "SELECT COUNT(*) FROM " + quotedTableName
+		err = s.db.QueryRowContext(ctx, countQuery).Scan(&count)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("✗ Failed to count records: %s\n", err))
 		} else {
@@ -468,16 +472,16 @@ func (s *MySQLStorage) CheckAndRepairDatabase(ctx context.Context) (string, erro
 		// Run maintenance operations
 		report.WriteString("\nRunning maintenance operations:\n")
 
-		// ANALYZE TABLE
-		_, err = s.db.ExecContext(ctx, fmt.Sprintf("ANALYZE TABLE %s", tableName))
+		// ANALYZE TABLE - use properly quoted table name
+		_, err = s.db.ExecContext(ctx, "ANALYZE TABLE "+quotedTableName)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("✗ ANALYZE TABLE failed: %s\n", err))
 		} else {
 			report.WriteString("✓ ANALYZE TABLE completed\n")
 		}
 
-		// OPTIMIZE TABLE
-		_, err = s.db.ExecContext(ctx, fmt.Sprintf("OPTIMIZE TABLE %s", tableName))
+		// OPTIMIZE TABLE - use properly quoted table name
+		_, err = s.db.ExecContext(ctx, "OPTIMIZE TABLE "+quotedTableName)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("✗ OPTIMIZE TABLE failed: %s\n", err))
 		} else {
