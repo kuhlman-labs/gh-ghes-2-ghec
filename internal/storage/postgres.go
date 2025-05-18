@@ -445,7 +445,7 @@ func (s *PostgresStorage) CheckAndRepairDatabase(ctx context.Context) (string, e
 
 		// Get record count - use properly quoted table name
 		var count int
-		quotedTableName := s.getQuotedTableName("migration_status")
+		quotedTableName := s.getQuotedTableName(s.tablePrefix + "migration_status")
 		countQuery := "SELECT COUNT(*) FROM " + quotedTableName
 		err = s.db.QueryRowContext(ctx, countQuery).Scan(&count)
 		if err != nil {
