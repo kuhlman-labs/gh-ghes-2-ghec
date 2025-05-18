@@ -460,7 +460,7 @@ func (s *MySQLStorage) CheckAndRepairDatabase(ctx context.Context) (string, erro
 
 		// Get record count - use properly quoted table name
 		var count int
-		quotedTableName := s.getQuotedTableName("migration_status")
+		quotedTableName := s.getQuotedTableName(tableName)
 		countQuery := "SELECT COUNT(*) FROM " + quotedTableName
 		err = s.db.QueryRowContext(ctx, countQuery).Scan(&count)
 		if err != nil {
