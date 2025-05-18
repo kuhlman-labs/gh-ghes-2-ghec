@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	apierrors "github.com/kuhlman-labs/gh-ghes-2-ghec/internal/errors"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/metrics"
@@ -90,27 +89,15 @@ func (a *GitHubAPI) retryableHTTP(client *http.Client, operation string) func(re
 
 			if isRateLimit {
 				// If this is a rate limit error with a future retry time,
-				// set a context value with the retry-after duration
-				if req.Context() != nil {
-					ctx := req.Context()
-					// Non-nil context with retry info
-					a.logger.Info("Rate limit detected, applied adaptive backoff",
-						"operation", operation,
-						"retry_after", retryAfter.String(),
-					)
+				// log and return a RetryableError for the retry middleware to handle
+				a.logger.Info("Rate limit detected, applied adaptive backoff",
+					"operation", operation,
+					"retry_after", retryAfter.String(),
+				)
 
-					// Sleep for the retry period (normally the retry system handles this,
-					// but for rate limits we want to handle it specially)
-					select {
-					case <-ctx.Done():
-						// Context was canceled during wait
-						return nil, ctx.Err()
-					case <-time.After(retryAfter):
-						// Wait completed, retry will be handled by the retry middleware
-					}
-				}
-
-				return resp, rateLimitErr
+				// Return a RetryableError instead of sleeping, so the retry middleware
+				// can handle the backoff scheduling efficiently
+				return resp, utils.NewRetryableError(rateLimitErr, retryAfter)
 			}
 
 			// For non-rate-limit errors, classify and return
@@ -134,18 +121,9 @@ func (a *GitHubAPI) retryableHTTP(client *http.Client, operation string) func(re
 						"retry_after", retryAfter.String(),
 					)
 
-					// Sleep for the retry period
-					if req.Context() != nil {
-						select {
-						case <-req.Context().Done():
-							// Context was canceled during wait
-							return nil, req.Context().Err()
-						case <-time.After(retryAfter):
-							// Wait completed, retry will be handled by the retry middleware
-						}
-					}
-
-					return resp, rateLimitErr
+					// Return a RetryableError instead of sleeping, so the retry middleware
+					// can handle the backoff scheduling efficiently
+					return resp, utils.NewRetryableError(rateLimitErr, retryAfter)
 				}
 			}
 

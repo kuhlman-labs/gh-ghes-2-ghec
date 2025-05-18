@@ -11,9 +11,56 @@ import (
 	"math"
 	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// RetryableError is an error type that indicates a request should be retried
+// after a specific duration, rather than using the standard backoff algorithm.
+// This is particularly useful for rate limit responses that include a Retry-After header.
+type RetryableError struct {
+	// Err is the underlying error
+	Err error
+	// RetryAfter indicates when the request should be retried
+	RetryAfter time.Duration
+}
+
+// Error implements the error interface for RetryableError
+func (e *RetryableError) Error() string {
+	return fmt.Sprintf("%v (retry after %v)", e.Err, e.RetryAfter)
+}
+
+// Unwrap returns the underlying error for unwrapping
+func (e *RetryableError) Unwrap() error {
+	return e.Err
+}
+
+// NewRetryableError creates a new RetryableError from an existing error and retry duration
+func NewRetryableError(err error, retryAfter time.Duration) *RetryableError {
+	return &RetryableError{
+		Err:        err,
+		RetryAfter: retryAfter,
+	}
+}
+
+// IsRetryableError checks if an error is a RetryableError and returns the error and retry duration
+// Returns:
+// - bool: true if the error is a RetryableError
+// - time.Duration: the retry duration (0 if not a RetryableError)
+// - error: the unwrapped error (or original error if not a RetryableError)
+func IsRetryableError(err error) (bool, time.Duration, error) {
+	if err == nil {
+		return false, 0, nil
+	}
+
+	// Check if error is a RetryableError using type assertion
+	if re, ok := err.(*RetryableError); ok {
+		return true, re.RetryAfter, re.Err
+	}
+
+	return false, 0, err
+}
 
 // RetryConfig holds the configuration for retry operations.
 // It defines the retry behavior including intervals, backoff strategy,
@@ -178,26 +225,48 @@ func Retry(ctx context.Context, config *RetryConfig, operation string, fn func()
 			continue
 		}
 
-		// Calculate backoff with jitter for subsequent attempts
-		backoff := calculateBackoffWithJitter(config, attempt)
+		// Check for RetryableError with explicit backoff
+		isRetryable, retryAfter, unwrappedErr := IsRetryableError(err)
+		if isRetryable {
+			config.Logger.Debug("Retrying operation with specific backoff",
+				"operation", operation,
+				"attempt", attempt,
+				"max_attempts", config.MaxRetries,
+				"backoff_ms", retryAfter.Milliseconds(),
+				"error", unwrappedErr.Error(),
+			)
 
-		// Log retry
-		config.Logger.Debug("Retrying operation",
-			"operation", operation,
-			"attempt", attempt,
-			"max_attempts", config.MaxRetries,
-			"backoff_ms", backoff.Milliseconds(),
-			"error", err.Error(),
-		)
+			// Use the specified retry duration instead of calculating backoff
+			timer := time.NewTimer(retryAfter)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return fmt.Errorf("operation %s canceled during retry: %w", operation, ctx.Err())
+			case <-timer.C:
+				// Timer expired, proceed with retry
+			}
+		} else {
+			// Calculate backoff with jitter for subsequent attempts
+			backoff := calculateBackoffWithJitter(config, attempt)
 
-		// Create a timer for the backoff
-		timer := time.NewTimer(backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return fmt.Errorf("operation %s canceled during retry: %w", operation, ctx.Err())
-		case <-timer.C:
-			// Timer expired, proceed with retry
+			// Log retry
+			config.Logger.Debug("Retrying operation",
+				"operation", operation,
+				"attempt", attempt,
+				"max_attempts", config.MaxRetries,
+				"backoff_ms", backoff.Milliseconds(),
+				"error", err.Error(),
+			)
+
+			// Create a timer for the backoff
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return fmt.Errorf("operation %s canceled during retry: %w", operation, ctx.Err())
+			case <-timer.C:
+				// Timer expired, proceed with retry
+			}
 		}
 
 		// Execute the function
@@ -311,24 +380,50 @@ func RetryMiddleware(client *http.Client, config *RetryConfig, operation string)
 
 			var err error
 			resp, err = client.Do(req)
-			if err != nil {
-				return err
-			}
 
-			// Treat certain status codes as retryable errors
-			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-				// For server errors and rate limiting, we want to retry
-				err = fmt.Errorf("server returned status code %d", resp.StatusCode)
+			// If the error is nil but we got a problematic status code, create an error
+			if err == nil && resp != nil {
+				// Treat certain status codes as retryable errors
+				if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+					// For server errors and rate limiting, we want to retry
+					statusErr := fmt.Errorf("server returned status code %d", resp.StatusCode)
 
-				// We need to drain and close the body to avoid resource leaks
-				if resp.Body != nil {
-					_ = resp.Body.Close()
+					// For rate limiting (429), check for Retry-After header
+					if resp.StatusCode == http.StatusTooManyRequests {
+						retryAfterStr := resp.Header.Get("Retry-After")
+						if retryAfterStr != "" {
+							retryAfterSec, parseErr := strconv.Atoi(retryAfterStr)
+							if parseErr == nil && retryAfterSec > 0 {
+								retryAfter := time.Duration(retryAfterSec) * time.Second
+
+								// We need to drain and close the body to avoid resource leaks
+								if resp.Body != nil {
+									_ = resp.Body.Close()
+								}
+
+								return NewRetryableError(statusErr, retryAfter)
+							}
+						}
+					}
+
+					// We need to drain and close the body to avoid resource leaks
+					if resp.Body != nil {
+						_ = resp.Body.Close()
+					}
+
+					return statusErr
 				}
 
-				return err
+				return nil
 			}
 
-			return nil
+			// Check if this is already a RetryableError
+			isRetryable, _, _ := IsRetryableError(err)
+			if isRetryable {
+				return err // Return the RetryableError to be handled by Retry
+			}
+
+			return err
 		})
 
 		if err != nil {
