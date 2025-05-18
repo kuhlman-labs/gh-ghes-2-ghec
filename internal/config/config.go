@@ -21,6 +21,7 @@ type Config struct {
 	Server  ServerConfig  `mapstructure:"server"`
 	Webhook WebhookConfig `mapstructure:"webhook"`
 	Logging LoggingConfig `mapstructure:"logging"`
+	GitHub  GitHubConfig  `mapstructure:"github"`
 	Clients *Clients      // GitHub API clients
 	Tracing struct {
 		Enabled     bool    `mapstructure:"enabled"`
@@ -49,8 +50,10 @@ type ServerConfig struct {
 }
 
 // GitHubConfig holds GitHub-specific configuration.
-// Not used for tokens anymore as they come from payload.
+// Contains configuration for proxy servers and other GitHub API-related settings.
 type GitHubConfig struct {
+	// Proxy contains configuration for HTTP proxy servers
+	Proxy ProxyConfig `mapstructure:"proxy"`
 }
 
 // WebhookConfig holds webhook-specific configuration.
@@ -107,6 +110,15 @@ type ConfigForWriting struct {
 	Logging struct {
 		Level string `yaml:"level"`
 	} `yaml:"logging"`
+	GitHub struct {
+		Proxy struct {
+			Enabled     bool   `yaml:"enabled"`
+			URL         string `yaml:"url"`
+			Username    string `yaml:"username,omitempty"`
+			Password    string `yaml:"password,omitempty"`
+			NoProxyList string `yaml:"no_proxy_list,omitempty"`
+		} `yaml:"proxy"`
+	} `yaml:"github"`
 	Tracing struct {
 		Enabled     bool    `yaml:"enabled"`
 		Endpoint    string  `yaml:"endpoint"`
@@ -295,6 +307,11 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Server.Dashboard = cfg.Server.Dashboard
 	writeCfg.Webhook.URL = cfg.Webhook.URL
 	writeCfg.Logging.Level = cfg.Logging.Level
+	writeCfg.GitHub.Proxy.Enabled = cfg.GitHub.Proxy.Enabled
+	writeCfg.GitHub.Proxy.URL = cfg.GitHub.Proxy.URL
+	writeCfg.GitHub.Proxy.Username = cfg.GitHub.Proxy.Username
+	writeCfg.GitHub.Proxy.Password = cfg.GitHub.Proxy.Password
+	writeCfg.GitHub.Proxy.NoProxyList = cfg.GitHub.Proxy.NoProxyList
 	writeCfg.Tracing.Enabled = cfg.Tracing.Enabled
 	writeCfg.Tracing.Endpoint = cfg.Tracing.Endpoint
 	writeCfg.Tracing.ServiceName = cfg.Tracing.ServiceName

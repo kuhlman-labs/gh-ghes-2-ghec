@@ -31,6 +31,15 @@ logging:
   output: "stdout"                  # Log output (stdout or file)
   file: "/var/log/migrations.log"   # Log file path (if output is file)
 
+github:
+  ghes_base_url: ""                 # Default GitHub Enterprise Server base URL
+  proxy:
+    enabled: false                  # Enable proxy for GitHub API requests
+    url: ""                         # Proxy server URL
+    username: ""                    # Username for proxy authentication
+    password: ""                    # Password for proxy authentication
+    no_proxy_list: ""               # Comma-separated list of hosts to bypass proxy
+
 tracing:
   enabled: false
   endpoint: "localhost:4317"
@@ -118,6 +127,19 @@ storage:
 | `retention_days` | int | `0` | Keep migration data for days (0 = forever) |
 | `auto_prune` | bool | `false` | Automatically remove old data |
 
+### GitHub Configuration
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ghes_base_url` | string | `""` | Default GitHub Enterprise Server base URL |
+| `proxy.enabled` | bool | `false` | Enable HTTP proxy for GitHub API requests |
+| `proxy.url` | string | `""` | HTTP proxy server URL |
+| `proxy.username` | string | `""` | Username for proxy authentication |
+| `proxy.password` | string | `""` | Password for proxy authentication |
+| `proxy.no_proxy_list` | string | `""` | Comma-separated list of hosts to bypass proxy |
+
+For detailed proxy configuration, see [Proxy Configuration Guide](proxy-configuration.md).
+
 ## Environment Variables
 
 All configuration options can also be set via environment variables. The format is `SECTION_OPTION` in uppercase.
@@ -133,6 +155,8 @@ TRACING_ENABLED=false
 STORAGE_ENABLED=true
 STORAGE_TYPE=postgres
 STORAGE_CONNECTION_STRING=postgres://user:password@host:5432/db
+GITHUB_PROXY_ENABLED=true
+GITHUB_PROXY_URL=http://proxy.example.com:8080
 ```
 
 ## Command Line Options

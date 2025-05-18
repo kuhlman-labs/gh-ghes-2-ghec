@@ -48,3 +48,13 @@ storage:
   connection_string: "./data/migrations.db"  # For sqlite: file path; for mysql/postgres: DSN connection string
   table_prefix: ""                    # Optional prefix for database table names (useful for shared databases)
   timeout: 120                        # Database operation timeout in seconds 
+
+### GitHub Client Configuration ###
+github:
+  ghes_base_url: ""                   # GitHub Enterprise Server base URL (e.g., https://github.example.com/api/v3/)
+  proxy:
+    enabled: false                    # Enable proxy for GitHub API requests
+    url: ""                           # Proxy server URL (e.g., http://proxy.example.com:8080)
+    username: ""                      # Username for authenticating with the proxy (if required)
+    password: ""                      # Password for authenticating with the proxy (if required)
+    no_proxy_list: ""                 # Comma-separated list of hostnames that should not use the proxy (e.g., localhost,127.0.0.1,*.internal) 

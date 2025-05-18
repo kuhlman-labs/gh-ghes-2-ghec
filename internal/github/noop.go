@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 // NoopAPI is a no-operation implementation of the GitHub API.
@@ -96,4 +97,26 @@ func (n *NoopAPI) UploadArchiveToGHOS(ctx context.Context, databaseID int64, arc
 		"archiveURL", archiveURL,
 		"archiveName", archiveName)
 	return "", fmt.Errorf("UploadArchiveToGHOS not implemented in NoopAPI")
+}
+
+// GetGHESRateLimit is a no-op implementation that returns a placeholder rate limit.
+func (n *NoopAPI) GetGHESRateLimit(ctx context.Context) (*RateLimitInfo, error) {
+	n.logger.Debug("NoopAPI: GetGHESRateLimit called, returning placeholder values")
+	return &RateLimitInfo{
+		Limit:     5000,
+		Remaining: 4950,
+		Reset:     time.Now().Add(1 * time.Hour),
+		Used:      50,
+	}, nil
+}
+
+// GetGHCloudRateLimit is a no-op implementation that returns a placeholder rate limit.
+func (n *NoopAPI) GetGHCloudRateLimit(ctx context.Context) (*RateLimitInfo, error) {
+	n.logger.Debug("NoopAPI: GetGHCloudRateLimit called, returning placeholder values")
+	return &RateLimitInfo{
+		Limit:     5000,
+		Remaining: 4950,
+		Reset:     time.Now().Add(1 * time.Hour),
+		Used:      50,
+	}, nil
 }
