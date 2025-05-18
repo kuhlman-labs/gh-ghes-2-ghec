@@ -112,14 +112,24 @@ func createTransportWithProxy(token string, proxyConfig *ProxyConfig) (*http.Cli
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 
 	// If proxy is not enabled, create standard client
-	if proxyConfig == nil || !proxyConfig.Enabled || proxyConfig.URL == "" {
+	if proxyConfig == nil || !proxyConfig.Enabled {
 		return oauth2.NewClient(context.Background(), tokenSource), nil
+	}
+
+	// Check if URL is empty when proxy is enabled
+	if proxyConfig.URL == "" {
+		return nil, errors.New("proxy is enabled but URL is empty")
 	}
 
 	// Parse proxy URL
 	proxyURL, err := url.Parse(proxyConfig.URL)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate proxy URL has scheme and host
+	if proxyURL.Scheme == "" || proxyURL.Host == "" {
+		return nil, errors.New("invalid proxy URL: must include scheme (http/https) and host")
 	}
 
 	// Add basic auth to proxy URL if credentials are provided
@@ -210,17 +220,4 @@ func (c *Clients) UpdateGHESBaseURL(baseURL string) error {
 	}
 
 	return nil
-}
-
-// BackwardCompatNewClients creates clients using the old API for backward compatibility
-func BackwardCompatNewClients(ghesToken, ghCloudToken string) (*Clients, error) {
-	config := &ClientsConfig{
-		GHESToken:    ghesToken,
-		GHCloudToken: ghCloudToken,
-		Proxy: ProxyConfig{
-			Enabled: false,
-		},
-	}
-
-	return NewClients(config)
 }

@@ -154,7 +154,7 @@ func TestClientWithProxy(t *testing.T) {
 			name:     "invalid proxy URL",
 			proxyURL: "not-a-url",
 			enabled:  true,
-			wantErr:  false,
+			wantErr:  true,
 		},
 	}
 
