@@ -25,6 +25,8 @@ type API interface {
 	StartRepositoryMigration(ctx context.Context, sourceID, ownerID, repoName, sourceRepoURL, archiveURL, metadataURL, ghesToken, ghCloudToken string) (string, error)
 	GetMigrationStatus(ctx context.Context, migrationID string) (string, error)
 	UploadArchiveToGHOS(ctx context.Context, databaseID int64, archiveURL, archiveName, ghCloudToken string) (string, error)
+	GetGHESRateLimit(ctx context.Context) (*RateLimitInfo, error)
+	GetGHCloudRateLimit(ctx context.Context) (*RateLimitInfo, error)
 }
 
 // GitHubAPI handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.

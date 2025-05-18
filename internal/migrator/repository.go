@@ -30,7 +30,7 @@ func (m *Migrator) migrateRepository(
 	attemptStartTime time.Time,
 ) error {
 	// Initialize clients for this migration
-	clients, err := config.NewClients(req.GHESToken, req.GHCloudToken)
+	clients, err := config.BackwardCompatNewClients(req.GHESToken, req.GHCloudToken)
 	if err != nil {
 		m.updateStatus(repoFullName, payload.StatusFailed, fmt.Sprintf("failed to initialize clients: %v", err), time.Now(), attemptStartTime)
 		return fmt.Errorf("failed to initialize clients: %w", err)

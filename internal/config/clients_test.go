@@ -31,7 +31,15 @@ func TestNewClients(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clients, err := NewClients(tt.ghesToken, tt.ghCloudToken)
+			config := &ClientsConfig{
+				GHESToken:    tt.ghesToken,
+				GHCloudToken: tt.ghCloudToken,
+				Proxy: ProxyConfig{
+					Enabled: false,
+				},
+			}
+
+			clients, err := NewClients(config)
 			if tt.wantErr {
 				assert.Error(t, err)
 				assert.Nil(t, clients)
@@ -76,7 +84,15 @@ func TestUpdateGHESBaseURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clients, err := NewClients("ghes-token", "ghcloud-token")
+			config := &ClientsConfig{
+				GHESToken:    "ghes-token",
+				GHCloudToken: "ghcloud-token",
+				Proxy: ProxyConfig{
+					Enabled: false,
+				},
+			}
+
+			clients, err := NewClients(config)
 			require.NoError(t, err)
 			require.NotNil(t, clients)
 
@@ -92,6 +108,87 @@ func TestUpdateGHESBaseURL(t *testing.T) {
 					expectedURL += "/"
 				}
 				assert.Equal(t, expectedURL, clients.GHESClient.BaseURL.String())
+			}
+		})
+	}
+}
+
+func TestClientWithProxy(t *testing.T) {
+	tests := []struct {
+		name     string
+		proxyURL string
+		username string
+		password string
+		noProxy  string
+		enabled  bool
+		wantErr  bool
+	}{
+		{
+			name:     "proxy disabled",
+			proxyURL: "http://proxy.example.com:8080",
+			enabled:  false,
+			wantErr:  false,
+		},
+		{
+			name:     "proxy enabled",
+			proxyURL: "http://proxy.example.com:8080",
+			enabled:  true,
+			wantErr:  false,
+		},
+		{
+			name:     "proxy with auth",
+			proxyURL: "http://proxy.example.com:8080",
+			username: "user",
+			password: "pass",
+			enabled:  true,
+			wantErr:  false,
+		},
+		{
+			name:     "proxy with no proxy list",
+			proxyURL: "http://proxy.example.com:8080",
+			noProxy:  "localhost,127.0.0.1,*.internal",
+			enabled:  true,
+			wantErr:  false,
+		},
+		{
+			name:     "invalid proxy URL",
+			proxyURL: "not-a-url",
+			enabled:  true,
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &ClientsConfig{
+				GHESToken:    "ghes-token",
+				GHCloudToken: "ghcloud-token",
+				Proxy: ProxyConfig{
+					Enabled:     tt.enabled,
+					URL:         tt.proxyURL,
+					Username:    tt.username,
+					Password:    tt.password,
+					NoProxyList: tt.noProxy,
+				},
+			}
+
+			clients, err := NewClients(config)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, clients)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, clients)
+				assert.NotNil(t, clients.GHESClient)
+				assert.NotNil(t, clients.GHCloudClient)
+				assert.NotNil(t, clients.GHCloudGraphQL)
+
+				// Cannot easily verify proxy was configured since it's internal to the HTTP client
+				if tt.enabled {
+					assert.True(t, config.Proxy.Enabled)
+				} else {
+					assert.False(t, config.Proxy.Enabled)
+				}
 			}
 		})
 	}

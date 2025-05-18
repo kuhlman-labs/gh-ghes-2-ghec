@@ -6,6 +6,7 @@ Welcome to the documentation for the GitHub GHES to GHEC Migration Server. This 
 
 - **Getting Started**
   - [Configuration Guide](configuration.md)
+  - [Proxy Configuration](proxy-configuration.md)
 
 - **Monitoring & Observability**
   - [Metrics with Prometheus](monitoring/metrics.md)
