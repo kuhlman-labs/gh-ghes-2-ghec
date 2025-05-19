@@ -91,20 +91,51 @@ func TestConnectionPooling(t *testing.T) {
 
 	// Test pool metrics collector with context cancellation
 	t.Run("StartPoolMetricsCollector", func(t *testing.T) {
+		// Create a done channel to coordinate test completion
+		done := make(chan struct{})
+
+		// Create a context that we'll cancel to stop the collector
 		ctx, cancel := context.WithCancel(context.Background())
 
 		// Start the collector with a very short interval for testing
 		StartPoolMetricsCollector(ctx, db, "sqlite_test", 10*time.Millisecond)
 
-		// Allow one collection cycle
-		time.Sleep(20 * time.Millisecond)
+		// Create a goroutine to perform the test steps
+		go func() {
+			defer close(done)
 
-		// Cancel the context to stop the collector
-		cancel()
+			// Wait a small amount of time to allow the collector to run at least once
+			// Use a time.After channel instead of a sleep
+			select {
+			case <-time.After(50 * time.Millisecond):
+				// Collection should have happened by now
+			case <-ctx.Done():
+				t.Error("Context canceled unexpectedly")
+				return
+			}
 
-		// Wait for goroutine to exit
-		time.Sleep(20 * time.Millisecond)
+			// Cancel the context to stop the collector
+			cancel()
 
-		// If we get here without deadlocks or panics, the test passes
+			// Generate some DB activity to make sure stats would change if collector was still running
+			for i := 0; i < 5; i++ {
+				if err := db.Ping(); err != nil {
+					t.Logf("Error pinging database: %v", err)
+				}
+			}
+		}()
+
+		// Wait for test completion with timeout
+		select {
+		case <-done:
+			// Test completed successfully
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("Test timed out")
+			cancel() // Ensure we cancel the context if test times out
+		}
+
+		// We don't have a good way to directly verify the collector stopped,
+		// but if we get here without deadlocks or panics after context
+		// cancellation, we consider the test passed
 	})
 }

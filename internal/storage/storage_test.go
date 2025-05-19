@@ -159,15 +159,34 @@ func TestSQLiteStorage(t *testing.T) {
 		err = storage.SaveMigrationStatus(writeCtx, mockStatus)
 		require.NoError(t, err, "Failed to save initial status")
 
-		// Wait a moment to ensure the write is fully committed
-		time.Sleep(500 * time.Millisecond)
+		// Instead of a fixed sleep, use exponential backoff with timeout
+		verificationCtx, verifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer verifyCancel()
 
-		// Verify we can retrieve the status
-		readCtx, readCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer readCancel()
+		// Wait until the write is confirmed by reading it back
+		var savedStatus *payload.MigrationStatus
+		var retryErr error
+		for attempt := 0; attempt < 5; attempt++ {
+			// Attempt to read the status to verify it's committed
+			savedStatus, retryErr = storage.GetMigrationStatus(verificationCtx, "test-repo")
+			if retryErr == nil && savedStatus != nil {
+				// The write is confirmed
+				break
+			}
 
-		savedStatus, err := storage.GetMigrationStatus(readCtx, "test-repo")
-		require.NoError(t, err, "Failed to get migration status")
+			// Use a backoff timer instead of fixed sleep
+			backoffDuration := time.Duration(50*(1<<uint(attempt))) * time.Millisecond
+			select {
+			case <-verificationCtx.Done():
+				require.Fail(t, "Timed out waiting for write to be committed")
+				return
+			case <-time.After(backoffDuration):
+				// Continue with next retry
+			}
+		}
+
+		// Now that we've confirmed the write, proceed with verification
+		require.NoError(t, retryErr, "Failed to get migration status after save")
 		require.NotNil(t, savedStatus, "Expected non-nil status")
 
 		// Verify fields match
@@ -206,14 +225,32 @@ func TestSQLiteStorage(t *testing.T) {
 		err = storage.SaveMigrationStatus(updateCtx, mockStatus)
 		require.NoError(t, err, "Failed to update status")
 
-		// Wait a moment to ensure the update is committed
-		time.Sleep(500 * time.Millisecond)
+		// Use exponential backoff to wait for update to be committed
+		updateVerifyCtx, updateVerifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer updateVerifyCancel()
 
-		// Verify update worked
-		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer verifyCancel()
+		// Wait until the update is confirmed by reading it back
+		var updatedStatus *payload.MigrationStatus
+		for attempt := 0; attempt < 5; attempt++ {
+			// Attempt to read the status to verify the update was committed
+			updatedStatus, err = storage.GetMigrationStatus(updateVerifyCtx, "test-repo")
+			if err == nil && updatedStatus != nil && updatedStatus.Status == "succeeded" {
+				// The update is confirmed
+				break
+			}
 
-		updatedStatus, err := storage.GetMigrationStatus(verifyCtx, "test-repo")
+			// Use a backoff timer instead of fixed sleep
+			backoffDuration := time.Duration(50*(1<<uint(attempt))) * time.Millisecond
+			select {
+			case <-updateVerifyCtx.Done():
+				require.Fail(t, "Timed out waiting for update to be committed")
+				return
+			case <-time.After(backoffDuration):
+				// Continue with next retry
+			}
+		}
+
+		// Now that we've confirmed the update, proceed with verification
 		require.NoError(t, err, "Failed to get updated status")
 		require.NotNil(t, updatedStatus, "Expected non-nil updated status")
 		assert.Equal(t, "succeeded", updatedStatus.Status, "Status should be updated to 'succeeded'")
@@ -226,14 +263,31 @@ func TestSQLiteStorage(t *testing.T) {
 		err = storage.DeleteMigrationStatus(deleteCtx, "test-repo")
 		require.NoError(t, err, "Failed to delete status")
 
-		// Wait a bit for deletion to complete
-		time.Sleep(time.Second)
+		// Use exponential backoff to wait for deletion to be committed
+		deleteVerifyCtx, deleteVerifyCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer deleteVerifyCancel()
 
-		// Verify deletion
-		finalCtx, finalCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer finalCancel()
+		// Wait until the deletion is confirmed
+		var deletedStatus *payload.MigrationStatus
+		var deletionErr error
+		for attempt := 0; attempt < 5; attempt++ {
+			// Attempt to read the status to verify it was deleted
+			deletedStatus, deletionErr = storage.GetMigrationStatus(deleteVerifyCtx, "test-repo")
+			if deletedStatus == nil {
+				// The deletion is confirmed
+				break
+			}
 
-		deletedStatus, err := storage.GetMigrationStatus(finalCtx, "test-repo")
+			// Use a backoff timer instead of fixed sleep
+			backoffDuration := time.Duration(50*(1<<uint(attempt))) * time.Millisecond
+			select {
+			case <-deleteVerifyCtx.Done():
+				require.Fail(t, "Timed out waiting for deletion to be committed")
+				return
+			case <-time.After(backoffDuration):
+				// Continue with next retry
+			}
+		}
 
 		// After deletion, we don't expect the repo to exist, so either:
 		// - We get a "not found" type error, in which case nil status is expected
@@ -243,8 +297,8 @@ func TestSQLiteStorage(t *testing.T) {
 		assert.Nil(t, deletedStatus, "Expected nil status after deletion")
 
 		// Error could be "not found" error or even nil (if the DB just returns empty)
-		if err != nil {
-			t.Logf("Got error after deletion: %v - this is acceptable as long as status is nil", err)
+		if deletionErr != nil {
+			t.Logf("Got error after deletion: %v - this is acceptable as long as status is nil", deletionErr)
 		}
 	})
 }

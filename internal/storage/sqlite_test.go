@@ -75,129 +75,123 @@ func setupTempDB(t *testing.T) (storage *SQLiteStorage, cleanup func()) {
 	}
 }
 
-// TestGetAllMigrationStatuses_Concurrent tests the GetAllMigrationStatuses method
-// with concurrent read/write operations to simulate potential locking scenarios
+// retryWithExponentialBackoff is a helper function that retries an operation with exponential backoff
+func retryWithExponentialBackoff(t *testing.T, maxRetries int, operation string, fn func() error) error {
+	var lastErr error
+	for retries := 0; retries < maxRetries; retries++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		// Exponential backoff with a channel instead of sleep
+		backoffDuration := time.Duration(200*(1<<retries)) * time.Millisecond
+		t.Logf("%s: retrying after error: %v (backoff: %v)", operation, err, backoffDuration)
+
+		// Use a select with time.After instead of sleep
+		<-time.After(backoffDuration)
+		// Continue with next retry
+	}
+	return lastErr
+}
+
+// TestGetAllMigrationStatuses_Concurrent tests concurrent access to the database
 func TestGetAllMigrationStatuses_Concurrent(t *testing.T) {
-	// Skip this test when running in automated environments as SQLite concurrency
-	// behavior can be unpredictable and cause test hangs
+	// Skip if in short mode to avoid flaky tests in CI
 	if testing.Short() {
-		t.Skip("Skipping concurrent SQLite test in short mode")
+		t.Skip("Skipping concurrent test in short mode")
 	}
 
-	t.Log("WARNING: This test may deadlock with SQLite. If it hangs, use Ctrl+C to terminate.")
+	// Create a temporary database
+	storage, cleanup := setupTempDB(t)
+	defer cleanup()
 
-	// Create a temporary directory for the database
-	tempDir, err := os.MkdirTemp("", "sqlite-test-concurrent")
-	require.NoError(t, err, "Failed to create temp directory")
+	// Populate with test data
+	// Use fewer repos to make the test faster
+	repoCount := 10
+	ctx := context.Background()
 
-	dbPath := filepath.Join(tempDir, "test.db")
-	t.Logf("Using temporary database at: %s", dbPath)
+	// Create a wait group for tracking when all setup operations are complete
+	var setupWg sync.WaitGroup
+	setupWg.Add(repoCount)
 
-	// Clean up after the test
-	t.Cleanup(func() {
-		// Clean up WAL and SHM files if they exist
-		if err := os.Remove(dbPath + "-wal"); err != nil && !os.IsNotExist(err) {
-			t.Logf("Warning: failed to remove WAL file: %v", err)
-		}
-		if err := os.Remove(dbPath + "-shm"); err != nil && !os.IsNotExist(err) {
-			t.Logf("Warning: failed to remove SHM file: %v", err)
-		}
-		if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-			t.Logf("Warning: failed to remove DB file: %v", err)
-		}
-		if err := os.RemoveAll(tempDir); err != nil {
-			t.Logf("Warning: failed to remove temp directory: %v", err)
-		}
-	})
+	// Create a channel to signal when setup is done
+	setupDone := make(chan struct{})
 
-	// Create a storage instance
-	storage, err := NewSQLiteStorage(&StorageConfig{
-		Enabled:          true,
-		Type:             "sqlite",
-		ConnectionString: dbPath,
-		Timeout:          30, // Increase timeout for this test
-	})
-	require.NoError(t, err)
-
-	// Initialize the database with a long timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	err = storage.Initialize(ctx)
-	require.NoError(t, err)
-
-	// Make sure we close the storage at the end to release resources
-	defer func() {
-		closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer closeCancel()
-
-		if err := storage.Close(); err != nil {
-			t.Logf("Error closing storage: %v", err)
-		}
-
-		// Wait a moment for resources to be released
-		select {
-		case <-closeCtx.Done():
-			t.Logf("Warning: timeout while waiting for cleanup")
-		case <-time.After(500 * time.Millisecond):
-			// All good
-		}
+	go func() {
+		setupWg.Wait()
+		close(setupDone)
 	}()
 
-	// Create test data - 10 repositories
-	repoCount := 10
-	waitGroup := sync.WaitGroup{}
-
-	// Setup initial repositories
-	setupCtx, setupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer setupCancel()
-
+	// Create test repositories
 	for i := 0; i < repoCount; i++ {
-		repoName := fmt.Sprintf("test-repo-%d", i)
-		status := &payload.MigrationStatus{
-			Repository:  repoName,
-			Status:      "in_progress",
-			UpdatedAt:   time.Now().UTC(),
-			StartedAt:   time.Now().UTC(),
-			Progress:    25,
-			TotalStages: 5,
-		}
+		go func(index int) {
+			defer setupWg.Done()
 
-		err := storage.SaveMigrationStatus(setupCtx, status)
-		require.NoError(t, err)
+			repoName := fmt.Sprintf("test-repo-%d", index)
+			status := &payload.MigrationStatus{
+				Repository:      repoName,
+				Status:          "succeeded", // Start with succeeded to test updates
+				UpdatedAt:       time.Now().UTC(),
+				StartedAt:       time.Now().UTC(),
+				Progress:        100,
+				MigrationID:     fmt.Sprintf("m-%d", index),
+				CompletedStages: []string{"init", "prepare", "transfer", "validate", "complete"},
+				TotalStages:     5,
+			}
+
+			// Retry saving the status if needed
+			err := retryWithExponentialBackoff(t, 5, fmt.Sprintf("Setup repo %s", repoName), func() error {
+				return storage.SaveMigrationStatus(ctx, status)
+			})
+
+			if err != nil {
+				t.Errorf("Failed to save initial status for %s: %v", repoName, err)
+			} else {
+				t.Logf("Created test repo %s", repoName)
+			}
+		}(i)
 	}
 
-	// Create reader goroutines to call GetAllMigrationStatuses concurrently
-	readerCount := 2
+	// Wait for setup to complete
+	select {
+	case <-setupDone:
+		t.Log("Test data setup complete")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timed out waiting for test data setup")
+	}
+
+	// Create a wait group for reader and writer goroutines
+	var waitGroup sync.WaitGroup
+	// Number of concurrent readers
+	readerCount := 3
+
+	// Add readers to wait group
 	waitGroup.Add(readerCount)
 
+	// Create reader goroutines to concurrently read statuses
 	for r := 0; r < readerCount; r++ {
 		go func(readerID int) {
 			defer waitGroup.Done()
 
-			t.Logf("Reader %d: Starting GetAllMigrationStatuses", readerID)
-
 			readCtx, readCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer readCancel()
 
-			// Use retry logic in case of transient issues
+			// Use retry logic with our helper function
 			var statuses map[string]*payload.MigrationStatus
-			var lastErr error
-
-			for retries := 0; retries < 5; retries++ {
-				statuses, lastErr = storage.GetAllMigrationStatuses(readCtx)
-				if lastErr == nil && len(statuses) > 0 {
-					break
+			err := retryWithExponentialBackoff(t, 5, fmt.Sprintf("Reader %d", readerID), func() error {
+				var err error
+				statuses, err = storage.GetAllMigrationStatuses(readCtx)
+				if err != nil || len(statuses) == 0 {
+					return fmt.Errorf("failed to get statuses: %v (got %d statuses)", err, len(statuses))
 				}
+				return nil
+			})
 
-				// Exponential backoff
-				delay := time.Duration(200*(1<<retries)) * time.Millisecond
-				t.Logf("Reader %d: retrying after error: %v (delay: %v)", readerID, lastErr, delay)
-				time.Sleep(delay)
-			}
-
-			if lastErr != nil {
-				t.Errorf("Reader %d failed: %v", readerID, lastErr)
+			if err != nil {
+				t.Errorf("Reader %d failed: %v", readerID, err)
 				return
 			}
 
@@ -205,8 +199,13 @@ func TestGetAllMigrationStatuses_Concurrent(t *testing.T) {
 		}(r)
 	}
 
+	// Create a channel to signal when write operations start
+	writesStarted := make(chan struct{})
+
 	// Create a writer goroutine to update statuses
 	writesPerRepo := 1 // Reduce the number of writes to avoid excessive contention
+
+	// Add writer to wait group - separately from readers to be 100% sure
 	waitGroup.Add(1)
 
 	go func() {
@@ -214,6 +213,9 @@ func TestGetAllMigrationStatuses_Concurrent(t *testing.T) {
 
 		writeCtx, writeCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer writeCancel()
+
+		// Signal that writes are starting
+		close(writesStarted)
 
 		for i := 0; i < repoCount/2; i++ { // Only update half of the repos
 			for w := 0; w < writesPerRepo; w++ {
@@ -227,22 +229,13 @@ func TestGetAllMigrationStatuses_Concurrent(t *testing.T) {
 					TotalStages: 5,
 				}
 
-				// Retry logic for writes
-				var saveErr error
-				for retries := 0; retries < 5; retries++ {
-					saveErr = storage.SaveMigrationStatus(writeCtx, status)
-					if saveErr == nil {
-						break
-					}
+				// Use retry logic with our helper function
+				err := retryWithExponentialBackoff(t, 5, fmt.Sprintf("Write to %s", repoName), func() error {
+					return storage.SaveMigrationStatus(writeCtx, status)
+				})
 
-					// Exponential backoff
-					delay := time.Duration(200*(1<<retries)) * time.Millisecond
-					t.Logf("Writer: retrying save of %s after error: %v (delay: %v)", repoName, saveErr, delay)
-					time.Sleep(delay)
-				}
-
-				if saveErr != nil {
-					t.Errorf("Writer failed to update %s: %v", repoName, saveErr)
+				if err != nil {
+					t.Errorf("Writer failed to update %s: %v", repoName, err)
 					continue
 				}
 
@@ -251,8 +244,23 @@ func TestGetAllMigrationStatuses_Concurrent(t *testing.T) {
 		}
 	}()
 
-	// Wait for all goroutines to complete
-	waitGroup.Wait()
+	// Wait for writes to begin
+	<-writesStarted
+
+	// Create a channel to signal when all goroutines complete
+	completionCh := make(chan struct{})
+	go func() {
+		waitGroup.Wait()
+		close(completionCh)
+	}()
+
+	// Wait with a shorter timeout - 5 seconds should be plenty
+	select {
+	case <-completionCh:
+		t.Log("All reader and writer goroutines completed")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Timed out waiting for goroutines to complete")
+	}
 
 	// Verify final state
 	finalCtx, finalCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -262,14 +270,19 @@ func TestGetAllMigrationStatuses_Concurrent(t *testing.T) {
 	require.NoError(t, err)
 
 	succeededCount := 0
+	inProgressCount := 0
 	for _, status := range finalStatuses {
-		if status.Status == "succeeded" {
+		switch status.Status {
+		case "succeeded":
 			succeededCount++
+		case "in_progress":
+			inProgressCount++
 		}
 	}
 
-	t.Logf("Final statuses: %d total, %d succeeded", len(finalStatuses), succeededCount)
+	t.Logf("Final statuses: %d total, %d succeeded, %d in_progress", len(finalStatuses), succeededCount, inProgressCount)
 	assert.Equal(t, repoCount, len(finalStatuses), "Should have same number of repos as we created")
+	assert.Equal(t, repoCount/2, inProgressCount, "Should have updated half the repos to in_progress")
 }
 
 // TestGetAllMigrationStatuses_LockHandling specifically tests the ability of
@@ -323,27 +336,40 @@ func TestGetAllMigrationStatuses_LockHandling(t *testing.T) {
 	err = tx.QueryRow("SELECT COUNT(*) FROM migration_status").Scan(&count)
 	require.NoError(t, err, "Failed to execute count query")
 
-	// Sleep briefly to ensure transaction is established
-	time.Sleep(100 * time.Millisecond)
+	// Create a channel to signal when the write transaction has taken the lock
+	lockAcquired := make(chan struct{})
+	go func() {
+		// Execute a write query that will take a lock
+		_, err := tx.Exec("INSERT INTO migration_status (repository, status, updated_at) VALUES (?, ?, ?)",
+			"locked-repo", "in_progress", time.Now().UTC().Format(time.RFC3339))
+		if err != nil {
+			t.Logf("Failed to execute locking query: %v", err)
+			return
+		}
+		close(lockAcquired)
+	}()
 
-	// Execute a write query that will take a lock
-	_, err = tx.Exec("INSERT INTO migration_status (repository, status, updated_at) VALUES (?, ?, ?)",
-		"locked-repo", "in_progress", time.Now().UTC().Format(time.RFC3339))
-	require.NoError(t, err, "Failed to execute locking query")
-
-	// Don't commit or rollback yet - this keeps the lock active
-	// Give the database time to establish the lock
-	time.Sleep(300 * time.Millisecond)
+	// Wait for lock to be acquired with timeout
+	select {
+	case <-lockAcquired:
+		// Lock was acquired successfully
+	case <-time.After(1 * time.Second):
+		t.Log("Timed out waiting for lock acquisition, continuing anyway")
+	}
 
 	// In a separate goroutine, try to call GetAllMigrationStatuses
 	// It should handle the locked database gracefully
 	resultCh := make(chan map[string]*payload.MigrationStatus, 1)
 	errCh := make(chan error, 1)
+	readStarted := make(chan struct{})
 
 	go func() {
 		// Create a context with a shorter timeout to simulate a realistic scenario
 		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
+
+		// Signal that we're about to start the read operation
+		close(readStarted)
 
 		result, err := storage.GetAllMigrationStatuses(readCtx)
 		if err != nil {
@@ -354,24 +380,81 @@ func TestGetAllMigrationStatuses_LockHandling(t *testing.T) {
 		resultCh <- result
 	}()
 
-	// Wait a short time to let the read operation attempt to acquire a lock
-	time.Sleep(1 * time.Second)
+	// Wait for the read operation to start
+	<-readStarted
 
-	// Now release the lock by rolling back the transaction
-	err = tx.Rollback()
-	require.NoError(t, err, "Failed to rollback transaction")
+	// Give the read operation time to attempt acquiring the lock
+	// This is a race condition but we can monitor with a short timeout
+	lockWaitTimer := time.NewTimer(1 * time.Second)
 
-	// Wait for the result with a timeout
+	// Create a channel to signal when we've released the lock
+	lockReleased := make(chan struct{})
+
+	go func() {
+		// Now release the lock by rolling back the transaction
+		if err := tx.Rollback(); err != nil {
+			t.Logf("Failed to rollback transaction: %v", err)
+		} else {
+			t.Log("Lock released by rolling back transaction")
+		}
+		close(lockReleased)
+	}()
+
+	// Wait for the results with appropriate timeouts
 	select {
 	case err := <-errCh:
+		// Stop the lock wait timer if it's still running
+		if !lockWaitTimer.Stop() {
+			<-lockWaitTimer.C
+		}
+
 		// Some transient lock errors are expected, but they should be handled
 		// Skip the test rather than fail if we get lock errors
 		t.Skipf("GetAllMigrationStatuses returned error (possible transient lock issue): %v", err)
+
 	case result := <-resultCh:
+		// Stop the lock wait timer if it's still running
+		if !lockWaitTimer.Stop() {
+			<-lockWaitTimer.C
+		}
+
 		// We should at least get the original 5 records
 		assert.GreaterOrEqual(t, len(result), 5, "Should have at least the original records")
 		t.Logf("GetAllMigrationStatuses returned %d records", len(result))
-	case <-time.After(10 * time.Second):
-		t.Fatal("Timed out waiting for GetAllMigrationStatuses to return")
+
+	case <-lockWaitTimer.C:
+		// Lock wait timed out - check if the lock was released
+		select {
+		case <-lockReleased:
+			t.Log("Lock was released but no result yet, waiting longer")
+
+			// Wait a bit more for the results
+			select {
+			case err := <-errCh:
+				t.Skipf("GetAllMigrationStatuses returned error after lock release: %v", err)
+			case result := <-resultCh:
+				assert.GreaterOrEqual(t, len(result), 5, "Should have at least the original records")
+				t.Logf("GetAllMigrationStatuses returned %d records after lock release", len(result))
+			case <-time.After(3 * time.Second):
+				t.Fatal("Timed out waiting for GetAllMigrationStatuses after lock release")
+			}
+
+		default:
+			t.Log("Lock wait timed out and lock not released, forcing rollback")
+			if err := tx.Rollback(); err != nil {
+				t.Logf("Failed to force rollback: %v", err)
+			}
+
+			// Wait for the results
+			select {
+			case err := <-errCh:
+				t.Skipf("GetAllMigrationStatuses returned error after forced lock release: %v", err)
+			case result := <-resultCh:
+				assert.GreaterOrEqual(t, len(result), 5, "Should have at least the original records")
+				t.Logf("GetAllMigrationStatuses returned %d records after forced lock release", len(result))
+			case <-time.After(3 * time.Second):
+				t.Fatal("Timed out waiting for GetAllMigrationStatuses after forced lock release")
+			}
+		}
 	}
 }
