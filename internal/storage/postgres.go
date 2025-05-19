@@ -443,9 +443,11 @@ func (s *PostgresStorage) CheckAndRepairDatabase(ctx context.Context) (string, e
 	} else {
 		report.WriteString(fmt.Sprintf("✓ Table %s exists\n", tableName))
 
-		// Get record count
+		// Get record count - use properly quoted table name
 		var count int
-		err = s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+		quotedTableName := s.getQuotedTableName(s.tablePrefix + "migration_status")
+		countQuery := "SELECT COUNT(*) FROM " + quotedTableName
+		err = s.db.QueryRowContext(ctx, countQuery).Scan(&count)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("✗ Failed to count records: %s\n", err))
 		} else {
@@ -459,7 +461,7 @@ func (s *PostgresStorage) CheckAndRepairDatabase(ctx context.Context) (string, e
 		vacuumCtx, vacuumCancel := context.WithTimeout(ctx, 30*time.Second)
 		defer vacuumCancel()
 
-		_, err = s.db.ExecContext(vacuumCtx, fmt.Sprintf("VACUUM %s", tableName))
+		_, err = s.db.ExecContext(vacuumCtx, "VACUUM "+quotedTableName)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("✗ VACUUM failed: %s\n", err))
 		} else {
@@ -467,7 +469,7 @@ func (s *PostgresStorage) CheckAndRepairDatabase(ctx context.Context) (string, e
 		}
 
 		// ANALYZE
-		_, err = s.db.ExecContext(ctx, fmt.Sprintf("ANALYZE %s", tableName))
+		_, err = s.db.ExecContext(ctx, "ANALYZE "+quotedTableName)
 		if err != nil {
 			report.WriteString(fmt.Sprintf("✗ ANALYZE failed: %s\n", err))
 		} else {
