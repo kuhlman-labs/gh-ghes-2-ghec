@@ -36,6 +36,7 @@ type Config struct {
 		ServiceName string `mapstructure:"service_name"`
 	} `mapstructure:"metrics"`
 	Storage StorageConfig `mapstructure:"storage"`
+	Queue   QueueConfig   `mapstructure:"queue"`
 }
 
 // ServerConfig holds server-specific configuration options.
@@ -92,6 +93,17 @@ type StorageConfig struct {
 	Timeout          int    `mapstructure:"timeout"`           // Timeout in seconds for database operations (0 means use default)
 }
 
+// QueueConfig holds queue-specific configuration.
+// It defines parameters for the repository migration queue.
+type QueueConfig struct {
+	Enabled             bool `mapstructure:"enabled"`               // Whether intelligent queueing is enabled
+	MaxQueueSize        int  `mapstructure:"max_queue_size"`        // Maximum number of jobs that can be queued
+	MaxArchiveThreads   int  `mapstructure:"max_archive_threads"`   // Maximum number of concurrent archive generations
+	MaxMigrationThreads int  `mapstructure:"max_migration_threads"` // Maximum number of concurrent migrations
+	DefaultPriority     int  `mapstructure:"default_priority"`      // Default priority for migrations
+	QueueStatsInterval  int  `mapstructure:"queue_stats_interval"`  // Interval in seconds for logging queue stats
+}
+
 // ConfigForWriting is used to serialize config to YAML.
 // It contains a simplified representation of the Config struct
 // suitable for writing to a configuration file.
@@ -132,6 +144,14 @@ type ConfigForWriting struct {
 		TablePrefix      string `yaml:"table_prefix"`
 		Timeout          int    `yaml:"timeout"`
 	} `yaml:"storage"`
+	Queue struct {
+		Enabled             bool `yaml:"enabled"`
+		MaxQueueSize        int  `yaml:"max_queue_size"`
+		MaxArchiveThreads   int  `yaml:"max_archive_threads"`
+		MaxMigrationThreads int  `yaml:"max_migration_threads"`
+		DefaultPriority     int  `yaml:"default_priority"`
+		QueueStatsInterval  int  `yaml:"queue_stats_interval"`
+	} `yaml:"queue"`
 }
 
 // Default configuration constants
@@ -144,6 +164,13 @@ const (
 	defaultStorageType = "sqlite"
 	defaultStoragePath = "migrations.db"
 	defaultDbTimeout   = 120 // Default timeout for database operations (2 minutes)
+
+	// Queue configuration defaults
+	defaultMaxQueueSize        = 1000 // Maximum queue size
+	defaultMaxArchiveThreads   = 5    // GitHub's limit for archive generation
+	defaultMaxMigrationThreads = 10   // GitHub's limit for concurrent migrations
+	defaultQueuePriority       = 50   // Default priority for migrations
+	defaultQueueStatsInterval  = 300  // Log queue stats every 5 minutes
 )
 
 var (
@@ -212,6 +239,14 @@ func loadConfig() error {
 	viper.SetDefault("storage.connection_string", defaultStoragePath)
 	viper.SetDefault("storage.table_prefix", "")
 	viper.SetDefault("storage.timeout", defaultDbTimeout)
+
+	// Set default values for queue configuration
+	viper.SetDefault("queue.enabled", true) // Enable smart queueing by default
+	viper.SetDefault("queue.max_queue_size", defaultMaxQueueSize)
+	viper.SetDefault("queue.max_archive_threads", defaultMaxArchiveThreads)
+	viper.SetDefault("queue.max_migration_threads", defaultMaxMigrationThreads)
+	viper.SetDefault("queue.default_priority", defaultQueuePriority)
+	viper.SetDefault("queue.queue_stats_interval", defaultQueueStatsInterval)
 
 	// Read from environment variables
 	viper.SetEnvPrefix("GH_REPO_MIGRATE")
@@ -291,6 +326,14 @@ func CreateDefaultConfig() *Config {
 			TablePrefix:      "",
 			Timeout:          defaultDbTimeout,
 		},
+		Queue: QueueConfig{
+			Enabled:             true,
+			MaxQueueSize:        defaultMaxQueueSize,
+			MaxArchiveThreads:   defaultMaxArchiveThreads,
+			MaxMigrationThreads: defaultMaxMigrationThreads,
+			DefaultPriority:     defaultQueuePriority,
+			QueueStatsInterval:  defaultQueueStatsInterval,
+		},
 	}
 }
 
@@ -321,6 +364,12 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Storage.ConnectionString = cfg.Storage.ConnectionString
 	writeCfg.Storage.TablePrefix = cfg.Storage.TablePrefix
 	writeCfg.Storage.Timeout = cfg.Storage.Timeout
+	writeCfg.Queue.Enabled = cfg.Queue.Enabled
+	writeCfg.Queue.MaxQueueSize = cfg.Queue.MaxQueueSize
+	writeCfg.Queue.MaxArchiveThreads = cfg.Queue.MaxArchiveThreads
+	writeCfg.Queue.MaxMigrationThreads = cfg.Queue.MaxMigrationThreads
+	writeCfg.Queue.DefaultPriority = cfg.Queue.DefaultPriority
+	writeCfg.Queue.QueueStatsInterval = cfg.Queue.QueueStatsInterval
 
 	return writeCfg
 }

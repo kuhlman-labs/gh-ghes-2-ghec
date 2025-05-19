@@ -9,6 +9,8 @@ import (
 	"html"
 	"html/template"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,6 +42,7 @@ type TemplateData struct {
 	Migration        *payload.MigrationStatus
 	ArchivedAttempts []*payload.MigrationStatus // Added for displaying historical attempts
 	Stats            MigrationStats
+	QueueStats       map[string]interface{} // Added for queue statistics
 	Stages           []StageInfo
 	Error            string
 	Success          string
@@ -142,6 +145,7 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard", h.handleOverview)
 	mux.HandleFunc("/dashboard/refresh", h.handleRefresh)
 	mux.HandleFunc("/dashboard/stats", h.handleStats)
+	mux.HandleFunc("/dashboard/queue-stats", h.handleQueueStats)
 
 	// Migration detail and retry - use a single handler for the path
 	mux.HandleFunc("/dashboard/migration/", h.handleMigrationRoutes)
@@ -153,8 +157,36 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	// History page
 	mux.HandleFunc("/dashboard/history", h.handleHistory)
 
-	// Serve static files
-	fileServer := http.FileServer(http.Dir("static"))
+	// Serve static files with absolute path to ensure reliability
+	// First, try to determine if we can get an absolute path to the static directory
+	staticDir := filepath.Join("/Users/kuhlman-labs/Documents/Projects/gh-ghes-2-ghec.nosync/static")
+	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
+		// If the absolute path doesn't work, fall back to relative path detection
+		workDir, err := os.Getwd()
+		if err != nil {
+			workDir = "."
+		}
+
+		// Try with different relative paths
+		possiblePaths := []string{
+			"static",                         // Direct subdirectory
+			filepath.Join(workDir, "static"), // Relative to working directory
+			"../static",                      // One directory up
+			"../../static",                   // Two directories up
+		}
+
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				staticDir = path
+				break
+			}
+		}
+	}
+
+	// Log the static directory path we're using
+	logging.Get().Info("Static files directory", "path", staticDir)
+
+	fileServer := http.FileServer(http.Dir(staticDir))
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
 }
 
@@ -189,6 +221,9 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 	// Calculate stats on all migrations
 	overallStats := calculateStats(allMigrations)
 
+	// Get queue statistics
+	queueStats := h.migrator.GetQueueStats()
+
 	// Apply pagination if pageSize > 0
 	displayMigrations := activeMigrations
 	if pageSize > 0 && len(displayMigrations) > pageSize {
@@ -199,26 +234,18 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 	data := TemplateData{
 		Title:       "Overview",
 		Active:      "overview",
-		PageName:    "overview",
+		PageName:    "overview", // Note: Use lowercase to match the condition in base.html
 		CurrentYear: time.Now().Year(),
 		Migrations:  displayMigrations,
 		Stats:       overallStats,
+		QueueStats:  queueStats,
 		PageSize:    pageSize,
 	}
 
-	// Check if request is coming from htmx
-	isHtmxRequest := r.Header.Get("HX-Request") == "true"
-
-	if isHtmxRequest {
-		// For htmx requests, only render the overview_content template
-		if err := h.templates.ExecuteTemplate(w, "overview_content", data); err != nil {
-			http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		}
-	} else {
-		// For regular requests, render the full page
-		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
-			http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		}
+	// Render the base template which will include the overview_content
+	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+		http.Error(w, fmt.Sprintf("Error rendering template: %v", err), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -746,6 +773,61 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	if err := tmpl.Execute(w, stats); err != nil {
 		http.Error(w, "Failed to render stats", http.StatusInternalServerError)
+	}
+}
+
+// handleQueueStats returns just the queue statistics for HTMX updates
+func (h *Handler) handleQueueStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get queue statistics
+	queueStats := h.migrator.GetQueueStats()
+
+	// Ensure max_migration_threads is set, default to 10 if missing
+	if _, exists := queueStats["max_migration_threads"]; !exists {
+		queueStats["max_migration_threads"] = 10
+	}
+
+	// Debug log the queue stats
+	logging.Get().Info("Queue stats returned from migrator",
+		"queue_size", queueStats["queue_size"],
+		"max_queue_size", queueStats["max_queue_size"],
+		"active_archive_generations", queueStats["active_archive_generations"],
+		"max_archive_generations", queueStats["max_archive_generations"],
+		"active_migrations", queueStats["active_migrations"],
+		"max_migration_threads", queueStats["max_migration_threads"])
+
+	// Create a template with just the queue stats HTML
+	queueStatsTemplate := `
+		<div class="stat-card">
+			<h3>Queue Size</h3>
+			<span class="stat-value">{{ .queue_size }}</span>
+			<span class="stat-label">/ {{ .max_queue_size }}</span>
+		</div>
+		<div class="stat-card">
+			<h3>Active Archives</h3>
+			<span class="stat-value">{{ .active_archive_generations }}</span>
+			<span class="stat-label">/ {{ .max_archive_generations }}</span>
+		</div>
+		<div class="stat-card">
+			<h3>Active Migrations</h3>
+			<span class="stat-value">{{ .active_migrations }}</span>
+			<span class="stat-label">/ {{ .max_migration_threads }}</span>
+		</div>
+	`
+
+	// Parse and execute the template using html/template which auto-escapes
+	tmpl, err := template.New("queue_stats").Parse(queueStatsTemplate)
+	if err != nil {
+		http.Error(w, "Failed to parse queue stats template", http.StatusInternalServerError)
+		return
+	}
+
+	if err := tmpl.Execute(w, queueStats); err != nil {
+		http.Error(w, "Failed to render queue stats", http.StatusInternalServerError)
 	}
 }
 
