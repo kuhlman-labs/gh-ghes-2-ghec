@@ -35,6 +35,8 @@ type MigrationJob struct {
 	Data interface{}
 	// index is used by the heap implementation
 	index int
+	// IsArchive indicates if this is an archive job (true) or migration job (false)
+	IsArchive bool
 }
 
 // JobHandler is a function that processes a job
@@ -212,6 +214,7 @@ func (qm *QueueManager) EnqueueArchiveJob(repository string, data interface{}, p
 		Added:      time.Now(),
 		Priority:   priority,
 		Data:       data,
+		IsArchive:  true,
 	}
 
 	// Add the job to the queue
@@ -239,7 +242,49 @@ func (qm *QueueManager) EnqueueArchiveJob(repository string, data interface{}, p
 
 // EnqueueMigrationJob adds a repository migration job to the queue
 func (qm *QueueManager) EnqueueMigrationJob(repository string, data interface{}, priority int) error {
-	return qm.EnqueueArchiveJob(repository, data, priority) // Same logic for now
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+
+	// Check if the repository is already in the queue
+	if _, exists := qm.jobMap[repository]; exists {
+		return fmt.Errorf("repository %s is already in the queue", repository)
+	}
+
+	// Check if the queue is full
+	if len(qm.queue) >= qm.maxQueueSize {
+		return fmt.Errorf("queue is full, cannot add more jobs")
+	}
+
+	// Create a new job
+	job := &MigrationJob{
+		Repository: repository,
+		Added:      time.Now(),
+		Priority:   priority,
+		Data:       data,
+		IsArchive:  false,
+	}
+
+	// Add the job to the queue
+	heap.Push(&qm.queue, job)
+	qm.jobMap[repository] = job
+
+	// Record metrics
+	metrics.QueueSize.Set(float64(len(qm.queue)))
+	metrics.QueuedJobs.Inc()
+
+	// Signal that a new job is available
+	select {
+	case qm.jobAvailable <- struct{}{}:
+	default:
+		// Channel is already signaled, which is fine
+	}
+
+	qm.logger.Info("Enqueued migration job",
+		"repository", repository,
+		"priority", priority,
+		"queue_size", len(qm.queue))
+
+	return nil
 }
 
 // archiveWorker processes archive generation jobs
@@ -276,33 +321,52 @@ func (qm *QueueManager) migrationWorker() {
 	}
 }
 
-// processNextJob processes the next job from the queue
+// processNextJob processes the next job in the queue
 func (qm *QueueManager) processNextJob(isArchive bool) {
 	qm.mu.Lock()
 
 	// Check if there are any jobs in the queue
-	if len(qm.queue) == 0 {
+	if qm.queue.Len() == 0 {
 		qm.mu.Unlock()
 		return
 	}
 
-	// Check if we've reached the maximum number of concurrent jobs
-	if (isArchive && qm.activeArchiveGenerations >= qm.maxArchiveGenerations) ||
-		(!isArchive && qm.activeMigrations >= qm.maxMigrations) {
+	// Check if we've hit the concurrency limit
+	if isArchive && qm.activeArchiveGenerations >= qm.maxArchiveGenerations {
+		qm.mu.Unlock()
+		return
+	}
+	if !isArchive && qm.activeMigrations >= qm.maxMigrations {
 		qm.mu.Unlock()
 		return
 	}
 
-	// Get the highest priority job
-	job := heap.Pop(&qm.queue).(*MigrationJob)
-	delete(qm.jobMap, job.Repository)
+	// Find the next job of the right type
+	var nextJob *MigrationJob
+	for i := 0; i < qm.queue.Len(); i++ {
+		job := qm.queue[i]
+		if job.IsArchive == isArchive {
+			nextJob = job
+			heap.Remove(&qm.queue, i)
+			break
+		}
+	}
 
-	// Update active counters
+	// If no job of the right type was found, unlock and return
+	if nextJob == nil {
+		qm.mu.Unlock()
+		return
+	}
+
+	// Update active job counters
 	if isArchive {
 		qm.activeArchiveGenerations++
 	} else {
 		qm.activeMigrations++
 	}
+
+	// Remove from job map
+	delete(qm.jobMap, nextJob.Repository)
 
 	// Update metrics
 	metrics.QueueSize.Set(float64(len(qm.queue)))
@@ -314,23 +378,19 @@ func (qm *QueueManager) processNextJob(isArchive bool) {
 
 	qm.mu.Unlock()
 
-	// Process the job outside the lock
+	// Process the job
+	qm.logger.Info("Processing job",
+		"repository", nextJob.Repository,
+		"is_archive", isArchive)
+
 	var err error
 	if isArchive {
-		qm.logger.Info("Processing archive job", "repository", job.Repository)
-		err = qm.archiveHandler(job)
+		err = qm.archiveHandler(nextJob)
 	} else {
-		qm.logger.Info("Processing migration job", "repository", job.Repository)
-		err = qm.migrationHandler(job)
+		err = qm.migrationHandler(nextJob)
 	}
 
-	if err != nil {
-		qm.logger.Error("Error processing job",
-			"repository", job.Repository,
-			"error", err)
-	}
-
-	// Update counters after job completion
+	// Update metrics and counters after job completion
 	qm.mu.Lock()
 	if isArchive {
 		qm.activeArchiveGenerations--
@@ -343,7 +403,14 @@ func (qm *QueueManager) processNextJob(isArchive bool) {
 	}
 	qm.mu.Unlock()
 
-	// Signal that a slot is available
+	if err != nil {
+		qm.logger.Error("Job processing failed",
+			"repository", nextJob.Repository,
+			"is_archive", isArchive,
+			"error", err)
+	}
+
+	// Signal that more jobs can be processed
 	select {
 	case qm.jobAvailable <- struct{}{}:
 	default:
@@ -356,7 +423,7 @@ func (qm *QueueManager) GetQueueStats() map[string]interface{} {
 	qm.mu.Lock()
 	defer qm.mu.Unlock()
 
-	stats := map[string]interface{}{
+	return map[string]interface{}{
 		"queue_size":                 len(qm.queue),
 		"max_queue_size":             qm.maxQueueSize,
 		"active_archive_generations": qm.activeArchiveGenerations,
@@ -364,13 +431,11 @@ func (qm *QueueManager) GetQueueStats() map[string]interface{} {
 		"active_migrations":          qm.activeMigrations,
 		"max_migrations":             qm.maxMigrations,
 	}
-
-	return stats
 }
 
-// updateMetrics periodically updates metrics related to the queue
+// updateMetrics periodically updates queue metrics
 func (qm *QueueManager) updateMetrics() {
-	ticker := time.NewTicker(15 * time.Second)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -378,11 +443,10 @@ func (qm *QueueManager) updateMetrics() {
 		case <-qm.shutdown:
 			return
 		case <-ticker.C:
-			qm.mu.Lock()
-			metrics.QueueSize.Set(float64(len(qm.queue)))
-			metrics.ActiveArchives.Set(float64(qm.activeArchiveGenerations))
-			metrics.ActiveMigrations.Set(float64(qm.activeMigrations))
-			qm.mu.Unlock()
+			stats := qm.GetQueueStats()
+			metrics.QueueSize.Set(float64(stats["queue_size"].(int)))
+			metrics.ActiveArchives.Set(float64(stats["active_archive_generations"].(int)))
+			metrics.ActiveMigrations.Set(float64(stats["active_migrations"].(int)))
 		}
 	}
 }

@@ -157,19 +157,16 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	// History page
 	mux.HandleFunc("/dashboard/history", h.handleHistory)
 
-	// Serve static files with absolute path to ensure reliability
-	// First, try to determine if we can get an absolute path to the static directory
-	staticDir := filepath.Join("/Users/kuhlman-labs/Documents/Projects/gh-ghes-2-ghec.nosync/static")
+	// Serve static files with relative path detection only
+	staticDir := "static"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {
-		// If the absolute path doesn't work, fall back to relative path detection
+		// If the default relative path doesn't work, try other relative paths
 		workDir, err := os.Getwd()
 		if err != nil {
 			workDir = "."
 		}
 
-		// Try with different relative paths
 		possiblePaths := []string{
-			"static",                         // Direct subdirectory
 			filepath.Join(workDir, "static"), // Relative to working directory
 			"../static",                      // One directory up
 			"../../static",                   // Two directories up

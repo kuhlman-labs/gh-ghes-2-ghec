@@ -3,6 +3,7 @@ package queue
 import (
 	"log/slog"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -223,7 +224,7 @@ func TestQueueManager_Concurrency(t *testing.T) {
 
 	// Add 10 jobs simultaneously to test concurrency
 	for i := 0; i < 10; i++ {
-		repoName := "org/repo" + string(rune('0'+i))
+		repoName := "org/repo" + strconv.Itoa(i)
 		err := qm.EnqueueArchiveJob(repoName, "data", PriorityDefault)
 		if err != nil {
 			t.Fatalf("Failed to enqueue job %s: %v", repoName, err)
