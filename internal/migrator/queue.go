@@ -202,3 +202,8 @@ func (qmi *QueueManagerIntegration) GetQueueStats() map[string]interface{} {
 	defer qmi.mu.Unlock()
 	return qmi.queueManager.GetQueueStats()
 }
+
+// GetQueuedRepositories returns a slice of repository names currently queued (waiting for a worker)
+func (qmi *QueueManagerIntegration) GetQueuedRepositories() []string {
+	return qmi.queueManager.GetQueuedRepositories()
+}

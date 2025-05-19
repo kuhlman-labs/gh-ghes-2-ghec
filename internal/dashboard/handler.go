@@ -207,6 +207,20 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	allMigrations := mapToSlice(migrationsMap)
 
+	// Get queued repositories (waiting for worker)
+	queuedRepos := h.migrator.GetQueuedRepositories()
+	queuedReposSet := stringSet(queuedRepos)
+
+	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
+	for _, m := range allMigrations {
+		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
+			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
+				m.Stage = "queued"
+				m.State = "waiting for worker"
+			}
+		}
+	}
+
 	// Filter to show only active migrations in the overview
 	var activeMigrations []*payload.MigrationStatus
 	for _, migration := range allMigrations {
@@ -265,6 +279,20 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	allMigrations := mapToSlice(migrationsMap)
+
+	// Get queued repositories (waiting for worker)
+	queuedRepos := h.migrator.GetQueuedRepositories()
+	queuedReposSet := stringSet(queuedRepos)
+
+	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
+	for _, m := range allMigrations {
+		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
+			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
+				m.Stage = "queued"
+				m.State = "waiting for worker"
+			}
+		}
+	}
 
 	// Filter to show only active migrations in the overview
 	var activeMigrations []*payload.MigrationStatus
@@ -783,6 +811,17 @@ func (h *Handler) handleQueueStats(w http.ResponseWriter, r *http.Request) {
 	// Get queue statistics
 	queueStats := h.migrator.GetQueueStats()
 
+	// Count active migrations in the 'archive' stage
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+	allMigrations := mapToSlice(migrationsMap)
+	activeArchives := 0
+	for _, m := range allMigrations {
+		if m.Status == "in_progress" && m.Stage == "archive" {
+			activeArchives++
+		}
+	}
+	queueStats["active_archive_generations"] = activeArchives
+
 	// Ensure max_migration_threads is set, default to 10 if missing
 	if _, exists := queueStats["max_migration_threads"]; !exists {
 		queueStats["max_migration_threads"] = 10
@@ -1033,4 +1072,13 @@ func sanitizeInput(input string) string {
 	sanitized := re.ReplaceAllString(escaped, "")
 
 	return sanitized
+}
+
+// Helper to build a set from a slice
+func stringSet(slice []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(slice))
+	for _, s := range slice {
+		set[s] = struct{}{}
+	}
+	return set
 }

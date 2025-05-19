@@ -246,3 +246,58 @@ func TestQueueManager_Concurrency(t *testing.T) {
 	stats := qm.GetQueueStats()
 	t.Logf("Queue stats: %+v", stats)
 }
+
+// TestGetQueuedRepositories verifies that GetQueuedRepositories returns the correct set of queued jobs
+func TestGetQueuedRepositories(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	archiveHandler := func(job *MigrationJob) error {
+		// Simulate work
+		time.Sleep(10 * time.Millisecond)
+		return nil
+	}
+	migrationHandler := func(job *MigrationJob) error { return nil }
+
+	qm := NewQueueManager(
+		logger,
+		10, // maxQueueSize
+		1,  // maxArchiveThreads
+		1,  // maxMigrationThreads
+		archiveHandler,
+		migrationHandler,
+	)
+
+	// Enqueue 3 jobs
+	repos := []string{"org/repoA", "org/repoB", "org/repoC"}
+	for _, repo := range repos {
+		err := qm.EnqueueArchiveJob(repo, "data", PriorityDefault)
+		if err != nil {
+			t.Fatalf("Failed to enqueue job for %s: %v", repo, err)
+		}
+	}
+
+	queued := qm.GetQueuedRepositories()
+	if len(queued) != 3 {
+		t.Errorf("Expected 3 queued repositories, got %d", len(queued))
+	}
+	// Check that all repos are present
+	found := make(map[string]bool)
+	for _, repo := range queued {
+		found[repo] = true
+	}
+	for _, repo := range repos {
+		if !found[repo] {
+			t.Errorf("Expected repo %s to be in queued repositories", repo)
+		}
+	}
+
+	// Start the queue manager and let a worker pick up a job
+	qm.Start()
+	defer qm.Stop()
+	time.Sleep(50 * time.Millisecond) // Let a worker pick up a job
+
+	queuedAfter := qm.GetQueuedRepositories()
+	if len(queuedAfter) >= 3 {
+		t.Errorf("Expected fewer than 3 queued repositories after processing, got %d", len(queuedAfter))
+	}
+}

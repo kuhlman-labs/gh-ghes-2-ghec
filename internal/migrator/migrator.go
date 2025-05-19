@@ -662,3 +662,11 @@ func (m *Migrator) GetQueueStats() map[string]interface{} {
 	stats["queue_enabled"] = true
 	return stats
 }
+
+// GetQueuedRepositories returns a slice of repository names currently queued (waiting for a worker)
+func (m *Migrator) GetQueuedRepositories() []string {
+	if m.queueManager != nil && m.config.Queue.Enabled {
+		return m.queueManager.GetQueuedRepositories()
+	}
+	return []string{}
+}

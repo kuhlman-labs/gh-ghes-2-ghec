@@ -450,3 +450,15 @@ func (qm *QueueManager) updateMetrics() {
 		}
 	}
 }
+
+// GetQueuedRepositories returns a slice of repository names currently queued (waiting for a worker)
+func (qm *QueueManager) GetQueuedRepositories() []string {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+
+	repos := make([]string, 0, len(qm.jobMap))
+	for repo := range qm.jobMap {
+		repos = append(repos, repo)
+	}
+	return repos
+}
