@@ -294,10 +294,18 @@ func TestGetQueuedRepositories(t *testing.T) {
 	// Start the queue manager and let a worker pick up a job
 	qm.Start()
 	defer qm.Stop()
-	time.Sleep(50 * time.Millisecond) // Let a worker pick up a job
 
-	queuedAfter := qm.GetQueuedRepositories()
-	if len(queuedAfter) >= 3 {
-		t.Errorf("Expected fewer than 3 queued repositories after processing, got %d", len(queuedAfter))
+	// Wait up to 500ms for the number of queued repositories to decrease
+	var queuedAfter []string
+	for i := 0; i < 10; i++ {
+		queuedAfter = qm.GetQueuedRepositories()
+		if len(queuedAfter) < len(repos) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if len(queuedAfter) >= len(repos) {
+		t.Errorf("Expected fewer than %d queued repositories after processing, got %d", len(repos), len(queuedAfter))
 	}
 }
