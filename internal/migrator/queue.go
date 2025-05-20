@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/queue"
 )
@@ -120,44 +121,139 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	}
 
 	// Create a background context for the migration
-	_, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Prepare a migration status for the job
 	sourceRepoFullName := job.Repository
 	attemptStartTime := time.Now()
 
-	// Use a smaller critical section for updating status
-	func() {
-		qmi.mu.Lock()
-		defer qmi.mu.Unlock()
-		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "Starting archive generation", attemptStartTime, attemptStartTime)
-	}()
-
-	// The code that would normally live in StartMigration/performMigration for archive generation
-	// goes here...
-	// (This is simplified - in a real implementation, you'd need to extract the archive
-	// generation logic from the migrator's code and call it here)
-
-	// For now, let's implement a placeholder that moves to the next phase
-	qmi.logger.Info("Archive generation completed (simulated)", "repository", sourceRepoFullName)
-
-	// Enqueue the migration job (second phase)
-	err := qmi.queueManager.EnqueueMigrationJob(sourceRepoFullName, req, job.Priority)
+	// Initialize clients for this migration
+	clients, err := config.NewClients(&config.ClientsConfig{
+		GHESToken:    req.GHESToken,
+		GHCloudToken: req.GHCloudToken,
+		Proxy:        qmi.migrator.config.GitHub.Proxy,
+	})
 	if err != nil {
-		errMsg := fmt.Sprintf("Failed to enqueue migration job: %v", err)
+		errMsg := fmt.Sprintf("failed to initialize clients: %v", err)
 		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
-
-		// Use a smaller critical section for updating status
-		func() {
-			qmi.mu.Lock()
-			defer qmi.mu.Unlock()
-			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
-		}()
-		return err
+		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+		return fmt.Errorf("failed to initialize clients: %w", err)
 	}
 
-	return nil
+	// Update GHES base URL
+	if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
+		errMsg := fmt.Sprintf("failed to update GHES base URL: %v", err)
+		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+		return fmt.Errorf("failed to update GHES base URL: %w", err)
+	}
+
+	// Create GitHub API instance for this migration
+	githubAPI := github.New(clients, qmi.logger)
+
+	// Update status to in progress with initial stage
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "starting archive generation", time.Now(), attemptStartTime)
+
+	// Generate migration archive on Source GHES
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "generating migration archive", time.Now(), attemptStartTime)
+	archiveID, err := githubAPI.GenerateMigrationArchive(ctx, req.SourceOrg, req.Repositories[0])
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to generate migration archive: %v", err)
+		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+		return fmt.Errorf("failed to generate migration archive: %w", err)
+	}
+	qmi.logger.Debug("Archive generation initiated", "archiveID", archiveID, "repository", sourceRepoFullName)
+
+	// Wait for migration archive export to complete
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "waiting for archive export", time.Now(), attemptStartTime)
+
+	// Use longer polling intervals for archive export status checks
+	pollInterval := 15 * time.Second
+	exportStartTime := time.Now()
+
+	// Poll for archive export completion
+	for {
+		select {
+		case <-ctx.Done():
+			errMsg := fmt.Sprintf("archive export cancelled: %v", ctx.Err())
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+			return ctx.Err()
+		case <-time.After(pollInterval):
+			// Continue polling
+		}
+
+		// Check archive export status
+		status, err := githubAPI.GetMigrationArchiveStatus(ctx, archiveID, req.SourceOrg)
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to get archive export status: %v", err)
+			qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+			return fmt.Errorf("failed to get archive export status: %w", err)
+		}
+
+		elapsedExport := time.Since(exportStartTime)
+		qmi.logger.Debug("Archive export status",
+			"status", status,
+			"repository", sourceRepoFullName,
+			"elapsed", elapsedExport.String(),
+		)
+
+		// Update status message with current state and wait time
+		qmi.migrator.updateStatus(
+			sourceRepoFullName,
+			payload.StatusInProgress,
+			fmt.Sprintf("waiting for archive export (status: %s, elapsed: %s)", status, elapsedExport.Round(time.Second)),
+			time.Now(),
+			attemptStartTime,
+		)
+
+		// Check status and take appropriate action
+		switch status {
+		case "exported":
+			// Get archive URL
+			archiveURL, err := githubAPI.GetMigrationArchiveURL(ctx, archiveID, req.SourceOrg)
+			if err != nil {
+				errMsg := fmt.Sprintf("failed to get archive URL: %v", err)
+				qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+				return fmt.Errorf("failed to get archive URL: %w", err)
+			}
+			qmi.logger.Debug("Archive URL retrieved", "repository", sourceRepoFullName)
+
+			// Store the archive URL in the request data for the migration phase
+			req.ArchiveURL = archiveURL
+
+			// Enqueue the migration job (second phase)
+			err = qmi.queueManager.EnqueueMigrationJob(sourceRepoFullName, req, job.Priority)
+			if err != nil {
+				errMsg := fmt.Sprintf("Failed to enqueue migration job: %v", err)
+				qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+				return err
+			}
+
+			return nil
+
+		case "failed":
+			failureMsg := fmt.Sprintf("migration archive export failed with state: %s", status)
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, failureMsg, time.Now(), attemptStartTime)
+			return fmt.Errorf("%s", failureMsg)
+
+		case "pending", "exporting":
+			// Continue polling - no additional logging needed as we already logged status above
+			continue
+
+		default:
+			qmi.logger.Warn("Unknown archive export status",
+				"status", status,
+				"repository", sourceRepoFullName,
+				"archiveID", archiveID,
+			)
+			continue
+		}
+	}
 }
 
 // handleMigrationJob processes a migration job
