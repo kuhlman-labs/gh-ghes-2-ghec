@@ -17,6 +17,7 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/queue"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/storage"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/tracing"
 	"go.opentelemetry.io/otel/trace"
@@ -34,6 +35,7 @@ type Migrator struct {
 	config        *config.Config
 	httpClient    *http.Client
 	traceProvider trace.TracerProvider
+	queueManager  *QueueManagerIntegration // New field for queue manager integration
 }
 
 // NewMigrator creates a new Migrator instance.
@@ -78,6 +80,18 @@ func NewMigrator(
 			// Depending on policy, might want to halt or continue with an empty in-memory state.
 		}
 	}
+
+	// Initialize queue manager if enabled in config
+	if cfg != nil && cfg.Queue.Enabled {
+		m.queueManager = NewQueueManagerIntegration(m, logger, cfg)
+		logger.Info("Queue manager integration initialized",
+			"max_queue_size", cfg.Queue.MaxQueueSize,
+			"max_archive_threads", cfg.Queue.MaxArchiveThreads,
+			"max_migration_threads", cfg.Queue.MaxMigrationThreads)
+	} else {
+		logger.Info("Queue manager is disabled in configuration")
+	}
+
 	return m
 }
 
@@ -127,6 +141,28 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 		"target_org", req.TargetOrg,
 		"repo_count", len(req.Repositories),
 	)
+
+	// If queue manager is enabled, use it
+	if m.queueManager != nil && m.config.Queue.Enabled {
+		m.logger.Info("Using queue manager for migration",
+			"source_org", req.SourceOrg,
+			"target_org", req.TargetOrg,
+			"repo_count", len(req.Repositories))
+
+		// First, ensure the queue manager is started
+		if m.queueManager != nil {
+			m.queueManager.Start()
+		}
+
+		// Enqueue the migration with default priority
+		return m.queueManager.EnqueueMigration(ctx, req, m.config.Queue.DefaultPriority)
+	}
+
+	// Fall back to the original direct migration if queueing is disabled
+	m.logger.Info("Queue manager is disabled, using direct migration approach",
+		"source_org", req.SourceOrg,
+		"target_org", req.TargetOrg,
+		"repo_count", len(req.Repositories))
 
 	var wg sync.WaitGroup
 	var multiErr *multierror.Error
@@ -393,6 +429,12 @@ func (m *Migrator) GetAllMigrationStatuses() map[string]*payload.MigrationStatus
 // Close handles graceful shutdown of the migrator, such as closing storage connections.
 func (m *Migrator) Close() error {
 	m.logger.Info("Closing migrator...")
+
+	// Stop the queue manager if it's running
+	if m.queueManager != nil {
+		m.queueManager.Stop()
+	}
+
 	if m.storage != nil {
 		if err := m.storage.Close(); err != nil {
 			return fmt.Errorf("failed to close storage: %w", err)
@@ -553,7 +595,29 @@ func (m *Migrator) RetryMigration(ctx context.Context, sourceRepoFullName string
 		Repositories: []string{repoName},
 	}
 
-	// 7. Start the migration in a new goroutine with a detached context
+	// 7. If queue manager is enabled, use it for the retry
+	if m.queueManager != nil && m.config.Queue.Enabled {
+		m.logger.Info("Using queue manager for retry migration", "repository", sourceRepoFullName)
+
+		// Create a truly detached background context with no parent timeouts or deadlines
+		migrationCtx := context.Background()
+
+		// Add correlation ID for tracking
+		if id := logging.GetCorrelationID(ctx); id != "" {
+			migrationCtx = context.WithValue(migrationCtx, logging.KeyCorrelationID, id)
+		}
+
+		// Use a higher priority for retries to ensure they're processed before new migrations
+		retryPriority := m.config.Queue.DefaultPriority + 10
+		if retryPriority > queue.PriorityHigh {
+			retryPriority = queue.PriorityHigh
+		}
+
+		// Enqueue the retry with higher priority
+		return m.queueManager.EnqueueMigration(migrationCtx, req, retryPriority)
+	}
+
+	// 7. Start the migration in a new goroutine with a detached context (direct mode)
 	go func(rfn string, startTime time.Time) {
 		// Create a truly detached background context with no parent timeouts or deadlines
 		migrationCtx := context.Background()
@@ -583,4 +647,26 @@ func (m *Migrator) RetryMigration(ctx context.Context, sourceRepoFullName string
 
 	m.logger.Info("Migration retry initiated successfully", "repository", sourceRepoFullName)
 	return nil
+}
+
+// GetQueueStats retrieves statistics about the migration queue
+// if queue manager is enabled.
+func (m *Migrator) GetQueueStats() map[string]interface{} {
+	if m.queueManager == nil || !m.config.Queue.Enabled {
+		return map[string]interface{}{
+			"queue_enabled": false,
+		}
+	}
+
+	stats := m.queueManager.GetQueueStats()
+	stats["queue_enabled"] = true
+	return stats
+}
+
+// GetQueuedRepositories returns a slice of repository names currently queued (waiting for a worker)
+func (m *Migrator) GetQueuedRepositories() []string {
+	if m.queueManager != nil && m.config.Queue.Enabled {
+		return m.queueManager.GetQueuedRepositories()
+	}
+	return []string{}
 }

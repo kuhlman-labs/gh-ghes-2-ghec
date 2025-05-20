@@ -22,6 +22,7 @@ type MigrationRequest struct {
 	GHCloudToken string   `json:"gh_cloud_token"`         // Token for GitHub Enterprise Cloud
 	MaxDuration  string   `json:"max_duration,omitempty"` // Optional maximum duration for the migration (e.g., "24h", "48h")
 	UseGHOS      bool     `json:"use_ghos,omitempty"`     // Use GitHub Owned Storage (GHOS) for migration archives
+	ArchiveURL   string   `json:"archive_url,omitempty"`  // URL of the generated migration archive
 }
 
 // Validate performs comprehensive validation of the migration request.

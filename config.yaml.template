@@ -49,6 +49,15 @@ storage:
   table_prefix: ""                    # Optional prefix for database table names (useful for shared databases)
   timeout: 120                        # Database operation timeout in seconds 
 
+### Queue Configuration ###
+queue:
+  enabled: true                       # Enable smart queueing system for migrations
+  max_queue_size: 1000               # Maximum number of jobs that can be queued
+  max_archive_threads: 5             # Maximum number of concurrent archive generations (GitHub limit)
+  max_migration_threads: 10          # Maximum number of concurrent migrations (GitHub limit)
+  default_priority: 50               # Default priority for new migration jobs (10-100)
+  queue_stats_interval: 300          # Interval in seconds for logging queue statistics
+
 ### GitHub Client Configuration ###
 github:
   ghes_base_url: ""                   # GitHub Enterprise Server base URL (e.g., https://github.example.com/api/v3/)
