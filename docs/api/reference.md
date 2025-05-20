@@ -314,4 +314,134 @@ Retry-After: 30
   "timestamp": "2023-05-16T14:45:30Z",
   "request_id": "7f8d9e2a-1b3c-4d5e-6f7g-8h9i0j1k2l3m"
 }
-``` 
+```
+
+## Queue Management
+
+The migration server implements a smart queueing system that respects GitHub's concurrency limits. The following endpoints provide information about the queue status and configuration.
+
+### Get Queue Statistics
+
+Retrieves current statistics about the migration queue.
+
+```
+GET /api/queue/stats
+```
+
+#### Response
+
+```json
+{
+  "queue_enabled": true,
+  "queue_size": 5,
+  "max_queue_size": 1000,
+  "active_archive_generations": 3,
+  "max_archive_generations": 5,
+  "active_migrations": 7,
+  "max_migration_threads": 10,
+  "default_priority": 50
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `queue_enabled` | boolean | Whether the queue system is enabled |
+| `queue_size` | integer | Current number of jobs in the queue |
+| `max_queue_size` | integer | Maximum number of jobs that can be queued |
+| `active_archive_generations` | integer | Current number of active archive generations |
+| `max_archive_generations` | integer | Maximum number of concurrent archive generations (GitHub limit: 5) |
+| `active_migrations` | integer | Current number of active migrations |
+| `max_migration_threads` | integer | Maximum number of concurrent migrations (GitHub limit: 10) |
+| `default_priority` | integer | Default priority for new migration jobs |
+
+#### Status Codes
+
+| Status Code | Description |
+|-------------|-------------|
+| 200 | Success |
+| 500 | Server error |
+
+### Queue Configuration
+
+The queue system can be configured through the server's configuration file (`config.yaml`). The following settings are available:
+
+```yaml
+queue:
+  enabled: true                    # Whether to enable the queue system
+  max_queue_size: 1000            # Maximum number of jobs that can be queued
+  max_archive_threads: 5          # Maximum number of concurrent archive generations
+  max_migration_threads: 10       # Maximum number of concurrent migrations
+  default_priority: 50            # Default priority for new migration jobs
+  queue_stats_interval: 300       # Interval in seconds for logging queue stats
+```
+
+### Queue Priority Levels
+
+The queue system supports three priority levels:
+
+| Priority | Value | Description |
+|----------|-------|-------------|
+| High | 100 | Used for retry operations and critical migrations |
+| Medium | 50 | Default priority for new migrations |
+| Low | 10 | Used for non-critical migrations |
+
+### Queue Behavior
+
+1. **Archive Generation**:
+   - Limited to 5 concurrent archive generations (GitHub's limit)
+   - Additional requests are queued and processed in priority order
+   - Archive generation is the first phase of the migration process
+
+2. **Migration Processing**:
+   - Limited to 10 concurrent migrations (GitHub's limit)
+   - Migrations are queued after archive generation completes
+   - Higher priority jobs are processed first
+   - Within the same priority level, jobs are processed in FIFO order
+
+3. **Retry Operations**:
+   - Failed migrations can be retried with higher priority
+   - Retry operations automatically get priority over new migrations
+   - Previous failed attempts are archived for reference
+
+4. **Queue Limits**:
+   - When the queue is full (reaches max_queue_size), new requests are rejected
+   - The server returns a 429 Too Many Requests response when the queue is full
+   - Clients should implement backoff and retry logic when receiving 429 responses
+
+### Error Handling
+
+When the queue is full or encounters issues, the following error responses may be returned:
+
+```json
+{
+  "status": "error",
+  "message": "Queue is full",
+  "code": 429,
+  "timestamp": "2023-05-16T14:45:30Z",
+  "request_id": "7f8d9e2a-1b3c-4d5e-6f7g-8h9i0j1k2l3m"
+}
+```
+
+### Best Practices
+
+1. **Monitoring Queue Status**:
+   - Regularly check queue statistics to monitor system load
+   - Implement alerts for queue size approaching limits
+   - Monitor active archive generations and migrations
+
+2. **Handling Queue Full Errors**:
+   - Implement exponential backoff when receiving 429 responses
+   - Consider implementing a client-side queue for retries
+   - Monitor queue statistics to predict when to retry
+
+3. **Priority Usage**:
+   - Use high priority sparingly for critical migrations
+   - Default to medium priority for most migrations
+   - Use low priority for non-critical or background migrations
+
+4. **Rate Limiting**:
+   - Consider the queue system when implementing rate limiting
+   - Monitor both queue size and API rate limits
+   - Implement appropriate backoff strategies
