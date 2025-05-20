@@ -44,6 +44,32 @@
         </div>
     </div>
 
+    {{if .QueueStats.queue_enabled}}
+    <div class="queue-stats-section">
+        <h3 class="section-title">Queue Statistics</h3>
+        <div class="dashboard-stats queue-stats" 
+             hx-get="/dashboard/queue-stats" 
+             hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
+             hx-swap="innerHTML">
+            <div class="stat-card">
+                <h3>Queue Size</h3>
+                <span class="stat-value">{{ .QueueStats.queue_size }}</span>
+                <span class="stat-label">/ {{ .QueueStats.max_queue_size }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Active Archives</h3>
+                <span class="stat-value">{{ .QueueStats.active_archive_generations }}</span>
+                <span class="stat-label">/ {{ .QueueStats.max_archive_generations }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Active Migrations</h3>
+                <span class="stat-value">{{ .QueueStats.active_migrations }}</span>
+                <span class="stat-label">/ {{ if .QueueStats.max_migration_threads }}{{ .QueueStats.max_migration_threads }}{{ else }}10{{ end }}</span>
+            </div>
+        </div>
+    </div>
+    {{end}}
+
     <div class="active-migrations-section">
         <h3 class="section-title">Active Migrations</h3>
         <div class="table-controls">

@@ -21,6 +21,9 @@ A server application that provides an HTTP API for migrating repositories from G
 - Failed migration retry functionality via both API and UI
 - Concurrent migration support
 - Works with GHOS based migrations
+- Smart queueing system with priority-based processing
+- Respects GitHub's concurrency limits (5 archives, 10 migrations)
+- Queue statistics and metrics via Prometheus
 
 ## Dashboard
 
@@ -33,6 +36,7 @@ The migration server includes a web-based dashboard for monitoring and managing 
 - **Detailed Progress**: Track each migration stage with visual progress indicators
 - **Self-service Form**: Submit new migrations directly through the web UI without constructing API requests
 - **Historical Data**: Access past migration records when storage is enabled
+- **Queue Management**: Monitor and manage the migration queue with priority controls
 
 ## Prerequisites
 
@@ -155,6 +159,7 @@ Detailed documentation is available in the `docs/` directory:
 
 - **Storage & Management**
   - [Storage Options](docs/storage.md)
+  - [Queue Implementation](docs/queue.md)
 
 ## License
 
