@@ -215,7 +215,10 @@ func setupServer() (*server.Server, error) {
 	)
 
 	// Create server
-	s := server.New(cfg, m)
+	s, err := server.New(cfg, m)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create server: %w", err)
+	}
 
 	return s, nil
 }

@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/metrics"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/scheduler"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/tracing"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -33,62 +35,55 @@ type Server struct {
 	config     *config.Config
 	server     *http.Server
 	middleware *Middleware
+	scheduler  *scheduler.Scheduler
+	// dashboard field is left commented until needed in future development
+	// dashboard  *dashboard.Handler
 }
 
-// New creates a new server instance with the provided configuration and migrator.
-// It sets up routes, applies middleware, and configures server timeouts.
-//
-// Parameters:
-//   - cfg: Server configuration including port, timeouts, and rate limits.
-//   - m: The migrator instance that will handle repository migrations.
-//
-// Returns:
-//   - *Server: A configured server ready to handle HTTP requests.
-func New(cfg *config.Config, m *migrator.Migrator) *Server {
-	s := &Server{
-		migrator:   m,
-		logger:     logging.Get(),
-		config:     cfg,
-		middleware: NewMiddleware(),
-	}
+// New creates a new server instance
+func New(cfg *config.Config, m *migrator.Migrator) (*Server, error) {
+	// Initialize logger from config
+	logger := logging.Get()
 
-	// Set up HTTP routes
+	// Create HTTP mux for routing
 	mux := http.NewServeMux()
 
-	// API routes with middleware
-	migrateHandler := s.withMiddleware(http.HandlerFunc(s.handleMigration))
-	statusHandler := s.withMiddleware(http.HandlerFunc(s.handleStatus))
-	healthHandler := s.withMiddleware(http.HandlerFunc(s.handleHealthCheck))
-	retryHandler := s.withMiddleware(http.HandlerFunc(s.handleRetryMigration))
-
-	mux.Handle("/api/migrate", migrateHandler)
-	mux.Handle("/api/status", statusHandler)
-	mux.Handle("/api/healthz", healthHandler)
-	mux.Handle("/api/retry", retryHandler)
-
-	// Add metrics endpoint if enabled
-	if cfg.Metrics.Enabled {
-		mux.Handle(cfg.Metrics.Path, metrics.Handler())
-		s.logger.Info("Metrics endpoint enabled", "path", cfg.Metrics.Path)
-	}
-
-	// Initialize and mount the dashboard if enabled
-	if cfg.Server.Dashboard {
-		if err := s.initDashboard(mux); err != nil {
-			s.logger.Error("Failed to initialize dashboard", "error", err)
-		}
-	}
+	// Middleware instance for this server
+	middleware := NewMiddleware()
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	s.server = &http.Server{
+	srv := &http.Server{
 		Addr:         addr,
 		Handler:      tracing.TraceHTTP(metrics.InstrumentHandler(mux, "server"), "http_request"),
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
-	return s
+	// Create scheduler
+	sched := scheduler.New(m, logger)
+
+	// Initialize server struct
+	s := &Server{
+		server:     srv,
+		migrator:   m,
+		logger:     logger,
+		config:     cfg,
+		middleware: middleware,
+		scheduler:  sched,
+	}
+
+	// Register API handlers
+	s.registerAPIHandlers(mux)
+
+	// Initialize dashboard if enabled
+	if cfg.Server.Dashboard {
+		if err := s.initDashboard(mux); err != nil {
+			return nil, fmt.Errorf("failed to initialize dashboard: %w", err)
+		}
+	}
+
+	return s, nil
 }
 
 // withMiddleware applies all necessary middleware to a handler
@@ -127,6 +122,13 @@ func (s *Server) withMiddleware(handler http.Handler) http.Handler {
 // Start begins listening for HTTP requests on the configured port.
 // It returns an error if the server fails to start.
 func (s *Server) Start() error {
+	// Start the scheduler if enabled in config
+	if s.config.Scheduler.Enabled {
+		s.scheduler.Start(s.config.Scheduler.Interval)
+		s.logger.Info("Migration scheduler started",
+			"interval", s.config.Scheduler.Interval)
+	}
+
 	s.logger.Info("Starting server", "port", s.config.Server.Port)
 	return s.server.ListenAndServe()
 }
@@ -140,6 +142,12 @@ func (s *Server) Start() error {
 // Returns:
 //   - error: An error if the shutdown process fails.
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop the scheduler if it was started
+	if s.scheduler != nil {
+		s.scheduler.Stop()
+		logging.Get().Info("Migration scheduler stopped")
+	}
+
 	s.logger.Info("Shutting down server")
 	// First, shutdown the HTTP server
 	err := s.server.Shutdown(ctx)
@@ -251,7 +259,8 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		"target_org", migrationReq.TargetOrg,
 		"repositories_count", len(migrationReq.Repositories),
 		"delete_if_exists", migrationReq.DeleteIfExists,
-		"use_ghos", migrationReq.UseGHOS)
+		"use_ghos", migrationReq.UseGHOS,
+		"has_scheduled_time", migrationReq.ScheduledTime != nil)
 
 	// Add migration details to span
 	span.SetAttributes(
@@ -269,7 +278,109 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start the migration process in a goroutine
+	// Check if this is a scheduled migration
+	if migrationReq.ScheduledTime != nil {
+		// If scheduler is not enabled, return an error
+		if !s.config.Scheduler.Enabled {
+			errMsg := "cannot schedule migration: scheduler is not enabled"
+			s.writeError(w, r, http.StatusBadRequest, errMsg)
+			tracing.RecordError(ctx, errors.New(errMsg))
+			return
+		}
+
+		// Log the scheduled time for debugging
+		s.logger.Info("Processing scheduled migration request",
+			"scheduled_time_raw", migrationReq.ScheduledTime.Format(time.RFC3339),
+			"current_time", time.Now().Format(time.RFC3339),
+			"time_zone", migrationReq.ScheduledTimeZone)
+
+		// If a timezone is specified, re-interpret the timestamp in that timezone
+		if migrationReq.ScheduledTimeZone != "" {
+			loc, err := time.LoadLocation(migrationReq.ScheduledTimeZone)
+			if err == nil {
+				// Extract the date/time components from the scheduled time
+				year, month, day := migrationReq.ScheduledTime.Date()
+				hour, min, sec := migrationReq.ScheduledTime.Clock()
+
+				// Create a new time in the specified timezone
+				correctedTime := time.Date(year, month, day, hour, min, sec, 0, loc)
+				migrationReq.ScheduledTime = &correctedTime
+
+				s.logger.Info("Reinterpreted scheduled time in specified timezone",
+					"original_time", migrationReq.ScheduledTime.Format(time.RFC3339),
+					"corrected_time", correctedTime.Format(time.RFC3339),
+					"timezone", migrationReq.ScheduledTimeZone)
+			} else {
+				s.logger.Warn("Invalid timezone specified, using UTC for scheduling",
+					"timezone", migrationReq.ScheduledTimeZone,
+					"error", err)
+			}
+		}
+
+		// Adjust the comparison based on the timezone if specified
+		scheduledTimeInLocalTZ := *migrationReq.ScheduledTime
+		currentTime := time.Now()
+
+		// If a timezone is specified, convert both times to that timezone for comparison
+		if migrationReq.ScheduledTimeZone != "" {
+			loc, err := time.LoadLocation(migrationReq.ScheduledTimeZone)
+			if err == nil {
+				// Convert the scheduled time to the specified timezone
+				scheduledTimeInLocalTZ = scheduledTimeInLocalTZ.In(loc)
+				// Get the current time in the specified timezone
+				currentTime = time.Now().In(loc)
+
+				s.logger.Debug("Adjusted times for timezone comparison",
+					"timezone", migrationReq.ScheduledTimeZone,
+					"scheduled_time_in_tz", scheduledTimeInLocalTZ.Format(time.RFC3339),
+					"current_time_in_tz", currentTime.Format(time.RFC3339))
+			} else {
+				s.logger.Warn("Invalid timezone specified, using UTC for comparison",
+					"timezone", migrationReq.ScheduledTimeZone,
+					"error", err)
+			}
+		}
+
+		// Check if scheduled time is in the past
+		if currentTime.After(scheduledTimeInLocalTZ) {
+			timeUntil := scheduledTimeInLocalTZ.Sub(currentTime).String()
+			errMsg := fmt.Sprintf("cannot schedule migration: scheduled time is in the past (scheduled: %s, current: %s, diff: %s)",
+				scheduledTimeInLocalTZ.Format(time.RFC3339),
+				currentTime.Format(time.RFC3339),
+				timeUntil)
+			s.writeError(w, r, http.StatusBadRequest, errMsg)
+			tracing.RecordError(ctx, errors.New(errMsg))
+			return
+		}
+
+		// Schedule the migration instead of starting it immediately
+		err := s.scheduler.ScheduleMigration(&migrationReq)
+		if err != nil {
+			errMsg := fmt.Sprintf("Failed to schedule migration: %v", err)
+			s.writeError(w, r, http.StatusInternalServerError, errMsg)
+			tracing.RecordError(ctx, err)
+			return
+		}
+
+		// Calculate time until scheduled execution
+		timeUntil := scheduledTimeInLocalTZ.Sub(currentTime).String()
+
+		// Return accepted response for scheduled migration
+		response := map[string]interface{}{
+			"status":         "scheduled",
+			"message":        fmt.Sprintf("Migration scheduled for %s", migrationReq.ScheduledTime.Format(time.RFC3339)),
+			"timestamp":      time.Now(),
+			"request_id":     logging.GetCorrelationID(ctx),
+			"repositories":   migrationReq.Repositories,
+			"scheduled_time": migrationReq.ScheduledTime,
+			"scheduled_in":   timeUntil,
+			"time_zone":      migrationReq.ScheduledTimeZone,
+		}
+		s.writeJSON(w, r, http.StatusAccepted, response)
+		return
+	}
+
+	// For immediate migrations (not scheduled), start the migration process in a goroutine
 	go func() {
 		// Create a new background context with cancellation ability
 		bgCtx := logging.ContextWithCorrelationID(context.Background())
@@ -463,4 +574,24 @@ func (s *Server) initDashboard(mux *http.ServeMux) error {
 
 	s.logger.Info("Dashboard initialized", "path", "/")
 	return nil
+}
+
+// registerAPIHandlers registers all API handlers for the server
+func (s *Server) registerAPIHandlers(mux *http.ServeMux) {
+	// API routes with middleware
+	migrateHandler := s.withMiddleware(http.HandlerFunc(s.handleMigration))
+	statusHandler := s.withMiddleware(http.HandlerFunc(s.handleStatus))
+	healthHandler := s.withMiddleware(http.HandlerFunc(s.handleHealthCheck))
+	retryHandler := s.withMiddleware(http.HandlerFunc(s.handleRetryMigration))
+
+	mux.Handle("/api/migrate", migrateHandler)
+	mux.Handle("/api/status", statusHandler)
+	mux.Handle("/api/healthz", healthHandler)
+	mux.Handle("/api/retry", retryHandler)
+
+	// Add metrics endpoint if enabled
+	if s.config.Metrics.Enabled {
+		mux.Handle(s.config.Metrics.Path, metrics.Handler())
+		s.logger.Info("Metrics endpoint enabled", "path", s.config.Metrics.Path)
+	}
 }

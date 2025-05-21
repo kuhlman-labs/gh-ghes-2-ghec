@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/go-github/v70/github"
 	"github.com/shurcooL/githubv4"
 )
 
@@ -361,4 +362,59 @@ func (a *GitHubAPI) CheckCloudRepositoryExists(ctx context.Context, org, repo st
 		"repo", repo,
 	)
 	return true, nil
+}
+
+// GetRepositorySize retrieves the size of a repository in bytes.
+// It returns the size in bytes and an error if the repository doesn't exist or can't be accessed.
+func (a *GitHubAPI) GetRepositorySize(ctx context.Context, org, repo string) (int64, error) {
+	startTime := time.Now()
+	a.logger.Debug("Getting repository size",
+		"api", "GHES_REST",
+		"method", "Repositories.Get",
+		"org", org,
+		"repo", repo,
+	)
+
+	var respStatus int
+	var repository *github.Repository
+
+	err := a.circuitProtectedGhesOperation(ctx, "get_repository_size", func() error {
+		var resp *github.Response
+		var err error
+		repository, resp, err = a.clients.GHESClient.Repositories.Get(ctx, org, repo)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("Failed to get repository size",
+			"api", "GHES_REST",
+			"method", "Repositories.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"repo", repo,
+			"error", err,
+		)
+		return 0, a.classifyGitHubError(err)
+	}
+
+	// GitHub API returns size in KB, so we convert to bytes
+	sizeInBytes := int64(repository.GetSize()) * 1024
+
+	a.logger.Debug("Repository size retrieved successfully",
+		"api", "GHES_REST",
+		"method", "Repositories.Get",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+		"repo", repo,
+		"size_kb", repository.GetSize(),
+		"size_bytes", sizeInBytes,
+	)
+	return sizeInBytes, nil
 }

@@ -6,6 +6,7 @@
             <th>Status</th>
             <th>Stage</th>
             <th>Progress</th>
+            <th>Size</th>
             <th>Started</th>
             <th>Duration</th>
             <th>Actions</th>
@@ -14,7 +15,7 @@
     <tbody>
         {{if eq (len .Migrations) 0}}
         <tr>
-            <td colspan="7" class="empty-state">
+            <td colspan="8" class="empty-state">
                 <p>No active migrations found</p>
                 <p>Completed migrations can be viewed in the <a href="/dashboard/history">History</a> page</p>
             </td>
@@ -39,6 +40,14 @@
                     <div class="progress-value" data-progress="{{.Progress}}"></div>
                 </div>
                 <span class="progress-text">{{.Progress}}%</span>
+            </td>
+            <td>
+                {{if .RepositorySize}}
+                <span class="size-badge size-{{.SizeCategory}}">{{.SizeCategory}}</span>
+                {{printf "%.1f MB" (divFloat .RepositorySize 1048576)}}
+                {{else}}
+                -
+                {{end}}
             </td>
             <td>{{.StartedAt | FormatTime}}</td>
             <td>{{.Duration | FormatDuration}}</td>

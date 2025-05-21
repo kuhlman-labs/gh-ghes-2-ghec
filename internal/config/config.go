@@ -35,8 +35,9 @@ type Config struct {
 		Path        string `mapstructure:"path"`
 		ServiceName string `mapstructure:"service_name"`
 	} `mapstructure:"metrics"`
-	Storage StorageConfig `mapstructure:"storage"`
-	Queue   QueueConfig   `mapstructure:"queue"`
+	Storage   StorageConfig   `mapstructure:"storage"`
+	Queue     QueueConfig     `mapstructure:"queue"`
+	Scheduler SchedulerConfig `mapstructure:"scheduler"`
 }
 
 // ServerConfig holds server-specific configuration options.
@@ -104,6 +105,14 @@ type QueueConfig struct {
 	QueueStatsInterval  int  `mapstructure:"queue_stats_interval"`  // Interval in seconds for logging queue stats
 }
 
+// SchedulerConfig holds scheduler-specific configuration.
+// It defines parameters for the repository migration scheduler.
+type SchedulerConfig struct {
+	Enabled    bool          `mapstructure:"enabled"`
+	Interval   time.Duration `mapstructure:"interval"`
+	MaxWorkers int           `mapstructure:"max_workers"`
+}
+
 // ConfigForWriting is used to serialize config to YAML.
 // It contains a simplified representation of the Config struct
 // suitable for writing to a configuration file.
@@ -152,6 +161,11 @@ type ConfigForWriting struct {
 		DefaultPriority     int  `yaml:"default_priority"`
 		QueueStatsInterval  int  `yaml:"queue_stats_interval"`
 	} `yaml:"queue"`
+	Scheduler struct {
+		Enabled    bool `yaml:"enabled"`
+		Interval   int  `yaml:"interval"`
+		MaxWorkers int  `yaml:"max_workers"`
+	} `yaml:"scheduler"`
 }
 
 // Default configuration constants
@@ -334,6 +348,11 @@ func CreateDefaultConfig() *Config {
 			DefaultPriority:     defaultQueuePriority,
 			QueueStatsInterval:  defaultQueueStatsInterval,
 		},
+		Scheduler: SchedulerConfig{
+			Enabled:    true,
+			Interval:   defaultTimeout,
+			MaxWorkers: 10,
+		},
 	}
 }
 
@@ -370,6 +389,9 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Queue.MaxMigrationThreads = cfg.Queue.MaxMigrationThreads
 	writeCfg.Queue.DefaultPriority = cfg.Queue.DefaultPriority
 	writeCfg.Queue.QueueStatsInterval = cfg.Queue.QueueStatsInterval
+	writeCfg.Scheduler.Enabled = cfg.Scheduler.Enabled
+	writeCfg.Scheduler.Interval = int(cfg.Scheduler.Interval.Seconds())
+	writeCfg.Scheduler.MaxWorkers = cfg.Scheduler.MaxWorkers
 
 	return writeCfg
 }

@@ -136,3 +136,12 @@ func (n *NoopAPI) GetGHCloudRateLimit(ctx context.Context) (*RateLimitInfo, erro
 		Used:      50,
 	}, nil
 }
+
+// GetRepositorySize is a no-op implementation that logs the call and returns a dummy repository size.
+func (n *NoopAPI) GetRepositorySize(ctx context.Context, org, repo string) (int64, error) {
+	n.logger.Debug("NoopAPI: GetRepositorySize called, returning placeholder value",
+		"org", org,
+		"repo", repo)
+	// Return a medium-sized repository (50MB) for testing purposes
+	return 50 * 1024 * 1024, nil
+}

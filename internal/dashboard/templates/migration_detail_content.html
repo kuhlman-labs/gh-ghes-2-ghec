@@ -42,6 +42,19 @@
                     <td>{{.Migration.Repository}}</td>
                 </tr>
                 <tr>
+                    <th>Target Organization</th>
+                    <td>{{if .Migration.TargetOrg}}{{.Migration.TargetOrg}}{{else}}-{{end}}</td>
+                </tr>
+                <tr>
+                    <th>Repository Size</th>
+                    <td>
+                        {{if .Migration.RepositorySize}}
+                        <span class="size-badge size-{{.Migration.SizeCategory}}">{{.Migration.SizeCategory}}</span>
+                        {{printf "%.2f MB" (divFloat .Migration.RepositorySize 1048576)}}
+                        {{else}}-{{end}}
+                    </td>
+                </tr>
+                <tr>
                     <th>Started At</th>
                     <td>{{.Migration.StartedAt | FormatDateTime}}</td>
                 </tr>

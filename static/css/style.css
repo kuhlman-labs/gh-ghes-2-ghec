@@ -1,0 +1,26 @@
+/* Repository size badges */
+.size-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+    margin-right: 8px;
+    color: white;
+}
+
+.size-Small {
+    background-color: #4caf50; /* Green */
+}
+
+.size-Medium {
+    background-color: #2196f3; /* Blue */
+}
+
+.size-Large {
+    background-color: #ff9800; /* Orange */
+}
+
+.size-ExtraLarge {
+    background-color: #f44336; /* Red */
+} 

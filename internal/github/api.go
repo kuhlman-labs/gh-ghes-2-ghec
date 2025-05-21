@@ -29,6 +29,7 @@ type API interface {
 	UploadArchiveToGHOS(ctx context.Context, databaseID int64, archiveURL, archiveName, ghCloudToken string) (string, error)
 	GetGHESRateLimit(ctx context.Context) (*RateLimitInfo, error)
 	GetGHCloudRateLimit(ctx context.Context) (*RateLimitInfo, error)
+	GetRepositorySize(ctx context.Context, org, repo string) (int64, error)
 }
 
 // GitHubAPI handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.
