@@ -40,7 +40,8 @@ func TestNewServer(t *testing.T) {
 	}
 	m := &migrator.Migrator{}
 
-	server := New(cfg, m)
+	server, err := New(cfg, m)
+	require.NoError(t, err, "Failed to create server")
 	assert.NotNil(t, server)
 	assert.Equal(t, cfg, server.config)
 	assert.Equal(t, m, server.migrator)
@@ -289,7 +290,8 @@ func TestMetricsEndpoint(t *testing.T) {
 	githubAPI := github.NewNoopAPI(logger)
 	storageProvider := &storage.NoopStorage{}
 	m := migrator.NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
-	server := New(cfg, m)
+	server, err := New(cfg, m)
+	require.NoError(t, err, "Failed to create server")
 
 	// Test that metrics endpoint is mounted
 	assert.NotNil(t, server.server.Handler)
@@ -321,7 +323,8 @@ func TestDashboardInitialization(t *testing.T) {
 	githubAPI := github.NewNoopAPI(logger)
 	storageProvider := &storage.NoopStorage{}
 	m := migrator.NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
-	server := New(cfg, m)
+	server, err := New(cfg, m)
+	require.NoError(t, err, "Failed to create server")
 
 	// Test that server was created successfully
 	assert.NotNil(t, server.server.Handler)
@@ -364,5 +367,7 @@ func setupTestServer(t *testing.T) *Server {
 	storageProvider := &storage.NoopStorage{}
 	m := migrator.NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
 
-	return New(cfg, m)
+	server, err := New(cfg, m)
+	require.NoError(t, err, "Failed to create test server")
+	return server
 }

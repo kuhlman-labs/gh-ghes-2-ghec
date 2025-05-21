@@ -24,6 +24,13 @@ type MigrationRequest struct {
 	UseGHOS        bool     `json:"use_ghos,omitempty"`     // Use GitHub Owned Storage (GHOS) for migration archives
 	ArchiveURL     string   `json:"archive_url,omitempty"`  // URL of the generated migration archive
 	DeleteIfExists bool     `json:"delete_if_exists"`       // Delete repository in target org if it already exists - ensure no omitempty
+
+	// Scheduling Parameters
+	ScheduledTime      *time.Time `json:"scheduled_time,omitempty"`       // Time at which to run the migration
+	ScheduledTimeZone  string     `json:"scheduled_time_zone,omitempty"`  // Time zone for scheduled time (IANA format, e.g., "America/New_York")
+	ScheduledDaysOnly  []string   `json:"scheduled_days_only,omitempty"`  // Restrict to specific days of the week (e.g., ["Monday", "Wednesday", "Friday"])
+	ScheduledTimeStart string     `json:"scheduled_time_start,omitempty"` // Daily time window start (e.g., "22:00")
+	ScheduledTimeEnd   string     `json:"scheduled_time_end,omitempty"`   // Daily time window end (e.g., "06:00")
 }
 
 // Validate performs comprehensive validation of the migration request.
@@ -76,6 +83,49 @@ func (r *MigrationRequest) Validate() error {
 		}
 	}
 
+	// Validate scheduling parameters if provided
+	if r.ScheduledTime != nil {
+		// Validate time zone if provided
+		if r.ScheduledTimeZone != "" {
+			_, err := time.LoadLocation(r.ScheduledTimeZone)
+			if err != nil {
+				return fmt.Errorf("scheduled_time_zone: invalid time zone: %w", err)
+			}
+		}
+
+		// Validate day names if provided
+		if len(r.ScheduledDaysOnly) > 0 {
+			validDays := map[string]bool{
+				"Sunday":    true,
+				"Monday":    true,
+				"Tuesday":   true,
+				"Wednesday": true,
+				"Thursday":  true,
+				"Friday":    true,
+				"Saturday":  true,
+			}
+
+			for _, day := range r.ScheduledDaysOnly {
+				if !validDays[day] {
+					return fmt.Errorf("scheduled_days_only: invalid day name: %s", day)
+				}
+			}
+		}
+
+		// Validate time windows if provided
+		if r.ScheduledTimeStart != "" {
+			if _, err := time.Parse("15:04", r.ScheduledTimeStart); err != nil {
+				return fmt.Errorf("scheduled_time_start: invalid time format (use 24-hour format, e.g., '22:00'): %w", err)
+			}
+		}
+
+		if r.ScheduledTimeEnd != "" {
+			if _, err := time.Parse("15:04", r.ScheduledTimeEnd); err != nil {
+				return fmt.Errorf("scheduled_time_end: invalid time format (use 24-hour format, e.g., '06:00'): %w", err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -106,28 +156,42 @@ func (r *MigrationRequest) GetGHESGraphQLURL() string {
 	return baseURL + "/api/graphql"
 }
 
+// RepositorySizeCategory represents a T-shirt size for repository size
+type RepositorySizeCategory string
+
+// Repository size categories using T-shirt sizes
+const (
+	SizeSmall      RepositorySizeCategory = "Small"      // < 10MB
+	SizeMedium     RepositorySizeCategory = "Medium"     // < 100MB
+	SizeLarge      RepositorySizeCategory = "Large"      // < 1GB
+	SizeExtraLarge RepositorySizeCategory = "ExtraLarge" // > 1GB
+)
+
 // MigrationStatus represents the status of a repository migration process.
 // It contains detailed information about the migration progress, including
 // current stage, state, timing, and progress metrics.
 type MigrationStatus struct {
-	Repository        string        `json:"repository"`
-	Status            string        `json:"status"`
-	Error             string        `json:"error,omitempty"`
-	UpdatedAt         time.Time     `json:"updated_at"`
-	Stage             string        `json:"stage,omitempty"`               // Current stage of the migration process
-	State             string        `json:"state,omitempty"`               // Current state within the stage
-	StartedAt         time.Time     `json:"started_at,omitempty"`          // When the migration was started
-	Duration          time.Duration `json:"duration_seconds,omitempty"`    // How long the migration took to complete
-	MigrationID       string        `json:"migration_id,omitempty"`        // GitHub migration ID when available
-	Progress          int           `json:"progress,omitempty"`            // Overall progress percentage (0-100)
-	StageProgress     int           `json:"stage_progress,omitempty"`      // Progress percentage within current stage (0-100)
-	CompletedStages   []string      `json:"completed_stages,omitempty"`    // List of completed stages
-	TotalStages       int           `json:"total_stages,omitempty"`        // Total number of stages in the migration process
-	CurrentStageIndex int           `json:"current_stage_index,omitempty"` // Index of current stage (1-based)
-	TargetOrg         string        `json:"target_org,omitempty"`          // Target organization for the migration
-	GHESBaseURL       string        `json:"ghes_base_url,omitempty"`       // GitHub Enterprise Server base URL
-	UseGHOS           bool          `json:"use_ghos,omitempty"`            // Whether GitHub Owned Storage is used
-	DeleteIfExists    bool          `json:"delete_if_exists,omitempty"`    // Whether to delete existing repos in target org
+	Repository        string                 `json:"repository"`
+	Status            string                 `json:"status"`
+	Error             string                 `json:"error,omitempty"`
+	UpdatedAt         time.Time              `json:"updated_at"`
+	Stage             string                 `json:"stage,omitempty"`               // Current stage of the migration process
+	State             string                 `json:"state,omitempty"`               // Current state within the stage
+	StartedAt         time.Time              `json:"started_at,omitempty"`          // When the migration was started
+	Duration          time.Duration          `json:"duration_seconds,omitempty"`    // How long the migration took to complete
+	MigrationID       string                 `json:"migration_id,omitempty"`        // GitHub migration ID when available
+	Progress          int                    `json:"progress,omitempty"`            // Overall progress percentage (0-100)
+	StageProgress     int                    `json:"stage_progress,omitempty"`      // Progress percentage within current stage (0-100)
+	CompletedStages   []string               `json:"completed_stages,omitempty"`    // List of completed stages
+	TotalStages       int                    `json:"total_stages,omitempty"`        // Total number of stages in the migration process
+	CurrentStageIndex int                    `json:"current_stage_index,omitempty"` // Index of current stage (1-based)
+	TargetOrg         string                 `json:"target_org,omitempty"`          // Target organization for the migration
+	GHESBaseURL       string                 `json:"ghes_base_url,omitempty"`       // GitHub Enterprise Server base URL
+	UseGHOS           bool                   `json:"use_ghos,omitempty"`            // Whether GitHub Owned Storage is used
+	DeleteIfExists    bool                   `json:"delete_if_exists,omitempty"`    // Whether to delete existing repos in target org
+	ScheduledTime     *time.Time             `json:"scheduled_time,omitempty"`      // Time when migration is scheduled to run
+	RepositorySize    int64                  `json:"repository_size,omitempty"`     // Size of the repository in bytes
+	SizeCategory      RepositorySizeCategory `json:"size_category,omitempty"`       // T-shirt size category (Small, Medium, Large, ExtraLarge)
 }
 
 // MigrationStages defines the sequential stages in the migration process.
@@ -145,4 +209,19 @@ const (
 	StatusInProgress = "in_progress" // Migration is currently in progress
 	StatusSucceeded  = "succeeded"   // Migration completed successfully
 	StatusFailed     = "failed"      // Migration failed
+	StatusScheduled  = "scheduled"   // Migration is scheduled for future execution
 )
+
+// GetSizeCategory returns the appropriate T-shirt size category based on the repository size in bytes
+func GetSizeCategory(sizeInBytes int64) RepositorySizeCategory {
+	switch {
+	case sizeInBytes < 10*1024*1024: // < 10MB
+		return SizeSmall
+	case sizeInBytes < 100*1024*1024: // < 100MB
+		return SizeMedium
+	case sizeInBytes < 1024*1024*1024: // < 1GB
+		return SizeLarge
+	default: // >= 1GB
+		return SizeExtraLarge
+	}
+}

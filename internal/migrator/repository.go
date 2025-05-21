@@ -100,6 +100,35 @@ func (m *Migrator) prepareForMigration(
 	m.logger.Info("Source repository validated successfully",
 		"repo", sourceRepoFullName)
 
+	// Retrieve repository size for estimation
+	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "estimating repository size", time.Now(), attemptStartTime)
+	repoSize, err := githubAPI.GetRepositorySize(ctx, req.SourceOrg, sourceRepoName)
+	if err != nil {
+		// Log the error but continue with the migration - size estimation is not critical
+		m.logger.Warn("Failed to get repository size",
+			"repo", sourceRepoFullName,
+			"error", err)
+	} else {
+		sizeCategory := payload.GetSizeCategory(repoSize)
+		m.logger.Info("Repository size retrieved",
+			"repo", sourceRepoFullName,
+			"size_bytes", repoSize,
+			"size_category", sizeCategory)
+
+		// Update the migration status with the repository size information
+		m.mu.Lock()
+		if status, exists := m.migrations[sourceRepoFullName]; exists {
+			status.RepositorySize = repoSize
+			status.SizeCategory = sizeCategory
+		}
+		m.mu.Unlock()
+
+		// Update status to show the size information to the user
+		m.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+			fmt.Sprintf("repository size: %s (%.2f MB)", sizeCategory, float64(repoSize)/(1024*1024)),
+			time.Now(), attemptStartTime)
+	}
+
 	// Check if repository exists in the target organization
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "checking if repository exists in target organization", time.Now(), attemptStartTime)
 	exists, err := githubAPI.CheckCloudRepositoryExists(ctx, req.TargetOrg, sourceRepoName)

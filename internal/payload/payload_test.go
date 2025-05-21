@@ -282,3 +282,222 @@ func TestMigrationStatus(t *testing.T) {
 	assert.Equal(t, 4, status.TotalStages)
 	assert.Equal(t, 2, status.CurrentStageIndex)
 }
+
+func TestGetSizeCategory(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int64
+		expected RepositorySizeCategory
+	}{
+		{
+			name:     "Small 0 bytes",
+			size:     0,
+			expected: SizeSmall,
+		},
+		{
+			name:     "Small 5MB",
+			size:     5 * 1024 * 1024,
+			expected: SizeSmall,
+		},
+		{
+			name:     "Small boundary",
+			size:     10*1024*1024 - 1,
+			expected: SizeSmall,
+		},
+		{
+			name:     "Medium at boundary",
+			size:     10 * 1024 * 1024,
+			expected: SizeMedium,
+		},
+		{
+			name:     "Medium 50MB",
+			size:     50 * 1024 * 1024,
+			expected: SizeMedium,
+		},
+		{
+			name:     "Medium boundary",
+			size:     100*1024*1024 - 1,
+			expected: SizeMedium,
+		},
+		{
+			name:     "Large at boundary",
+			size:     100 * 1024 * 1024,
+			expected: SizeLarge,
+		},
+		{
+			name:     "Large 500MB",
+			size:     500 * 1024 * 1024,
+			expected: SizeLarge,
+		},
+		{
+			name:     "Large boundary",
+			size:     1024*1024*1024 - 1,
+			expected: SizeLarge,
+		},
+		{
+			name:     "Extra Large at boundary",
+			size:     1024 * 1024 * 1024,
+			expected: SizeExtraLarge,
+		},
+		{
+			name:     "Extra Large 2GB",
+			size:     2 * 1024 * 1024 * 1024,
+			expected: SizeExtraLarge,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GetSizeCategory(tt.size)
+			if result != tt.expected {
+				t.Errorf("GetSizeCategory(%d) = %s, want %s", tt.size, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMigrationRequest_ValidateSchedulingParams(t *testing.T) {
+	now := time.Now().Add(time.Hour * 24) // Tomorrow
+
+	tests := []struct {
+		name    string
+		request *MigrationRequest
+		wantErr bool
+	}{
+		{
+			name: "Valid basic request without scheduling",
+			request: &MigrationRequest{
+				SourceOrg:    "source-org",
+				TargetOrg:    "target-org",
+				Repositories: []string{"repo1", "repo2"},
+				GHESBaseURL:  "https://github.example.com",
+				GHESToken:    "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken: "ghp_validtoken1234567890abcdefghijklmno",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Valid scheduled time",
+			request: &MigrationRequest{
+				SourceOrg:     "source-org",
+				TargetOrg:     "target-org",
+				Repositories:  []string{"repo1", "repo2"},
+				GHESBaseURL:   "https://github.example.com",
+				GHESToken:     "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:  "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime: &now,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Valid timezone",
+			request: &MigrationRequest{
+				SourceOrg:         "source-org",
+				TargetOrg:         "target-org",
+				Repositories:      []string{"repo1", "repo2"},
+				GHESBaseURL:       "https://github.example.com",
+				GHESToken:         "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:      "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:     &now,
+				ScheduledTimeZone: "America/New_York",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Invalid timezone",
+			request: &MigrationRequest{
+				SourceOrg:         "source-org",
+				TargetOrg:         "target-org",
+				Repositories:      []string{"repo1", "repo2"},
+				GHESBaseURL:       "https://github.example.com",
+				GHESToken:         "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:      "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:     &now,
+				ScheduledTimeZone: "Invalid/TimeZone",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Valid days of week",
+			request: &MigrationRequest{
+				SourceOrg:         "source-org",
+				TargetOrg:         "target-org",
+				Repositories:      []string{"repo1", "repo2"},
+				GHESBaseURL:       "https://github.example.com",
+				GHESToken:         "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:      "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:     &now,
+				ScheduledDaysOnly: []string{"Monday", "Wednesday", "Friday"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Invalid day of week",
+			request: &MigrationRequest{
+				SourceOrg:         "source-org",
+				TargetOrg:         "target-org",
+				Repositories:      []string{"repo1", "repo2"},
+				GHESBaseURL:       "https://github.example.com",
+				GHESToken:         "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:      "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:     &now,
+				ScheduledDaysOnly: []string{"monday", "Wednesday", "Friday"}, // lowercase not valid
+			},
+			wantErr: true,
+		},
+		{
+			name: "Valid time window",
+			request: &MigrationRequest{
+				SourceOrg:          "source-org",
+				TargetOrg:          "target-org",
+				Repositories:       []string{"repo1", "repo2"},
+				GHESBaseURL:        "https://github.example.com",
+				GHESToken:          "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:       "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:      &now,
+				ScheduledTimeStart: "22:00",
+				ScheduledTimeEnd:   "06:00",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Invalid time window start",
+			request: &MigrationRequest{
+				SourceOrg:          "source-org",
+				TargetOrg:          "target-org",
+				Repositories:       []string{"repo1", "repo2"},
+				GHESBaseURL:        "https://github.example.com",
+				GHESToken:          "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:       "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:      &now,
+				ScheduledTimeStart: "2200", // Invalid format
+				ScheduledTimeEnd:   "06:00",
+			},
+			wantErr: true,
+		},
+		{
+			name: "Invalid time window end",
+			request: &MigrationRequest{
+				SourceOrg:          "source-org",
+				TargetOrg:          "target-org",
+				Repositories:       []string{"repo1", "repo2"},
+				GHESBaseURL:        "https://github.example.com",
+				GHESToken:          "ghp_validtoken1234567890abcdefghijklmno",
+				GHCloudToken:       "ghp_validtoken1234567890abcdefghijklmno",
+				ScheduledTime:      &now,
+				ScheduledTimeStart: "22:00",
+				ScheduledTimeEnd:   "6:00 AM", // Invalid format
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.request.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("MigrationRequest.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

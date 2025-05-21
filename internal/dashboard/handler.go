@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ var templateFS embed.FS
 type Handler struct {
 	templates *template.Template
 	migrator  *migrator.Migrator
+	logger    *slog.Logger
 }
 
 // TemplateData represents the data passed to the templates
@@ -125,6 +127,9 @@ func New(m *migrator.Migrator) (*Handler, error) {
 			}
 			return fmt.Sprintf("%.1f", float64(count)/float64(total)*100)
 		},
+		"divFloat": func(value int64, divisor float64) float64 {
+			return float64(value) / divisor
+		},
 	}
 
 	// Parse templates
@@ -136,6 +141,7 @@ func New(m *migrator.Migrator) (*Handler, error) {
 	return &Handler{
 		templates: tmpl,
 		migrator:  m,
+		logger:    logging.Get(),
 	}, nil
 }
 
@@ -181,7 +187,7 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	}
 
 	// Log the static directory path we're using
-	logging.Get().Info("Static files directory", "path", staticDir)
+	h.logger.Info("Static files directory", "path", staticDir)
 
 	fileServer := http.FileServer(http.Dir(staticDir))
 	mux.Handle("/static/", http.StripPrefix("/static/", fileServer))
@@ -388,7 +394,7 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		// Log the error but don't necessarily fail the entire page load, especially if current status is available.
 		// The template can show an error message for the archive section.
-		logging.Get().Warn("Error fetching archived attempts",
+		h.logger.Warn("Error fetching archived attempts",
 			"repository", repoFullName,
 			"error", err.Error())
 		// Optionally, set an error in TemplateData to display in the template
@@ -565,16 +571,46 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 		repositories[i] = sanitizeInput(repo)
 	}
 
+	// Process scheduling parameters
+	var scheduledTime *time.Time
+	scheduledTimeStr := r.FormValue("scheduled_time")
+	if scheduledTimeStr != "" {
+		t, err := time.Parse("2006-01-02T15:04", scheduledTimeStr)
+		if err == nil {
+			scheduledTime = &t
+		} else {
+			h.logger.Error("Failed to parse scheduled time", "error", err, "input", scheduledTimeStr)
+		}
+	}
+
+	// Get time zone
+	scheduledTimeZone := sanitizeInput(r.FormValue("scheduled_time_zone"))
+
+	// Get day restrictions
+	scheduledDaysOnly := r.Form["scheduled_days_only"]
+	for i, day := range scheduledDaysOnly {
+		scheduledDaysOnly[i] = sanitizeInput(day)
+	}
+
+	// Get time window
+	scheduledTimeStart := sanitizeInput(r.FormValue("scheduled_time_start"))
+	scheduledTimeEnd := sanitizeInput(r.FormValue("scheduled_time_end"))
+
 	// Create migration request
 	migrationReq := &payload.MigrationRequest{
-		SourceOrg:    sourceOrg,
-		TargetOrg:    targetOrg,
-		GHESBaseURL:  ghesBaseURL,
-		GHESToken:    ghesToken,
-		GHCloudToken: ghCloudToken,
-		Repositories: repositories,
-		MaxDuration:  maxDuration,
-		UseGHOS:      useGHOS,
+		SourceOrg:          sourceOrg,
+		TargetOrg:          targetOrg,
+		GHESBaseURL:        ghesBaseURL,
+		GHESToken:          ghesToken,
+		GHCloudToken:       ghCloudToken,
+		Repositories:       repositories,
+		MaxDuration:        maxDuration,
+		UseGHOS:            useGHOS,
+		ScheduledTime:      scheduledTime,
+		ScheduledTimeZone:  scheduledTimeZone,
+		ScheduledDaysOnly:  scheduledDaysOnly,
+		ScheduledTimeStart: scheduledTimeStart,
+		ScheduledTimeEnd:   scheduledTimeEnd,
 	}
 
 	// Validate the request
@@ -828,7 +864,7 @@ func (h *Handler) handleQueueStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Debug log the queue stats
-	logging.Get().Info("Queue stats returned from migrator",
+	h.logger.Info("Queue stats returned from migrator",
 		"queue_size", queueStats["queue_size"],
 		"max_queue_size", queueStats["max_queue_size"],
 		"active_archive_generations", queueStats["active_archive_generations"],
@@ -910,7 +946,7 @@ func (h *Handler) handleRetryForm(w http.ResponseWriter, r *http.Request) {
 
 	// Use the templates to render the retry form
 	if err := h.templates.ExecuteTemplate(w, "retry_form", templateData); err != nil {
-		logging.Get().Error("Failed to render retry form template",
+		h.logger.Error("Failed to render retry form template",
 			"repository", repoPath,
 			"error", err.Error())
 		http.Error(w, "Failed to render retry form", http.StatusInternalServerError)
@@ -999,11 +1035,11 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	if err := h.migrator.RetryMigration(bgCtx, repoPath, ghesToken, ghCloudToken, ghesBaseURL, targetOrg); err != nil {
 		migrationErr = err
 		// Log the error using the structured logger
-		logging.Get().Error("Failed to initiate migration retry",
+		h.logger.Error("Failed to initiate migration retry",
 			"repository", repoPath,
 			"error", err.Error())
 	} else {
-		logging.Get().Info("Migration retry initiated successfully",
+		h.logger.Info("Migration retry initiated successfully",
 			"repository", repoPath)
 	}
 
@@ -1030,7 +1066,7 @@ func (h *Handler) handleRetryMigration(w http.ResponseWriter, r *http.Request) {
 	archivedAttempts, templateErr = h.migrator.GetArchivedMigrationAttempts(repoPath)
 	if templateErr != nil {
 		// Log error but continue - archived attempts are non-critical
-		logging.Get().Warn("Error getting archived attempts",
+		h.logger.Warn("Error getting archived attempts",
 			"repository", repoPath,
 			"error", templateErr.Error())
 	}

@@ -177,12 +177,44 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 
 	// Create a temporary status entry in the migrations map
 	attemptStartTime := time.Now()
+
+	// Initialize with proper stage and state
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "preparation"
+		status.State = "queuing"
+	} else {
+		// Create a new status with proper stage and state
+		initialStatus := &payload.MigrationStatus{
+			Repository:  sourceRepoFullName,
+			Status:      payload.StatusInProgress,
+			StartedAt:   attemptStartTime,
+			UpdatedAt:   attemptStartTime,
+			Stage:       "preparation",
+			State:       "queuing",
+			TotalStages: len(payload.MigrationStages),
+			TargetOrg:   req.TargetOrg,
+			GHESBaseURL: req.GHESBaseURL,
+		}
+		qmi.migrator.migrations[sourceRepoFullName] = initialStatus
+	}
+	qmi.migrator.mu.Unlock()
+
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "pre-enqueue validation", time.Now(), attemptStartTime)
 
 	// 1. Validate that source repository exists
 	qmi.logger.Info("Pre-enqueue validation: checking source repository",
 		"repo", sourceRepoFullName,
 		"delete_if_exists", req.DeleteIfExists)
+
+	// Update state to "validating"
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "preparation"
+		status.State = "validating"
+	}
+	qmi.migrator.mu.Unlock()
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "validating source repository", time.Now(), attemptStartTime)
 
 	err := githubAPI.ValidateRepository(ctx, req.SourceOrg, repoName)
 	if err != nil {
@@ -191,6 +223,15 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 		qmi.logger.Error("Pre-enqueue validation: source repository validation failed",
 			"repo", sourceRepoFullName,
 			"error", err)
+
+		// Update status with failure stage and state
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.Stage = "preparation"
+			status.State = "validation_failed"
+		}
+		qmi.migrator.mu.Unlock()
+
 		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
 		return false, fmt.Errorf("source repository not found: %w", err)
 	}
@@ -198,7 +239,53 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 	qmi.logger.Info("Pre-enqueue validation: source repository validated successfully",
 		"repo", sourceRepoFullName)
 
+	// Update state to "estimating_size"
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "preparation"
+		status.State = "estimating_size"
+	}
+	qmi.migrator.mu.Unlock()
+
+	// 1a. Retrieve repository size for estimation during pre-validation
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "estimating repository size", time.Now(), attemptStartTime)
+	repoSize, err := githubAPI.GetRepositorySize(ctx, req.SourceOrg, repoName)
+	if err != nil {
+		// Log the error but continue with the migration - size estimation is not critical
+		qmi.logger.Warn("Pre-enqueue validation: failed to get repository size",
+			"repo", sourceRepoFullName,
+			"error", err)
+	} else {
+		sizeCategory := payload.GetSizeCategory(repoSize)
+		qmi.logger.Info("Pre-enqueue validation: repository size retrieved",
+			"repo", sourceRepoFullName,
+			"size_bytes", repoSize,
+			"size_category", sizeCategory)
+
+		// Update the migration status with the repository size information
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.RepositorySize = repoSize
+			status.SizeCategory = sizeCategory
+		}
+		qmi.migrator.mu.Unlock()
+
+		// Update status to show the size information to the user
+		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+			fmt.Sprintf("repository size: %s (%.2f MB)", sizeCategory, float64(repoSize)/(1024*1024)),
+			time.Now(), attemptStartTime)
+	}
+
+	// Update state to "checking_target"
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "preparation"
+		status.State = "checking_target"
+	}
+	qmi.migrator.mu.Unlock()
+
 	// 2. Check if repository exists in the target organization
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "checking target repository", time.Now(), attemptStartTime)
 	exists, err := githubAPI.CheckCloudRepositoryExists(ctx, req.TargetOrg, repoName)
 	if err != nil {
 		// This is an actual error (not a 404)
@@ -206,6 +293,15 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 		qmi.logger.Error("Pre-enqueue validation: target repository check failed with error",
 			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName),
 			"error", err)
+
+		// Update status with failure stage and state
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.Stage = "preparation"
+			status.State = "target_check_failed"
+		}
+		qmi.migrator.mu.Unlock()
+
 		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
 		return false, err
 	}
@@ -217,6 +313,14 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 			"delete_if_exists", req.DeleteIfExists)
 
 		if req.DeleteIfExists {
+			// Update state to "deleting_target"
+			qmi.migrator.mu.Lock()
+			if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				status.Stage = "preparation"
+				status.State = "deleting_target"
+			}
+			qmi.migrator.mu.Unlock()
+
 			// If DeleteIfExists flag is set, try to delete the repository
 			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
 				fmt.Sprintf("pre-enqueue validation: repository exists in target organization, attempting to delete: %s/%s",
@@ -234,6 +338,15 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 				qmi.logger.Error("Pre-enqueue validation: failed to delete existing repository",
 					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName),
 					"error", err)
+
+				// Update status with failure stage and state
+				qmi.migrator.mu.Lock()
+				if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+					status.Stage = "preparation"
+					status.State = "delete_failed"
+				}
+				qmi.migrator.mu.Unlock()
+
 				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
 				return false, fmt.Errorf("failed to delete existing repository: %w", err)
 			}
@@ -251,6 +364,15 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, repoName)
 			qmi.logger.Error("Pre-enqueue validation: repository already exists in target organization",
 				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName))
+
+			// Update status with failure stage and state
+			qmi.migrator.mu.Lock()
+			if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				status.Stage = "preparation"
+				status.State = "target_exists"
+			}
+			qmi.migrator.mu.Unlock()
+
 			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
 			return false, fmt.Errorf("repository conflict: %s", conflictMsg)
 		}
@@ -259,6 +381,14 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 		qmi.logger.Info("Pre-enqueue validation: target repository does not exist",
 			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName))
 	}
+
+	// Update state to "queued"
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "preparation"
+		status.State = "queued"
+	}
+	qmi.migrator.mu.Unlock()
 
 	// Repository passed validation
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
@@ -285,6 +415,15 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	sourceRepoFullName := job.Repository
 	attemptStartTime := time.Now()
 
+	// Update status to in progress with archive stage
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "archive"
+		status.State = "initializing"
+	}
+	qmi.migrator.mu.Unlock()
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "initializing archive job", time.Now(), attemptStartTime)
+
 	// Initialize clients for this migration
 	clients, err := config.NewClients(&config.ClientsConfig{
 		GHESToken:    req.GHESToken,
@@ -294,6 +433,15 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to initialize clients: %v", err)
 		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+		// Update status with failure
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.Stage = "archive"
+			status.State = "client_init_failed"
+		}
+		qmi.migrator.mu.Unlock()
+
 		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 		return fmt.Errorf("failed to initialize clients: %w", err)
 	}
@@ -302,6 +450,15 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
 		errMsg := fmt.Sprintf("failed to update GHES base URL: %v", err)
 		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+		// Update status with failure
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.Stage = "archive"
+			status.State = "base_url_failed"
+		}
+		qmi.migrator.mu.Unlock()
+
 		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 		return fmt.Errorf("failed to update GHES base URL: %w", err)
 	}
@@ -310,20 +467,48 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	githubAPI := github.New(clients, qmi.logger)
 
 	// Update status to in progress with initial stage
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "archive"
+		status.State = "starting"
+	}
+	qmi.migrator.mu.Unlock()
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "starting archive generation", time.Now(), attemptStartTime)
 
 	// Generate migration archive on Source GHES
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "archive"
+		status.State = "generating"
+	}
+	qmi.migrator.mu.Unlock()
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "generating migration archive", time.Now(), attemptStartTime)
+
 	archiveID, err := githubAPI.GenerateMigrationArchive(ctx, req.SourceOrg, req.Repositories[0])
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to generate migration archive: %v", err)
 		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+		// Update status with failure
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.Stage = "archive"
+			status.State = "generation_failed"
+		}
+		qmi.migrator.mu.Unlock()
+
 		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 		return fmt.Errorf("failed to generate migration archive: %w", err)
 	}
 	qmi.logger.Debug("Archive generation initiated", "archiveID", archiveID, "repository", sourceRepoFullName)
 
 	// Wait for migration archive export to complete
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "archive"
+		status.State = "waiting_export"
+	}
+	qmi.migrator.mu.Unlock()
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "waiting for archive export", time.Now(), attemptStartTime)
 
 	// Use longer polling intervals for archive export status checks
@@ -335,6 +520,15 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 		select {
 		case <-ctx.Done():
 			errMsg := fmt.Sprintf("archive export cancelled: %v", ctx.Err())
+
+			// Update status with cancellation
+			qmi.migrator.mu.Lock()
+			if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				status.Stage = "archive"
+				status.State = "cancelled"
+			}
+			qmi.migrator.mu.Unlock()
+
 			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 			return ctx.Err()
 		case <-time.After(pollInterval):
@@ -346,6 +540,15 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to get archive export status: %v", err)
 			qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+			// Update status with failure
+			qmi.migrator.mu.Lock()
+			if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				migStatus.Stage = "archive"
+				migStatus.State = "status_check_failed"
+			}
+			qmi.migrator.mu.Unlock()
+
 			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 			return fmt.Errorf("failed to get archive export status: %w", err)
 		}
@@ -356,6 +559,14 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 			"repository", sourceRepoFullName,
 			"elapsed", elapsedExport.String(),
 		)
+
+		// Update migration status with current state
+		qmi.migrator.mu.Lock()
+		if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			migStatus.Stage = "archive"
+			migStatus.State = fmt.Sprintf("export_%s", status)
+		}
+		qmi.migrator.mu.Unlock()
 
 		// Update status message with current state and wait time
 		qmi.migrator.updateStatus(
@@ -369,11 +580,29 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 		// Check status and take appropriate action
 		switch status {
 		case "exported":
+			// Update status to getting archive URL
+			qmi.migrator.mu.Lock()
+			if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				migStatus.Stage = "archive"
+				migStatus.State = "getting_url"
+			}
+			qmi.migrator.mu.Unlock()
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "retrieving archive URL", time.Now(), attemptStartTime)
+
 			// Get archive URL
 			archiveURL, err := githubAPI.GetMigrationArchiveURL(ctx, archiveID, req.SourceOrg)
 			if err != nil {
 				errMsg := fmt.Sprintf("failed to get archive URL: %v", err)
 				qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+				// Update status with failure
+				qmi.migrator.mu.Lock()
+				if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+					migStatus.Stage = "archive"
+					migStatus.State = "url_retrieval_failed"
+				}
+				qmi.migrator.mu.Unlock()
+
 				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 				return fmt.Errorf("failed to get archive URL: %w", err)
 			}
@@ -382,11 +611,29 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 			// Store the archive URL in the request data for the migration phase
 			req.ArchiveURL = archiveURL
 
+			// Update status to queueing for migration
+			qmi.migrator.mu.Lock()
+			if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				migStatus.Stage = "archive"
+				migStatus.State = "completed"
+			}
+			qmi.migrator.mu.Unlock()
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "archive generated, queueing for migration", time.Now(), attemptStartTime)
+
 			// Enqueue the migration job (second phase)
 			err = qmi.queueManager.EnqueueMigrationJob(sourceRepoFullName, req, job.Priority)
 			if err != nil {
 				errMsg := fmt.Sprintf("Failed to enqueue migration job: %v", err)
 				qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+				// Update status with failure
+				qmi.migrator.mu.Lock()
+				if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+					migStatus.Stage = "archive"
+					migStatus.State = "enqueue_failed"
+				}
+				qmi.migrator.mu.Unlock()
+
 				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
 				return err
 			}
@@ -394,6 +641,14 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 			return nil
 
 		case "failed":
+			// Update status with failure
+			qmi.migrator.mu.Lock()
+			if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				migStatus.Stage = "archive"
+				migStatus.State = "export_failed"
+			}
+			qmi.migrator.mu.Unlock()
+
 			failureMsg := fmt.Sprintf("migration archive export failed with state: %s", status)
 			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, failureMsg, time.Now(), attemptStartTime)
 			return fmt.Errorf("%s", failureMsg)
@@ -435,6 +690,15 @@ func (qmi *QueueManagerIntegration) handleMigrationJob(job *queue.MigrationJob) 
 	func() {
 		qmi.mu.Lock()
 		defer qmi.mu.Unlock()
+
+		// Update migration state to show it's starting the import phase
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			status.Stage = "migration"
+			status.State = "starting"
+		}
+		qmi.migrator.mu.Unlock()
+
 		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "Starting migration import", time.Now(), attemptStartTime)
 	}()
 
@@ -442,8 +706,27 @@ func (qmi *QueueManagerIntegration) handleMigrationJob(job *queue.MigrationJob) 
 	err := qmi.migrator.performMigration(ctx, req, sourceRepoFullName, attemptStartTime, cancel)
 	if err != nil {
 		// Error handling is already done in performMigration
+
+		// Update migration state to show it failed during import
+		qmi.migrator.mu.Lock()
+		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+			// Keep the current stage but update state to failed if it's not already set
+			if status.Stage == "migration" && status.State == "starting" {
+				status.State = "failed"
+			}
+		}
+		qmi.migrator.mu.Unlock()
+
 		return err
 	}
+
+	// Update migration state to show it's complete
+	qmi.migrator.mu.Lock()
+	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+		status.Stage = "migration"
+		status.State = "completed"
+	}
+	qmi.migrator.mu.Unlock()
 
 	qmi.logger.Info("Migration job completed successfully", "repository", sourceRepoFullName)
 	return nil

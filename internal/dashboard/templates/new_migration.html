@@ -90,6 +90,83 @@
                 </div>
             </div>
             
+            <div class="form-section">
+                <h3>Migration Scheduling</h3>
+                
+                <div class="form-group">
+                    <label for="scheduled_time">Scheduled Time (optional)</label>
+                    <input type="datetime-local" id="scheduled_time" name="scheduled_time">
+                    <div class="form-hint">When the migration should be executed (leave blank for immediate execution)</div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="scheduled_time_zone">Time Zone (optional)</label>
+                    <select id="scheduled_time_zone" name="scheduled_time_zone">
+                        <option value="">-- Select a time zone --</option>
+                        <option value="UTC">UTC</option>
+                        <option value="America/New_York">Eastern Time (America/New_York)</option>
+                        <option value="America/Chicago">Central Time (America/Chicago)</option>
+                        <option value="America/Denver">Mountain Time (America/Denver)</option>
+                        <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+                        <option value="Europe/London">London Time (Europe/London)</option>
+                        <option value="Europe/Paris">Central European Time (Europe/Paris)</option>
+                        <option value="Asia/Tokyo">Japan Time (Asia/Tokyo)</option>
+                        <option value="Australia/Sydney">Sydney Time (Australia/Sydney)</option>
+                    </select>
+                    <div class="form-hint">The time zone for interpreting the scheduled time</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Day Restrictions (optional)</label>
+                    <div class="day-selector">
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_sunday" name="scheduled_days_only" value="Sunday">
+                            <label for="day_sunday">Sunday</label>
+                        </div>
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_monday" name="scheduled_days_only" value="Monday">
+                            <label for="day_monday">Monday</label>
+                        </div>
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_tuesday" name="scheduled_days_only" value="Tuesday">
+                            <label for="day_tuesday">Tuesday</label>
+                        </div>
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_wednesday" name="scheduled_days_only" value="Wednesday">
+                            <label for="day_wednesday">Wednesday</label>
+                        </div>
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_thursday" name="scheduled_days_only" value="Thursday">
+                            <label for="day_thursday">Thursday</label>
+                        </div>
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_friday" name="scheduled_days_only" value="Friday">
+                            <label for="day_friday">Friday</label>
+                        </div>
+                        <div class="day-checkbox">
+                            <input type="checkbox" id="day_saturday" name="scheduled_days_only" value="Saturday">
+                            <label for="day_saturday">Saturday</label>
+                        </div>
+                    </div>
+                    <div class="form-hint">Only run migrations on selected days (leave all unchecked for any day)</div>
+                </div>
+                
+                <div class="form-group">
+                    <label>Time Window (optional)</label>
+                    <div class="time-window-container">
+                        <div class="time-input">
+                            <label for="scheduled_time_start">Start Time</label>
+                            <input type="time" id="scheduled_time_start" name="scheduled_time_start">
+                        </div>
+                        <div class="time-input">
+                            <label for="scheduled_time_end">End Time</label>
+                            <input type="time" id="scheduled_time_end" name="scheduled_time_end">
+                        </div>
+                    </div>
+                    <div class="form-hint">Time window during which migrations are allowed to run (e.g., 22:00-06:00)</div>
+                </div>
+            </div>
+            
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -102,4 +179,40 @@
         </form>
     </div>
 </div>
+
+<style>
+.day-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.day-checkbox {
+    display: flex;
+    align-items: center;
+    margin-right: 10px;
+}
+
+.day-checkbox input[type="checkbox"] {
+    margin-right: 5px;
+}
+
+.time-window-container {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.time-input {
+    flex: 1;
+}
+
+.time-input label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+    color: #666;
+}
+</style>
 {{end}} 

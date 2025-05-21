@@ -30,7 +30,12 @@ POST /api/migrate
     "headers": {
       "X-Custom-Header": "value"
     }
-  }
+  },
+  "scheduled_time": "2023-06-15T02:00:00Z",
+  "scheduled_time_zone": "America/New_York",
+  "scheduled_days_only": ["Monday", "Wednesday", "Friday"],
+  "scheduled_time_start": "22:00",
+  "scheduled_time_end": "06:00"
 }
 ```
 
@@ -48,6 +53,11 @@ POST /api/migrate
 | `use_ghos` | boolean | No | When set to `true`, uses GitHub Owned Storage (GHOS) for migration archives |
 | `delete_if_exists` | boolean | No | When set to `true`, deletes the repository in the target organization if it already exists |
 | `webhook` | object | No | Custom webhook configuration for this migration only |
+| `scheduled_time` | string | No | ISO8601 timestamp when the migration should be executed |
+| `scheduled_time_zone` | string | No | Time zone for the scheduled migration (e.g., "America/New_York") |
+| `scheduled_days_only` | array | No | Array of weekday names when migrations are allowed (e.g., ["Monday", "Wednesday", "Friday"]) |
+| `scheduled_time_start` | string | No | Start time for the allowed migration window in 24-hour format (e.g., "22:00") |
+| `scheduled_time_end` | string | No | End time for the allowed migration window in 24-hour format (e.g., "06:00") |
 
 #### Response
 
@@ -98,7 +108,10 @@ GET /api/status?repository=org/repo1
   "updated_at": "2023-05-16T14:30:45Z",
   "completed_at": null,
   "error": null,
-  "url": "https://github.com/target-org/repo1"
+  "url": "https://github.com/target-org/repo1",
+  "repository_size": 52428800,
+  "size_category": "medium",
+  "scheduled_time": "2023-06-15T02:00:00Z"
 }
 ```
 
@@ -239,6 +252,7 @@ GET /api/healthz
 | Status | Description |
 |--------|-------------|
 | `queued` | Migration is queued but not yet started |
+| `scheduled` | Migration is scheduled for future execution |
 | `in_progress` | Migration is currently in progress |
 | `completed` | Migration has completed successfully |
 | `failed` | Migration has failed |
@@ -449,3 +463,32 @@ When the queue is full or encounters issues, the following error responses may b
    - Consider the queue system when implementing rate limiting
    - Monitor both queue size and API rate limits
    - Implement appropriate backoff strategies
+
+## Repository Size Categories
+
+The migration tool categorizes repositories by size to help with planning and resource allocation:
+
+| Size Category | Range | Description |
+|---------------|-------|-------------|
+| `small` | < 10MB | Small repositories with minimal content |
+| `medium` | 10MB - 100MB | Medium-sized repositories with moderate content |
+| `large` | 100MB - 1GB | Large repositories with substantial content |
+| `x_large` | > 1GB | Extra large repositories with extensive content and history |
+
+The size category is included in the migration status response as `size_category` and can be used for filtering and sorting migrations.
+
+## Scheduler Management
+
+The migration tool includes a scheduler that manages future migrations according to the specified parameters:
+
+- **Scheduled Time**: The ISO8601 timestamp when the migration should be executed.
+- **Time Zone**: The time zone for interpreting the scheduled time.
+- **Day Restrictions**: Optionally restrict migrations to specific days of the week.
+- **Time Window**: Optionally restrict migrations to a specific time window during the day.
+
+When scheduling a migration, keep in mind:
+
+1. If a migration is scheduled outside of allowed days/times, it will wait until the next valid time window.
+2. Time windows that span midnight (e.g., 22:00-06:00) are properly handled.
+3. Scheduled migrations appear with the `scheduled` status in status responses.
+4. If no scheduling parameters are provided, the migration is executed immediately.
