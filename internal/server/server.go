@@ -245,14 +245,13 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Log the raw body and the parsed delete_if_exists value for debugging
+	// Log the migration request details
 	s.logger.Info("Received migration request",
 		"source_org", migrationReq.SourceOrg,
 		"target_org", migrationReq.TargetOrg,
 		"repositories_count", len(migrationReq.Repositories),
 		"delete_if_exists", migrationReq.DeleteIfExists,
-		"use_ghos", migrationReq.UseGHOS,
-		"raw_body", string(body)) // Include raw body for debugging
+		"use_ghos", migrationReq.UseGHOS)
 
 	// Add migration details to span
 	span.SetAttributes(
