@@ -24,6 +24,7 @@ POST /api/migrate
   "gh_cloud_token": "your-gh-cloud-token",
   "max_duration": "24h",
   "use_ghos": true,
+  "delete_if_exists": false,
   "webhook": {
     "url": "https://your-webhook-url",
     "headers": {
@@ -45,6 +46,7 @@ POST /api/migrate
 | `gh_cloud_token` | string | Yes | Token for authenticating with GitHub Enterprise Cloud |
 | `max_duration` | string | No | Maximum duration for the migration (default: "24h") |
 | `use_ghos` | boolean | No | When set to `true`, uses GitHub Owned Storage (GHOS) for migration archives |
+| `delete_if_exists` | boolean | No | When set to `true`, deletes the repository in the target organization if it already exists |
 | `webhook` | object | No | Custom webhook configuration for this migration only |
 
 #### Response
@@ -168,7 +170,8 @@ POST /api/retry
   "gh_cloud_token": "your-gh-cloud-token",
   "ghes_base_url": "https://github.example.com",
   "target_org": "target-org",
-  "use_ghos": true
+  "use_ghos": true,
+  "delete_if_exists": false
 }
 ```
 
@@ -182,6 +185,7 @@ POST /api/retry
 | `ghes_base_url` | string | No | Base URL of your GitHub Enterprise Server instance |
 | `target_org` | string | No | The target organization in GitHub Enterprise Cloud |
 | `use_ghos` | boolean | No | When set to `true`, uses GitHub Owned Storage (GHOS) for migration archives |
+| `delete_if_exists` | boolean | No | When set to `true`, deletes the repository in the target organization if it already exists |
 
 #### Response
 

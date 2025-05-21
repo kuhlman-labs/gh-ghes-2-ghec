@@ -245,12 +245,21 @@ func (s *Server) handleMigration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log the migration request details
+	s.logger.Info("Received migration request",
+		"source_org", migrationReq.SourceOrg,
+		"target_org", migrationReq.TargetOrg,
+		"repositories_count", len(migrationReq.Repositories),
+		"delete_if_exists", migrationReq.DeleteIfExists,
+		"use_ghos", migrationReq.UseGHOS)
+
 	// Add migration details to span
 	span.SetAttributes(
 		attribute.String("source_org", migrationReq.SourceOrg),
 		attribute.String("target_org", migrationReq.TargetOrg),
 		attribute.Int("repositories_count", len(migrationReq.Repositories)),
 		attribute.Bool("use_ghos", migrationReq.UseGHOS),
+		attribute.Bool("delete_if_exists", migrationReq.DeleteIfExists),
 	)
 
 	// Validate required fields

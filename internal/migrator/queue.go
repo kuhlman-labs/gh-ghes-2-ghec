@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,7 +74,30 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 		"source_org", req.SourceOrg,
 		"target_org", req.TargetOrg,
 		"repos_count", len(req.Repositories),
-		"priority", priority)
+		"priority", priority,
+		"delete_if_exists", req.DeleteIfExists)
+
+	// Initialize API clients for validation
+	clients, err := config.NewClients(&config.ClientsConfig{
+		GHESToken:    req.GHESToken,
+		GHCloudToken: req.GHCloudToken,
+		Proxy:        qmi.migrator.config.GitHub.Proxy,
+	})
+	if err != nil {
+		qmi.logger.Error("Failed to initialize clients for pre-enqueue validation",
+			"error", err)
+		return fmt.Errorf("failed to initialize clients: %w", err)
+	}
+
+	// Update GHES base URL
+	if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
+		qmi.logger.Error("Failed to update GHES base URL for pre-enqueue validation",
+			"error", err)
+		return fmt.Errorf("failed to update GHES base URL: %w", err)
+	}
+
+	// Create GitHub API instance for validation
+	githubAPI := github.New(clients, qmi.logger)
 
 	// Process each repository as a separate job
 	for _, repoName := range req.Repositories {
@@ -88,17 +112,43 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 
 		// Create a job-specific request (deep copy but with a single repository)
 		jobReq := &payload.MigrationRequest{
-			SourceOrg:    req.SourceOrg,
-			TargetOrg:    req.TargetOrg,
-			GHESToken:    req.GHESToken,
-			GHCloudToken: req.GHCloudToken,
-			GHESBaseURL:  req.GHESBaseURL,
-			UseGHOS:      req.UseGHOS,
-			Repositories: []string{repoName},
+			SourceOrg:      req.SourceOrg,
+			TargetOrg:      req.TargetOrg,
+			GHESToken:      req.GHESToken,
+			GHCloudToken:   req.GHCloudToken,
+			GHESBaseURL:    req.GHESBaseURL,
+			UseGHOS:        req.UseGHOS,
+			DeleteIfExists: req.DeleteIfExists,
+			Repositories:   []string{repoName},
+		}
+
+		// Validate repository before enqueueing
+		valid, err := qmi.validateRepositoryForQueue(ctx, githubAPI, jobReq, sourceRepoFullName)
+		if err != nil {
+			qmi.logger.Error("Pre-enqueue validation failed",
+				"repository", sourceRepoFullName,
+				"error", err)
+
+			// Create a status entry for the failed validation
+			attemptStartTime := time.Now()
+			qmi.migrator.updateStatus(
+				sourceRepoFullName,
+				payload.StatusFailed,
+				fmt.Sprintf("Pre-enqueue validation failed: %v", err),
+				time.Now(),
+				attemptStartTime)
+
+			continue
+		}
+
+		if !valid {
+			qmi.logger.Info("Repository skipped due to pre-enqueue validation",
+				"repository", sourceRepoFullName)
+			continue
 		}
 
 		// Enqueue the job for archive generation (first phase)
-		err := qmi.queueManager.EnqueueArchiveJob(sourceRepoFullName, jobReq, priority)
+		err = qmi.queueManager.EnqueueArchiveJob(sourceRepoFullName, jobReq, priority)
 		if err != nil {
 			qmi.logger.Error("Failed to enqueue archive job",
 				"repository", sourceRepoFullName,
@@ -108,6 +158,113 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 	}
 
 	return nil
+}
+
+// validateRepositoryForQueue validates a repository before enqueueing it
+// Returns: valid (bool), error
+func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
+	ctx context.Context,
+	githubAPI github.API,
+	req *payload.MigrationRequest,
+	sourceRepoFullName string,
+) (bool, error) {
+	// Extract repo name from full name
+	parts := strings.Split(sourceRepoFullName, "/")
+	if len(parts) != 2 {
+		return false, fmt.Errorf("invalid repository name format: %s", sourceRepoFullName)
+	}
+	repoName := parts[1]
+
+	// Create a temporary status entry in the migrations map
+	attemptStartTime := time.Now()
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "pre-enqueue validation", time.Now(), attemptStartTime)
+
+	// 1. Validate that source repository exists
+	qmi.logger.Info("Pre-enqueue validation: checking source repository",
+		"repo", sourceRepoFullName,
+		"delete_if_exists", req.DeleteIfExists)
+
+	err := githubAPI.ValidateRepository(ctx, req.SourceOrg, repoName)
+	if err != nil {
+		// Source repository must exist
+		errorMsg := fmt.Sprintf("source repository not found: %v", err)
+		qmi.logger.Error("Pre-enqueue validation: source repository validation failed",
+			"repo", sourceRepoFullName,
+			"error", err)
+		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+		return false, fmt.Errorf("source repository not found: %w", err)
+	}
+
+	qmi.logger.Info("Pre-enqueue validation: source repository validated successfully",
+		"repo", sourceRepoFullName)
+
+	// 2. Check if repository exists in the target organization
+	exists, err := githubAPI.CheckCloudRepositoryExists(ctx, req.TargetOrg, repoName)
+	if err != nil {
+		// This is an actual error (not a 404)
+		errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
+		qmi.logger.Error("Pre-enqueue validation: target repository check failed with error",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName),
+			"error", err)
+		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+		return false, err
+	}
+
+	if exists {
+		// Repository exists in target organization
+		qmi.logger.Info("Pre-enqueue validation: repository exists in target organization",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName),
+			"delete_if_exists", req.DeleteIfExists)
+
+		if req.DeleteIfExists {
+			// If DeleteIfExists flag is set, try to delete the repository
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+				fmt.Sprintf("pre-enqueue validation: repository exists in target organization, attempting to delete: %s/%s",
+					req.TargetOrg, repoName),
+				time.Now(), attemptStartTime)
+
+			qmi.logger.Info("Pre-enqueue validation: attempting to delete existing repository",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName),
+				"delete_if_exists", req.DeleteIfExists)
+
+			deleted, err := githubAPI.DeleteCloudRepositoryIfExists(ctx, req.TargetOrg, repoName)
+			if err != nil {
+				// Failed to delete repository
+				errorMsg := fmt.Sprintf("Failed to delete existing repository in target organization: %v", err)
+				qmi.logger.Error("Pre-enqueue validation: failed to delete existing repository",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName),
+					"error", err)
+				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+				return false, fmt.Errorf("failed to delete existing repository: %w", err)
+			}
+
+			if deleted {
+				qmi.logger.Info("Pre-enqueue validation: successfully deleted existing repository",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName))
+				qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+					fmt.Sprintf("pre-enqueue validation: successfully deleted existing repository: %s/%s",
+						req.TargetOrg, repoName),
+					time.Now(), attemptStartTime)
+			}
+		} else {
+			// DeleteIfExists flag is not set, fail with conflict error
+			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, repoName)
+			qmi.logger.Error("Pre-enqueue validation: repository already exists in target organization",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName))
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+			return false, fmt.Errorf("repository conflict: %s", conflictMsg)
+		}
+	} else {
+		// Repository doesn't exist in target, which is good
+		qmi.logger.Info("Pre-enqueue validation: target repository does not exist",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, repoName))
+	}
+
+	// Repository passed validation
+	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+		"pre-enqueue validation successful, queuing for archive generation",
+		time.Now(), attemptStartTime)
+	return true, nil
 }
 
 // handleArchiveJob processes an archive generation job

@@ -38,6 +38,22 @@ func (n *NoopAPI) ValidateCloudRepository(ctx context.Context, org, repo string)
 	return fmt.Errorf("ValidateCloudRepository not implemented in NoopAPI")
 }
 
+// CheckCloudRepositoryExists is a no-op implementation that logs the call and returns false.
+func (n *NoopAPI) CheckCloudRepositoryExists(ctx context.Context, org, repo string) (bool, error) {
+	n.logger.Warn("NoopAPI: CheckCloudRepositoryExists called but not implemented",
+		"org", org,
+		"repo", repo)
+	return false, fmt.Errorf("CheckCloudRepositoryExists not implemented in NoopAPI")
+}
+
+// DeleteCloudRepositoryIfExists is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) DeleteCloudRepositoryIfExists(ctx context.Context, org, repo string) (bool, error) {
+	n.logger.Warn("NoopAPI: DeleteCloudRepositoryIfExists called but not implemented",
+		"org", org,
+		"repo", repo)
+	return false, fmt.Errorf("DeleteCloudRepositoryIfExists not implemented in NoopAPI")
+}
+
 // GetOrganizationID is a no-op implementation that logs the call and returns an error.
 func (n *NoopAPI) GetOrganizationID(ctx context.Context, org string) (string, int64, error) {
 	n.logger.Warn("NoopAPI: GetOrganizationID called but not implemented",

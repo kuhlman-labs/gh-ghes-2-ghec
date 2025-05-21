@@ -78,6 +78,13 @@ func (m *Migrator) prepareForMigration(
 ) error {
 	// Validate that source repository exists
 	sourceRepoFullName := fmt.Sprintf("%s/%s", req.SourceOrg, sourceRepoName)
+
+	// Log the DeleteIfExists flag at the beginning for debugging
+	m.logger.Info("Starting repository preparation with configuration details",
+		"repository_full_name", sourceRepoFullName,
+		"delete_if_exists", req.DeleteIfExists,
+		"use_ghos", req.UseGHOS)
+
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "validating source repository", time.Now(), attemptStartTime)
 	err := githubAPI.ValidateRepository(ctx, req.SourceOrg, sourceRepoName)
 	if err != nil {
@@ -95,41 +102,66 @@ func (m *Migrator) prepareForMigration(
 
 	// Check if repository exists in the target organization
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "checking if repository exists in target organization", time.Now(), attemptStartTime)
-	err = githubAPI.ValidateCloudRepository(ctx, req.TargetOrg, sourceRepoName)
-	if err == nil {
-		// If no error, the repository was found in the target organization, so we should fail
-		conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
-		m.logger.Error("Repository already exists in target organization",
-			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
-		m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
-		return fmt.Errorf("repository conflict: %s", conflictMsg)
-	} else {
-		// Import the errors package to check for specific error categories
-		var classifiedErr *apierrors.ClassifiedError
+	exists, err := githubAPI.CheckCloudRepositoryExists(ctx, req.TargetOrg, sourceRepoName)
+	if err != nil {
+		// Real error (not a 404)
+		errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
+		m.logger.Error("Target repository check failed with error",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+			"error", err)
+		m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+		return err
+	}
 
-		// Check if this is a ResourceNotFound error - that's what we want
-		if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceNotFound {
-			// This is the expected case - repository doesn't exist in target, proceed with migration
-			m.logger.Info("Target repository validation successful - repository does not exist in target organization",
-				"source_repo", sourceRepoFullName,
-				"target_org", req.TargetOrg)
-		} else if errors.As(err, &classifiedErr) && classifiedErr.Category == apierrors.CategoryResourceConflict {
-			// This is a conflict error, explicitly handle it
-			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
-			m.logger.Error("Repository conflict detected",
+	if exists {
+		// Repository exists in target organization
+		m.logger.Info("Repository exists check result",
+			"repository", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+			"exists", true,
+			"delete_if_exists_flag", req.DeleteIfExists) // Explicitly log the flag value
+
+		if req.DeleteIfExists {
+			// If DeleteIfExists flag is set, try to delete the repository
+			m.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+				fmt.Sprintf("repository exists in target organization, attempting to delete: %s/%s",
+					req.TargetOrg, sourceRepoName),
+				time.Now(), attemptStartTime)
+
+			m.logger.Info("Repository exists in target organization, attempting to delete",
 				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
-				"error", classifiedErr)
+				"delete_if_exists", req.DeleteIfExists)
+
+			deleted, err := githubAPI.DeleteCloudRepositoryIfExists(ctx, req.TargetOrg, sourceRepoName)
+			if err != nil {
+				// Failed to delete repository
+				errorMsg := fmt.Sprintf("Failed to delete existing repository in target organization: %v", err)
+				m.logger.Error("Failed to delete existing repository",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+					"error", err)
+				m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+				return fmt.Errorf("failed to delete existing repository: %w", err)
+			}
+
+			if deleted {
+				m.logger.Info("Successfully deleted existing repository in target organization",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
+				m.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+					fmt.Sprintf("successfully deleted existing repository: %s/%s", req.TargetOrg, sourceRepoName),
+					time.Now(), attemptStartTime)
+			}
+		} else {
+			// DeleteIfExists flag is not set, fail with conflict error
+			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+			m.logger.Error("Repository already exists in target organization",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
 			m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
 			return fmt.Errorf("repository conflict: %s", conflictMsg)
-		} else {
-			// Some other error occurred during validation
-			errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
-			m.logger.Error("Target repository validation failed with unexpected error",
-				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
-				"error", err)
-			m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
-			return err
 		}
+	} else {
+		// Repository doesn't exist in target, which is good
+		m.logger.Info("Target repository validation successful - repository does not exist in target organization",
+			"source_repo", sourceRepoFullName,
+			"target_org", req.TargetOrg)
 	}
 
 	// Get the owner ID for the destination organization
@@ -286,34 +318,72 @@ func (m *Migrator) startMigration(
 ) (string, error) {
 	sourceRepoFullName := fmt.Sprintf("%s/%s", req.SourceOrg, sourceRepoName)
 
+	// Log migration details at the start
+	m.logger.Info("Starting repository migration with configuration details",
+		"repository_full_name", sourceRepoFullName,
+		"delete_if_exists", req.DeleteIfExists,
+		"use_ghos", req.UseGHOS)
+
 	// Double-check that repository doesn't exist in target to avoid race conditions
-	err := githubAPI.ValidateCloudRepository(ctx, req.TargetOrg, sourceRepoName)
-	if err == nil {
-		// If no error, the repository was found in the target organization, so we should fail
-		conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
-		m.logger.Error("Repository already exists in target organization (detected during start migration)",
-			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
-		m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
-		return "", fmt.Errorf("repository conflict: %s", conflictMsg)
-	} else {
-		// Check for non-404 errors, but allow 404 Not Found to proceed
-		var classifiedErr *apierrors.ClassifiedError
-		if errors.As(err, &classifiedErr) && classifiedErr.Category != apierrors.CategoryResourceNotFound {
-			if classifiedErr.Category == apierrors.CategoryResourceConflict {
-				// This is a conflict error
-				conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
-				m.logger.Error("Repository conflict detected during start migration",
+	exists, err := githubAPI.CheckCloudRepositoryExists(ctx, req.TargetOrg, sourceRepoName)
+	if err != nil {
+		// Real error (not a 404)
+		errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
+		m.logger.Error("Target repository check failed with error during migration start",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+			"error", err)
+		m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+		return "", err
+	}
+
+	if exists {
+		// Repository exists in target organization
+		m.logger.Info("Repository exists check result during migration start",
+			"repository", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+			"exists", true,
+			"delete_if_exists_flag", req.DeleteIfExists) // Explicitly log the flag value
+
+		if req.DeleteIfExists {
+			// If DeleteIfExists flag is set, try to delete the repository
+			m.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+				fmt.Sprintf("repository exists in target organization (race condition detected), attempting to delete: %s/%s",
+					req.TargetOrg, sourceRepoName),
+				time.Now(), attemptStartTime)
+
+			m.logger.Info("Repository exists in target organization (race condition detected), attempting to delete",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
+				"delete_if_exists", req.DeleteIfExists)
+
+			deleted, err := githubAPI.DeleteCloudRepositoryIfExists(ctx, req.TargetOrg, sourceRepoName)
+			if err != nil {
+				// Failed to delete repository
+				errorMsg := fmt.Sprintf("Failed to delete existing repository in target organization: %v", err)
+				m.logger.Error("Failed to delete existing repository during migration start",
 					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName),
-					"error", classifiedErr)
-				m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
-				return "", fmt.Errorf("repository conflict: %s", conflictMsg)
+					"error", err)
+				m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
+				return "", fmt.Errorf("failed to delete existing repository: %w", err)
 			}
-			// Some other non-404 error occurred during validation
-			errorMsg := fmt.Sprintf("failed to check target repository: %v", err)
-			m.updateStatus(sourceRepoFullName, payload.StatusFailed, errorMsg, time.Now(), attemptStartTime)
-			return "", err
+
+			if deleted {
+				m.logger.Info("Successfully deleted existing repository in target organization during migration start",
+					"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
+				m.updateStatus(sourceRepoFullName, payload.StatusInProgress,
+					fmt.Sprintf("successfully deleted existing repository: %s/%s", req.TargetOrg, sourceRepoName),
+					time.Now(), attemptStartTime)
+			}
+		} else {
+			// DeleteIfExists flag is not set, fail with conflict error
+			conflictMsg := fmt.Sprintf("Repository %s/%s already exists in target organization", req.TargetOrg, sourceRepoName)
+			m.logger.Error("Repository already exists in target organization (detected during start migration)",
+				"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
+			m.updateStatus(sourceRepoFullName, payload.StatusFailed, conflictMsg, time.Now(), attemptStartTime)
+			return "", fmt.Errorf("repository conflict: %s", conflictMsg)
 		}
-		// 404 Not Found is expected and we can proceed
+	} else {
+		// Repository doesn't exist in target, which is good
+		m.logger.Info("Repository doesn't exist in target organization, proceeding with migration",
+			"repo", fmt.Sprintf("%s/%s", req.TargetOrg, sourceRepoName))
 	}
 
 	// Get the necessary IDs

@@ -179,3 +179,186 @@ func (a *GitHubAPI) GetOrganizationID(ctx context.Context, org string) (string, 
 	)
 	return query.Organization.ID, query.Organization.DatabaseID, nil
 }
+
+// DeleteCloudRepositoryIfExists checks if a repository exists in GitHub Cloud and deletes it if found.
+// Returns true if repository was deleted, false if it didn't exist, and error if deletion failed.
+func (a *GitHubAPI) DeleteCloudRepositoryIfExists(ctx context.Context, org, repo string) (bool, error) {
+	startTime := time.Now()
+	a.logger.Debug("Checking if repository exists in target org before deletion",
+		"api", "GHEC_REST",
+		"method", "Repositories.Get",
+		"org", org,
+		"repo", repo,
+	)
+
+	// First check if the repository exists
+	var respStatus int
+	var repoExists bool
+	err := a.circuitProtectedGhCloudOperation(ctx, "validate_cloud_repository_for_deletion", func() error {
+		_, resp, err := a.clients.GHCloudClient.Repositories.Get(ctx, org, repo)
+		if resp != nil {
+			respStatus = resp.StatusCode
+			// Repository exists if status code is 200
+			repoExists = respStatus == 200
+		}
+		// We want to handle 404 specially, it's not really an error in this context
+		if respStatus == 404 {
+			return nil
+		}
+		return err
+	})
+
+	// If repository doesn't exist (404), return false with no error
+	if respStatus == 404 || !repoExists {
+		a.logger.Debug("Repository doesn't exist in target org, no deletion needed",
+			"api", "GHEC_REST",
+			"duration_ms", time.Since(startTime).Milliseconds(),
+			"org", org,
+			"repo", repo,
+		)
+		return false, nil
+	}
+
+	// If there was any other error, return it
+	if err != nil {
+		a.logger.Error("Failed to check if repository exists in target org",
+			"api", "GHEC_REST",
+			"method", "Repositories.Get",
+			"duration_ms", time.Since(startTime).Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"repo", repo,
+			"error", err,
+		)
+		return false, a.classifyGitHubError(err)
+	}
+
+	// Repository exists, proceed with deletion
+	a.logger.Info("Deleting existing repository in target org",
+		"api", "GHEC_REST",
+		"method", "Repositories.Delete",
+		"org", org,
+		"repo", repo,
+	)
+
+	// Reset the status code for the delete operation
+	respStatus = 0
+	err = a.circuitProtectedGhCloudOperation(ctx, "delete_cloud_repository", func() error {
+		resp, err := a.clients.GHCloudClient.Repositories.Delete(ctx, org, repo)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("Failed to delete repository in target org",
+			"api", "GHEC_REST",
+			"method", "Repositories.Delete",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"repo", repo,
+			"error", err,
+		)
+		return false, a.classifyGitHubError(err)
+	}
+
+	a.logger.Info("Successfully deleted repository in target org",
+		"api", "GHEC_REST",
+		"method", "Repositories.Delete",
+		"duration_ms", duration.Milliseconds(),
+		"org", org,
+		"repo", repo,
+	)
+	return true, nil
+}
+
+// CheckCloudRepositoryExists checks if a repository exists in GitHub Cloud.
+// Unlike ValidateCloudRepository, this function treats 404 responses as a valid response (not an error)
+// and returns a simple boolean indicating if the repository exists.
+// This prevents 404s from triggering circuit breaker failures when checking for repository existence.
+func (a *GitHubAPI) CheckCloudRepositoryExists(ctx context.Context, org, repo string) (bool, error) {
+	startTime := time.Now()
+	a.logger.Debug("Checking if repository exists in target org",
+		"api", "GHEC_REST",
+		"method", "Repositories.Get",
+		"org", org,
+		"repo", repo,
+	)
+
+	var respStatus int
+	var exists bool
+	var nonResourceNotFoundErr error
+
+	// Use non-circuit-protected operation to directly handle the request
+	// This ensures 404s don't count against circuit breaker thresholds
+	err := a.retryableOperation(ctx, "check_cloud_repository_exists", func() error {
+		_, resp, err := a.clients.GHCloudClient.Repositories.Get(ctx, org, repo)
+		if resp != nil {
+			respStatus = resp.StatusCode
+
+			// Only consider it an error for retryable operation if it's not a 404
+			if respStatus == 404 {
+				exists = false
+				return nil // Not a real error for our purposes
+			}
+
+			// Repository exists if status code is 200
+			exists = respStatus == 200
+		}
+
+		// Keep track of non-404 errors for later reporting
+		if err != nil && (resp == nil || resp.StatusCode != 404) {
+			nonResourceNotFoundErr = err
+		}
+
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	// Handle 404 case (repository doesn't exist)
+	if respStatus == 404 || !exists {
+		a.logger.Debug("Repository doesn't exist in target org",
+			"api", "GHEC_REST",
+			"method", "Repositories.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"repo", repo,
+		)
+		return false, nil
+	}
+
+	// Handle real errors (not 404s)
+	if err != nil || nonResourceNotFoundErr != nil {
+		errorToUse := err
+		if nonResourceNotFoundErr != nil {
+			errorToUse = nonResourceNotFoundErr
+		}
+
+		a.logger.Error("Failed to check if repository exists in target org",
+			"api", "GHEC_REST",
+			"method", "Repositories.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"repo", repo,
+			"error", errorToUse,
+		)
+		return false, a.classifyGitHubError(errorToUse)
+	}
+
+	a.logger.Debug("Repository exists in target org",
+		"api", "GHEC_REST",
+		"method", "Repositories.Get",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+		"repo", repo,
+	)
+	return true, nil
+}
