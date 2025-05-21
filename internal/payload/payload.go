@@ -14,15 +14,16 @@ import (
 // It contains all the necessary information to perform the migration, including
 // source and target organizations, repository list, API URLs, and authentication tokens.
 type MigrationRequest struct {
-	SourceOrg    string   `json:"source_org"`
-	TargetOrg    string   `json:"target_org"`
-	Repositories []string `json:"repositories"`
-	GHESBaseURL  string   `json:"ghes_base_url"`          // Base URL of GHES instance (e.g., https://github.example.com)
-	GHESToken    string   `json:"ghes_token"`             // Token for GitHub Enterprise Server
-	GHCloudToken string   `json:"gh_cloud_token"`         // Token for GitHub Enterprise Cloud
-	MaxDuration  string   `json:"max_duration,omitempty"` // Optional maximum duration for the migration (e.g., "24h", "48h")
-	UseGHOS      bool     `json:"use_ghos,omitempty"`     // Use GitHub Owned Storage (GHOS) for migration archives
-	ArchiveURL   string   `json:"archive_url,omitempty"`  // URL of the generated migration archive
+	SourceOrg      string   `json:"source_org"`
+	TargetOrg      string   `json:"target_org"`
+	Repositories   []string `json:"repositories"`
+	GHESBaseURL    string   `json:"ghes_base_url"`          // Base URL of GHES instance (e.g., https://github.example.com)
+	GHESToken      string   `json:"ghes_token"`             // Token for GitHub Enterprise Server
+	GHCloudToken   string   `json:"gh_cloud_token"`         // Token for GitHub Enterprise Cloud
+	MaxDuration    string   `json:"max_duration,omitempty"` // Optional maximum duration for the migration (e.g., "24h", "48h")
+	UseGHOS        bool     `json:"use_ghos,omitempty"`     // Use GitHub Owned Storage (GHOS) for migration archives
+	ArchiveURL     string   `json:"archive_url,omitempty"`  // URL of the generated migration archive
+	DeleteIfExists bool     `json:"delete_if_exists"`       // Delete repository in target org if it already exists - ensure no omitempty
 }
 
 // Validate performs comprehensive validation of the migration request.
@@ -126,6 +127,7 @@ type MigrationStatus struct {
 	TargetOrg         string        `json:"target_org,omitempty"`          // Target organization for the migration
 	GHESBaseURL       string        `json:"ghes_base_url,omitempty"`       // GitHub Enterprise Server base URL
 	UseGHOS           bool          `json:"use_ghos,omitempty"`            // Whether GitHub Owned Storage is used
+	DeleteIfExists    bool          `json:"delete_if_exists,omitempty"`    // Whether to delete existing repos in target org
 }
 
 // MigrationStages defines the sequential stages in the migration process.

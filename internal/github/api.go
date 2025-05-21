@@ -17,6 +17,8 @@ import (
 type API interface {
 	ValidateRepository(ctx context.Context, org, repo string) error
 	ValidateCloudRepository(ctx context.Context, org, repo string) error
+	CheckCloudRepositoryExists(ctx context.Context, org, repo string) (bool, error)
+	DeleteCloudRepositoryIfExists(ctx context.Context, org, repo string) (bool, error)
 	GetOrganizationID(ctx context.Context, org string) (string, int64, error)
 	CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error)
 	GenerateMigrationArchive(ctx context.Context, orgName, repoName string) (int64, error)

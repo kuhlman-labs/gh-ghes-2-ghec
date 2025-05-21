@@ -30,3 +30,6 @@ go.work
 
 # Config files
 config.yaml
+
+# Local scripts and data
+scripts/local/

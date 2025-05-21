@@ -234,16 +234,17 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 					m.logger.Info("Found status in unknown state, treating as new migration", "repository_full_name", rfn, "status", existingStatus.Status)
 					attemptStartTime = time.Now()
 					initialStatus := &payload.MigrationStatus{
-						Repository:  rfn, // Use sourceRepoFullName
-						Status:      payload.StatusInProgress,
-						StartedAt:   attemptStartTime,
-						UpdatedAt:   attemptStartTime,
-						Stage:       "init",
-						State:       "starting",
-						TotalStages: len(payload.MigrationStages), // Initialize TotalStages
-						TargetOrg:   currentReq.TargetOrg,         // Save target org for future use
-						GHESBaseURL: currentReq.GHESBaseURL,       // Save GHES URL for future use
-						UseGHOS:     currentReq.UseGHOS,           // Save GHOS setting
+						Repository:     rfn, // Use sourceRepoFullName
+						Status:         payload.StatusInProgress,
+						StartedAt:      attemptStartTime,
+						UpdatedAt:      attemptStartTime,
+						Stage:          "init",
+						State:          "starting",
+						TotalStages:    len(payload.MigrationStages), // Initialize TotalStages
+						TargetOrg:      currentReq.TargetOrg,         // Save target org for future use
+						GHESBaseURL:    currentReq.GHESBaseURL,       // Save GHES URL for future use
+						UseGHOS:        currentReq.UseGHOS,           // Save GHOS setting
+						DeleteIfExists: currentReq.DeleteIfExists,    // Save DeleteIfExists setting
 					}
 					m.migrations[rfn] = initialStatus // Replace with new status
 				}
@@ -251,16 +252,17 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 				// Brand new migration for this sourceRepoFullName
 				attemptStartTime = time.Now()
 				initialStatus := &payload.MigrationStatus{
-					Repository:  rfn, // Use sourceRepoFullName
-					Status:      payload.StatusInProgress,
-					StartedAt:   attemptStartTime,
-					UpdatedAt:   attemptStartTime,
-					Stage:       "init",
-					State:       "starting",
-					TotalStages: len(payload.MigrationStages), // Initialize TotalStages
-					TargetOrg:   currentReq.TargetOrg,         // Save target org for future use
-					GHESBaseURL: currentReq.GHESBaseURL,       // Save GHES URL for future use
-					UseGHOS:     currentReq.UseGHOS,           // Save GHOS setting
+					Repository:     rfn, // Use sourceRepoFullName
+					Status:         payload.StatusInProgress,
+					StartedAt:      attemptStartTime,
+					UpdatedAt:      attemptStartTime,
+					Stage:          "init",
+					State:          "starting",
+					TotalStages:    len(payload.MigrationStages), // Initialize TotalStages
+					TargetOrg:      currentReq.TargetOrg,         // Save target org for future use
+					GHESBaseURL:    currentReq.GHESBaseURL,       // Save GHES URL for future use
+					UseGHOS:        currentReq.UseGHOS,           // Save GHOS setting
+					DeleteIfExists: currentReq.DeleteIfExists,    // Save DeleteIfExists setting
 				}
 				m.migrations[rfn] = initialStatus // Use sourceRepoFullName
 				m.logger.Info("Initialized new migration status", "repository_full_name", rfn)
@@ -586,14 +588,20 @@ func (m *Migrator) RetryMigration(ctx context.Context, sourceRepoFullName string
 
 	// 6. Create a request using stored and provided values
 	req := &payload.MigrationRequest{
-		SourceOrg:    orgName,
-		TargetOrg:    existingStatus.TargetOrg,
-		GHESToken:    ghesToken,
-		GHCloudToken: ghCloudToken,
-		GHESBaseURL:  existingStatus.GHESBaseURL,
-		UseGHOS:      existingStatus.UseGHOS,
-		Repositories: []string{repoName},
+		SourceOrg:      orgName,
+		TargetOrg:      existingStatus.TargetOrg,
+		GHESToken:      ghesToken,
+		GHCloudToken:   ghCloudToken,
+		GHESBaseURL:    existingStatus.GHESBaseURL,
+		UseGHOS:        existingStatus.UseGHOS,
+		Repositories:   []string{repoName},
+		DeleteIfExists: existingStatus.DeleteIfExists, // Preserve DeleteIfExists flag from original request
 	}
+
+	m.logger.Info("Retry migration configuration",
+		"repository", sourceRepoFullName,
+		"delete_if_exists", req.DeleteIfExists,
+		"use_ghos", req.UseGHOS)
 
 	// 7. If queue manager is enabled, use it for the retry
 	if m.queueManager != nil && m.config.Queue.Enabled {
