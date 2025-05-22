@@ -1,3 +1,4 @@
+{{define "base"}}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,12 +9,52 @@
     <link rel="stylesheet" href="/static/css/dashboard.css">
     <script src="/static/js/htmx.min.js" defer></script>
     <script src="/static/js/dashboard.js" defer></script>
+    <style>
+        /* Additional styles for GitHub logo integration */
+        header .logo {
+            display: flex;
+            align-items: center;
+            height: 36px;
+        }
+        
+        header .logo img.github-mark {
+            height: 32px;
+            margin-right: 10px;
+        }
+        
+        header .logo h1 {
+            display: flex;
+            align-items: center;
+            font-size: 1.5rem;
+            margin: 0;
+            height: 36px;
+        }
+        
+        header .logo h1 img.github-logo {
+            height: 30px;
+            margin-right: 10px;
+        }
+        
+        header .logo h1 span {
+            margin-left: 5px;
+        }
+        
+        header nav {
+            height: 100%;
+            display: flex;
+            align-items: center;
+        }
+    </style>
 </head>
 <body>
     <header>
         <div class="container">
             <div class="logo">
-                <h1>GitHub Migration Dashboard</h1>
+                <img src="/static/images/github-mark-white.png" alt="GitHub Mark" class="github-mark">
+                <h1>
+                    <img src="/static/images/GitHub_Logo_White.png" alt="GitHub" class="github-logo">
+                    <span>Migration Dashboard</span>
+                </h1>
             </div>
             <nav>
                 <ul>
@@ -48,4 +89,5 @@
         </div>
     </footer>
 </body>
-</html> 
+</html>
+{{end}} 

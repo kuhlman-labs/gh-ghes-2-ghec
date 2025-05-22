@@ -17,6 +17,8 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1.5rem;
+    width: 100%;
+    min-height: 120px;
 }
 
 .queue-stats .stat-card {
@@ -25,6 +27,11 @@
     border-radius: 6px;
     text-align: center;
     transition: transform 0.2s ease;
+    min-width: 150px;
+    min-height: 90px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .queue-stats .stat-card:hover {

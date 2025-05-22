@@ -1,26 +1,51 @@
 {{define "overview_content"}}
 <div class="dashboard-overview">
-    <div class="dashboard-header">
-        <h2>Migration Dashboard</h2>
-        <div class="dashboard-controls">
-            <a href="/dashboard/new" class="btn btn-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                New Migration
-            </a>
-            <button class="btn btn-secondary" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-include="[name='page-size']">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
-                </svg>
-                Refresh
-            </button>
-        </div>
-    </div>
-
     <div class="stats-section">
-        <h3 class="section-title">Migration Statistics</h3>
+        <div class="dashboard-header">
+            <h2>Migration Dashboard</h2>
+            <div class="dashboard-controls">
+                <a href="/dashboard/new" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New Migration
+                </a>
+                <button class="btn btn-secondary" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-include="[name='page-size'], [name='filter-status'], [name='filter-repo'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                    </svg>
+                    Refresh
+                </button>
+                <div class="dropdown">
+                    <button class="btn btn-export">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Export
+                    </button>
+                    <div class="dropdown-content">
+                        <a href="/dashboard/export?format=csv{{if .StatusFilter}}&filter-status={{.StatusFilter}}{{end}}{{if .RepoFilter}}&filter-repo={{.RepoFilter}}{{end}}{{if .TimeRangeFilter}}&filter-timerange={{.TimeRangeFilter}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+                            </svg>
+                            Export as CSV
+                        </a>
+                        <a href="/dashboard/export?format=json{{if .StatusFilter}}&filter-status={{.StatusFilter}}{{end}}{{if .RepoFilter}}&filter-repo={{.RepoFilter}}{{end}}{{if .TimeRangeFilter}}&filter-timerange={{.TimeRangeFilter}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
+                            </svg>
+                            Export as JSON
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="dashboard-stats" 
              hx-get="/dashboard/stats" 
              hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
@@ -71,32 +96,152 @@
     {{end}}
 
     <div class="active-migrations-section">
-        <h3 class="section-title">Active Migrations</h3>
-        <div class="table-controls">
+        <div class="section-header">
+            <h3 class="section-title">Active Migrations</h3>
+            <div class="refresh-indicator" 
+                 hx-get="/dashboard/refresh" 
+                 hx-target="#last-updated-timestamp" 
+                 hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
+                 hx-swap="innerHTML" 
+                 hx-select="#last-updated-timestamp">
+                <span id="last-updated-timestamp" class="last-refreshed">Last updated: {{.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
+                <span class="refresh-spinner"></span>
+            </div>
+        </div>
+        
+        <div class="filter-controls-row">
+            <div class="filter-control">
+                <span class="filter-label">Status:</span>
+                <select name="filter-status" class="filter-input" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-trigger="change" hx-include="[name='page-size'], [name='filter-repo'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
+                    <option value="">All Statuses</option>
+                    <option value="running" {{ if eq .StatusFilter "running" }}selected{{ end }}>Running</option>
+                    <option value="succeeded" {{ if eq .StatusFilter "succeeded" }}selected{{ end }}>Succeeded</option>
+                    <option value="failed" {{ if eq .StatusFilter "failed" }}selected{{ end }}>Failed</option>
+                    <option value="pending" {{ if eq .StatusFilter "pending" }}selected{{ end }}>Pending</option>
+                </select>
+            </div>
+            <div class="filter-control">
+                <span class="filter-label">Repository:</span>
+                <input type="text" name="filter-repo" class="filter-input" placeholder="Search repositories..." value="{{ .RepoFilter }}" 
+                       hx-get="/dashboard/refresh" 
+                       hx-target="#migrations-table" 
+                       hx-swap="innerHTML" 
+                       hx-trigger="keyup changed delay:500ms" 
+                       hx-include="[name='page-size'], [name='filter-status'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
+            </div>
+            <div class="filter-control">
+                <span class="filter-label">Time Range:</span>
+                <select name="filter-timerange" class="filter-input" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-trigger="change" hx-include="[name='page-size'], [name='filter-status'], [name='filter-repo'], [name='sort-by'], [name='sort-dir']">
+                    <option value="">All Time</option>
+                    <option value="today" {{ if eq .TimeRangeFilter "today" }}selected{{ end }}>Today</option>
+                    <option value="yesterday" {{ if eq .TimeRangeFilter "yesterday" }}selected{{ end }}>Yesterday</option>
+                    <option value="week" {{ if eq .TimeRangeFilter "week" }}selected{{ end }}>This Week</option>
+                    <option value="month" {{ if eq .TimeRangeFilter "month" }}selected{{ end }}>This Month</option>
+                </select>
+            </div>
             <div class="page-size-selector">
                 <label for="page-size">Show:</label>
-                <select id="page-size" name="page-size" hx-get="/dashboard" hx-target=".dashboard-overview" hx-swap="outerHTML" hx-trigger="change">
+                <select id="page-size" name="page-size" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-trigger="change" hx-include="[name='filter-status'], [name='filter-repo'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
                     <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
                     <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
                     <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
                     <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
                 </select>
             </div>
-            <div class="auto-refresh-control">
-                <label for="auto-refresh">
-                    <input type="checkbox" id="auto-refresh" checked>
-                    <span>Auto-refresh</span>
-                </label>
-            </div>
+            <button class="clear-filters" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-vals='{"filter-status": "", "filter-repo": "", "filter-timerange": ""}'>
+                Clear Filters
+            </button>
         </div>
 
         <div class="dashboard-table" id="migrations-table" 
              hx-get="/dashboard/refresh" 
              hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
              hx-swap="innerHTML" 
-             hx-include="[name='page-size']">
+             hx-include="[name='page-size'], [name='filter-status'], [name='filter-repo'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
             {{template "migrations_table" .}}
         </div>
     </div>
+    
+    <div class="migration-timeline">
+        <div class="timeline-header">
+            <h3>Recent Migration Activity</h3>
+        </div>
+        <div class="timeline-body">
+            <div class="timeline-events">
+                {{if eq (len .RecentActivity) 0}}
+                <div class="empty-state">
+                    <p>No recent migration activity</p>
+                </div>
+                {{else}}
+                {{range .RecentActivity}}
+                <div class="timeline-event">
+                    <div class="timeline-event-marker status-{{.Status | ToLower}}"></div>
+                    <div class="timeline-event-content">
+                        <div class="timeline-event-header">
+                            <h4 class="timeline-event-title">{{.Repository}}</h4>
+                            <span class="timeline-event-time">{{.ActivityTime | FormatTime}}</span>
+                        </div>
+                        <div class="timeline-event-details">
+                            {{.ActivityDescription}}
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+                {{end}}
+            </div>
+        </div>
+    </div>
 </div>
+
+<input type="hidden" name="sort-by" value="{{.SortBy}}">
+<input type="hidden" name="sort-dir" value="{{.SortDir}}">
+
+<script>
+    // Function to check if auto-refresh is enabled - always return true now
+    function autoRefreshEnabled() {
+        return true;
+    }
+    
+    // Main initialization function
+    document.addEventListener('DOMContentLoaded', function() {
+        // Note: Sorting is now handled by the migrations_table.html script
+        
+        // Handle dropdown menu on touch devices
+        const dropdownBtn = document.querySelector('.btn-export');
+        if (dropdownBtn) {
+            dropdownBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const dropdown = this.closest('.dropdown');
+                const content = dropdown.querySelector('.dropdown-content');
+                content.classList.toggle('show');
+            });
+            
+            // Close dropdown when clicking outside of it
+            document.addEventListener('click', function(event) {
+                const dropdowns = document.querySelectorAll('.dropdown-content');
+                dropdowns.forEach(function(dropdown) {
+                    if (dropdown.classList.contains('show')) {
+                        dropdown.classList.remove('show');
+                    }
+                });
+            });
+        }
+        
+        // Show refresh indicator when refreshing
+        document.body.addEventListener('htmx:beforeRequest', function(evt) {
+            if (evt.detail.target.id === 'migrations-table') {
+                document.querySelector('.refresh-spinner').classList.add('active');
+            }
+        });
+        
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.target.id === 'migrations-table') {
+                document.querySelector('.refresh-spinner').classList.remove('active');
+                
+                // We don't need to update last-refreshed manually anymore as it's 
+                // updated via the template using HTMX with #last-updated-timestamp
+            }
+        });
+    });
+</script>
 {{end}} 

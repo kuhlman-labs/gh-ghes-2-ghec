@@ -77,6 +77,9 @@ func createErrorsDashboardHandler() http.HandlerFunc {
 				}
 				return fmt.Sprintf("%.1f", float64(count)/float64(total)*100)
 			},
+			"divFloat": func(value int64, divisor float64) float64 {
+				return float64(value) / divisor
+			},
 		}
 
 		// Create a new template with functions
@@ -86,12 +89,14 @@ func createErrorsDashboardHandler() http.HandlerFunc {
 			return
 		}
 
+		data := map[string]interface{}{
+			"Stats":     stats,
+			"ChartData": chartData,
+		}
+
 		if isHtmxRequest {
 			// For HTMX requests, only render the errors_content template
-			if err := tmpl.ExecuteTemplate(w, "errors_content", map[string]interface{}{
-				"Stats":     stats,
-				"ChartData": chartData,
-			}); err != nil {
+			if err := tmpl.ExecuteTemplate(w, "errors_content", data); err != nil {
 				http.Error(w, "Failed to render template: "+err.Error(), http.StatusInternalServerError)
 			}
 		} else {
@@ -106,7 +111,7 @@ func createErrorsDashboardHandler() http.HandlerFunc {
 				"ChartData":   chartData,
 			}
 
-			if err := tmpl.ExecuteTemplate(w, "base.html", customData); err != nil {
+			if err := tmpl.ExecuteTemplate(w, "base", customData); err != nil {
 				http.Error(w, "Failed to render error dashboard: "+err.Error(), http.StatusInternalServerError)
 			}
 		}

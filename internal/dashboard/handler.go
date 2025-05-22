@@ -5,6 +5,8 @@ package dashboard
 import (
 	"context"
 	"embed"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"html"
 	"html/template"
@@ -13,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +54,14 @@ type TemplateData struct {
 	PageSize         int
 	SearchQuery      string
 	AttemptCount     int
+	// New fields for filtering and sorting
+	StatusFilter    string
+	RepoFilter      string
+	TimeRangeFilter string
+	SortBy          string
+	SortDir         string
+	RecentActivity  []ActivityEvent
+	LastUpdate      time.Time // Added for last update timestamp
 }
 
 // MigrationStats represents statistics about migrations
@@ -93,12 +104,25 @@ const (
 	StatusRunning = "in_progress" // Same as payload.StatusInProgress
 )
 
+// ActivityEvent represents a timeline entry for migration activity
+type ActivityEvent struct {
+	Repository          string
+	Status              string
+	ActivityTime        time.Time
+	ActivityDescription string
+}
+
 // New creates a new dashboard handler
 func New(m *migrator.Migrator) (*Handler, error) {
 	// Create template functions
 	funcMap := template.FuncMap{
 		"ToLower": strings.ToLower,
-		"Title":   cases.Title(language.English).String,
+		"Title": func(s string) string {
+			if s == "" {
+				return ""
+			}
+			return cases.Title(language.English).String(s)
+		},
 		"FormatTime": func(t time.Time) string {
 			if t.IsZero() {
 				return "-"
@@ -153,6 +177,9 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard/stats", h.handleStats)
 	mux.HandleFunc("/dashboard/queue-stats", h.handleQueueStats)
 
+	// New export endpoints
+	mux.HandleFunc("/dashboard/export", h.handleExport)
+
 	// Migration detail and retry - use a single handler for the path
 	mux.HandleFunc("/dashboard/migration/", h.handleMigrationRoutes)
 
@@ -160,8 +187,9 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard/new", h.handleNewMigration)
 	mux.HandleFunc("/dashboard/migrate", h.handleSubmitMigration)
 
-	// History page
+	// History page and export
 	mux.HandleFunc("/dashboard/history", h.handleHistory)
+	mux.HandleFunc("/dashboard/history/export", h.handleHistoryExport)
 
 	// Serve static files with relative path detection only
 	staticDir := "static"
@@ -200,25 +228,36 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse page size from query parameters, default to 20
+	// Get migrations from the migrator
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+
+	// Parse query parameters
 	pageSizeStr := r.URL.Query().Get("page-size")
-	pageSize := 20 // Default
+	statusFilter := r.URL.Query().Get("filter-status")
+	repoFilter := r.URL.Query().Get("filter-repo")
+	timeRangeFilter := r.URL.Query().Get("filter-timerange")
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
+
+	// Set default page size
+	pageSize := 20
 	if pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			pageSize = ps
+		var err error
+		pageSize, err = strconv.Atoi(pageSizeStr)
+		if err != nil {
+			pageSize = 20
 		}
 	}
-
-	// Get all migration statuses and convert from map to slice
-	migrationsMap := h.migrator.GetAllMigrationStatuses()
-	allMigrations := mapToSlice(migrationsMap)
 
 	// Get queued repositories (waiting for worker)
 	queuedRepos := h.migrator.GetQueuedRepositories()
 	queuedReposSet := stringSet(queuedRepos)
 
+	// Convert map to slice
+	migrationsSlice := mapToSlice(migrationsMap)
+
 	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
-	for _, m := range allMigrations {
+	for _, m := range migrationsSlice {
 		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
 			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
 				m.Stage = "queued"
@@ -227,71 +266,79 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Filter to show only active migrations in the overview
-	var activeMigrations []*payload.MigrationStatus
-	for _, migration := range allMigrations {
-		if migration.Status == payload.StatusInProgress {
-			activeMigrations = append(activeMigrations, migration)
-		}
-	}
+	// Apply filters
+	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
 
-	// Calculate stats on all migrations
-	overallStats := calculateStats(allMigrations)
+	// Apply sorting
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
+	// Calculate migration statistics
+	stats := calculateStats(migrationsSlice)
 
 	// Get queue statistics
 	queueStats := h.migrator.GetQueueStats()
 
-	// Apply pagination if pageSize > 0
-	displayMigrations := activeMigrations
-	if pageSize > 0 && len(displayMigrations) > pageSize {
-		displayMigrations = displayMigrations[:pageSize]
-	}
+	// Get recent activity events
+	recentActivity := getRecentActivity(migrationsSlice, 10)
 
-	// Create template data
 	data := TemplateData{
-		Title:       "Overview",
-		Active:      "overview",
-		PageName:    "overview", // Note: Use lowercase to match the condition in base.html
-		CurrentYear: time.Now().Year(),
-		Migrations:  displayMigrations,
-		Stats:       overallStats,
-		QueueStats:  queueStats,
-		PageSize:    pageSize,
+		Title:           "Dashboard",
+		Active:          "dashboard",
+		PageName:        "overview",
+		CurrentYear:     time.Now().Year(),
+		Migrations:      sortedMigrations,
+		Stats:           stats,
+		QueueStats:      queueStats,
+		PageSize:        pageSize,
+		StatusFilter:    statusFilter,
+		RepoFilter:      repoFilter,
+		TimeRangeFilter: timeRangeFilter,
+		SortBy:          sortBy,
+		SortDir:         sortDir,
+		RecentActivity:  recentActivity,
+		LastUpdate:      time.Now(),
 	}
 
-	// Render the base template which will include the overview_content
-	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
-		http.Error(w, fmt.Sprintf("Error rendering template: %v", err), http.StatusInternalServerError)
+	err := h.templates.ExecuteTemplate(w, "base", data)
+	if err != nil {
+		h.logger.Error("failed to execute template", "error", err)
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
 		return
 	}
 }
 
-// handleRefresh handles the AJAX refresh for the dashboard overview
+// handleRefresh handles refreshing the migrations table
 func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	// Get migrations from the migrator
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
 
-	// Parse page size from query parameters, default to 20
+	// Parse query parameters
 	pageSizeStr := r.URL.Query().Get("page-size")
-	pageSize := 20 // Default
+	statusFilter := r.URL.Query().Get("filter-status")
+	repoFilter := r.URL.Query().Get("filter-repo")
+	timeRangeFilter := r.URL.Query().Get("filter-timerange")
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
+
+	// Set default page size
+	pageSize := 20
 	if pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			pageSize = ps
+		var err error
+		pageSize, err = strconv.Atoi(pageSizeStr)
+		if err != nil {
+			pageSize = 20
 		}
 	}
-
-	// Get all migration statuses and convert from map to slice
-	migrationsMap := h.migrator.GetAllMigrationStatuses()
-	allMigrations := mapToSlice(migrationsMap)
 
 	// Get queued repositories (waiting for worker)
 	queuedRepos := h.migrator.GetQueuedRepositories()
 	queuedReposSet := stringSet(queuedRepos)
 
+	// Convert map to slice
+	migrationsSlice := mapToSlice(migrationsMap)
+
 	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
-	for _, m := range allMigrations {
+	for _, m := range migrationsSlice {
 		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
 			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
 				m.Stage = "queued"
@@ -300,33 +347,357 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Filter to show only active migrations in the overview
-	var activeMigrations []*payload.MigrationStatus
-	for _, migration := range allMigrations {
-		if migration.Status == payload.StatusInProgress {
-			activeMigrations = append(activeMigrations, migration)
+	// Apply filters
+	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+
+	// Apply sorting
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
+	// Calculate migration statistics (needed for templates)
+	stats := calculateStats(migrationsSlice)
+
+	data := TemplateData{
+		Migrations:      sortedMigrations,
+		Stats:           stats,
+		PageSize:        pageSize,
+		StatusFilter:    statusFilter,
+		RepoFilter:      repoFilter,
+		TimeRangeFilter: timeRangeFilter,
+		SortBy:          sortBy,
+		SortDir:         sortDir,
+		LastUpdate:      time.Now(),
+	}
+
+	err := h.templates.ExecuteTemplate(w, "migrations_table", data)
+	if err != nil {
+		h.logger.Error("failed to execute template", "error", err)
+		http.Error(w, "Failed to render migrations table", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleExport handles exporting migrations data
+func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
+	// Get migrations from the migrator
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+
+	// Parse query parameters
+	statusFilter := r.URL.Query().Get("filter-status")
+	repoFilter := r.URL.Query().Get("filter-repo")
+	timeRangeFilter := r.URL.Query().Get("filter-timerange")
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
+	format := r.URL.Query().Get("format")
+
+	// Convert map to slice
+	migrationsSlice := mapToSlice(migrationsMap)
+
+	// Apply filters
+	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+
+	// Apply sorting
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
+	// Log export
+	h.logger.Info("Exporting migrations data",
+		"format", format,
+		"count", len(sortedMigrations),
+		"filters", map[string]string{
+			"status":    statusFilter,
+			"repo":      repoFilter,
+			"timeRange": timeRangeFilter,
+		})
+
+	// Export based on format
+	switch format {
+	case "csv":
+		exportCSV(w, sortedMigrations)
+	case "json":
+		exportJSON(w, sortedMigrations)
+	default:
+		http.Error(w, "Invalid export format", http.StatusBadRequest)
+	}
+}
+
+// exportCSV exports migrations data as CSV
+func exportCSV(w http.ResponseWriter, migrations []*payload.MigrationStatus) {
+	// Set headers for file download
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=migrations.csv")
+
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	// Write header
+	header := []string{
+		"Repository",
+		"Status",
+		"Stage",
+		"Progress",
+		"Size (MB)",
+		"Size Category",
+		"Started At",
+		"Duration",
+	}
+	if err := writer.Write(header); err != nil {
+		http.Error(w, "Failed to write CSV header", http.StatusInternalServerError)
+		return
+	}
+
+	// Write data
+	for _, m := range migrations {
+		stage := "-"
+		if m.Stage != "" {
+			stage = fmt.Sprintf("%s: %s", m.Stage, m.State)
+		}
+
+		size := "-"
+		if m.RepositorySize > 0 {
+			size = fmt.Sprintf("%.1f", float64(m.RepositorySize)/1048576)
+		}
+
+		startedAt := "-"
+		if !m.StartedAt.IsZero() {
+			startedAt = m.StartedAt.Format("2006-01-02 15:04:05")
+		}
+
+		duration := "-"
+		if m.Duration > 0 {
+			duration = m.Duration.String()
+		}
+
+		row := []string{
+			m.Repository,
+			m.Status,
+			stage,
+			strconv.Itoa(m.Progress),
+			size,
+			string(m.SizeCategory),
+			startedAt,
+			duration,
+		}
+		if err := writer.Write(row); err != nil {
+			http.Error(w, "Failed to write CSV row", http.StatusInternalServerError)
+			return
 		}
 	}
+}
 
-	// Calculate stats on all migrations
-	overallStats := calculateStats(allMigrations)
+// exportJSON exports migrations data as JSON
+func exportJSON(w http.ResponseWriter, migrations []*payload.MigrationStatus) {
+	// Set headers for file download
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", "attachment; filename=migrations.json")
 
-	// Apply pagination if pageSize > 0
-	displayMigrations := activeMigrations
-	if pageSize > 0 && len(displayMigrations) > pageSize {
-		displayMigrations = displayMigrations[:pageSize]
+	// Create a simplified version for export
+	type ExportMigration struct {
+		Repository     string    `json:"repository"`
+		Status         string    `json:"status"`
+		Stage          string    `json:"stage,omitempty"`
+		State          string    `json:"state,omitempty"`
+		Progress       int       `json:"progress"`
+		RepositorySize int64     `json:"repository_size_bytes,omitempty"`
+		SizeCategory   string    `json:"size_category,omitempty"`
+		StartedAt      time.Time `json:"started_at"`
+		Duration       string    `json:"duration"`
 	}
 
-	// Render only the table part
-	data := TemplateData{
-		Migrations: displayMigrations,
-		Stats:      overallStats,
-		PageSize:   pageSize,
+	exportData := make([]ExportMigration, 0, len(migrations))
+	for _, m := range migrations {
+		export := ExportMigration{
+			Repository:     m.Repository,
+			Status:         m.Status,
+			Stage:          m.Stage,
+			State:          m.State,
+			Progress:       m.Progress,
+			RepositorySize: m.RepositorySize,
+			SizeCategory:   string(m.SizeCategory),
+			StartedAt:      m.StartedAt,
+			Duration:       m.Duration.String(),
+		}
+		exportData = append(exportData, export)
 	}
 
-	if err := h.templates.ExecuteTemplate(w, "migrations_table", data); err != nil {
-		http.Error(w, "Failed to render template", http.StatusInternalServerError)
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(exportData); err != nil {
+		http.Error(w, "Failed to encode JSON data", http.StatusInternalServerError)
+		return
 	}
+}
+
+// filterMigrations applies filters to the migrations list
+func filterMigrations(migrations []*payload.MigrationStatus, statusFilter, repoFilter, timeRangeFilter string) []*payload.MigrationStatus {
+	result := make([]*payload.MigrationStatus, 0, len(migrations))
+
+	for _, m := range migrations {
+		// Apply status filter
+		if statusFilter != "" && !strings.EqualFold(m.Status, statusFilter) {
+			continue
+		}
+
+		// Apply repository filter
+		if repoFilter != "" && !strings.Contains(strings.ToLower(m.Repository), strings.ToLower(repoFilter)) {
+			continue
+		}
+
+		// Apply time range filter
+		if !passesTimeFilter(m, timeRangeFilter) {
+			continue
+		}
+
+		result = append(result, m)
+	}
+
+	return result
+}
+
+// passesTimeFilter checks if a migration passes the time range filter
+func passesTimeFilter(m *payload.MigrationStatus, timeRangeFilter string) bool {
+	if timeRangeFilter == "" || m.StartedAt.IsZero() {
+		return true
+	}
+
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+
+	switch timeRangeFilter {
+	case "today":
+		return m.StartedAt.After(today) || m.StartedAt.Equal(today)
+	case "yesterday":
+		yesterday := today.AddDate(0, 0, -1)
+		return m.StartedAt.After(yesterday) && m.StartedAt.Before(today)
+	case "week":
+		weekStart := today.AddDate(0, 0, -int(today.Weekday()))
+		return m.StartedAt.After(weekStart) || m.StartedAt.Equal(weekStart)
+	case "month":
+		monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		return m.StartedAt.After(monthStart) || m.StartedAt.Equal(monthStart)
+	default:
+		return true
+	}
+}
+
+// sortMigrations sorts the migrations based on the given criteria
+func sortMigrations(migrations []*payload.MigrationStatus, sortBy, sortDir string) []*payload.MigrationStatus {
+	// Make a copy to avoid modifying the original
+	result := make([]*payload.MigrationStatus, len(migrations))
+	copy(result, migrations)
+
+	// If no sort criteria, default to started_at descending
+	if sortBy == "" {
+		sortBy = "started_at"
+		sortDir = "desc"
+	}
+
+	// If no sort direction, default to ascending
+	if sortDir == "" {
+		sortDir = "asc"
+	}
+
+	// Sort by the specified column
+	sort.SliceStable(result, func(i, j int) bool {
+		// Determine sort order
+		ascending := sortDir == "asc"
+
+		// Default comparison result (for ascending)
+		var less bool
+
+		switch sortBy {
+		case "repository":
+			less = result[i].Repository < result[j].Repository
+		case "status":
+			less = result[i].Status < result[j].Status
+		case "stage":
+			less = result[i].Stage < result[j].Stage
+		case "progress":
+			less = result[i].Progress < result[j].Progress
+		case "size":
+			less = result[i].RepositorySize < result[j].RepositorySize
+		case "started_at":
+			// Handle zero time values
+			if result[i].StartedAt.IsZero() {
+				less = false // Zero times are "greater" (come last)
+			} else if result[j].StartedAt.IsZero() {
+				less = true // Non-zero times are "less" (come first)
+			} else {
+				less = result[i].StartedAt.Before(result[j].StartedAt)
+			}
+		case "duration":
+			less = result[i].Duration < result[j].Duration
+		default:
+			// Default to sorting by started_at
+			if result[i].StartedAt.IsZero() {
+				less = false
+			} else if result[j].StartedAt.IsZero() {
+				less = true
+			} else {
+				less = result[i].StartedAt.Before(result[j].StartedAt)
+			}
+		}
+
+		// Reverse if descending order
+		if !ascending {
+			less = !less
+		}
+
+		return less
+	})
+
+	return result
+}
+
+// getRecentActivity generates activity events for display in the timeline
+func getRecentActivity(migrations []*payload.MigrationStatus, limit int) []ActivityEvent {
+	events := make([]ActivityEvent, 0)
+
+	for _, m := range migrations {
+		// Skip migrations with zero time
+		if m.StartedAt.IsZero() {
+			continue
+		}
+
+		// Create description based on status
+		description := ""
+		switch m.Status {
+		case "succeeded", "completed":
+			description = "Migration completed successfully"
+		case "failed", "error":
+			description = "Migration failed"
+		case "running", "in_progress", "active":
+			if m.Stage != "" {
+				description = fmt.Sprintf("Currently in %s stage (%s)", m.Stage, m.State)
+			} else {
+				description = "Migration in progress"
+			}
+		case "pending":
+			description = "Migration pending"
+		default:
+			description = fmt.Sprintf("Status: %s", m.Status)
+		}
+
+		// Add event
+		event := ActivityEvent{
+			Repository:          m.Repository,
+			Status:              m.Status,
+			ActivityTime:        m.StartedAt,
+			ActivityDescription: description,
+		}
+
+		events = append(events, event)
+	}
+
+	// Sort by time (newest first)
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].ActivityTime.After(events[j].ActivityTime)
+	})
+
+	// Limit the number of events
+	if len(events) > limit {
+		events = events[:limit]
+	}
+
+	return events
 }
 
 // handleMigrationRoutes routes requests to the appropriate handler based on the URL path and method
@@ -438,7 +809,7 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 			// Consider sending a specific empty response or a "not found" partial.
 			// For now, we send the template which will render based on nil status.
 		}
-		if err := h.templates.ExecuteTemplate(w, "migration_detail_content.html", data); err != nil {
+		if err := h.templates.ExecuteTemplate(w, "migration_detail_content", data); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to render migration detail content template: %v", err), http.StatusInternalServerError)
 		}
 	} else {
@@ -449,7 +820,7 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, fmt.Sprintf("Migration not found for %s for full page load", repoFullName), http.StatusNotFound)
 			return
 		}
-		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to render base template for migration detail: %v", err), http.StatusInternalServerError)
 		}
 	}
@@ -469,7 +840,7 @@ func (h *Handler) handleNewMigration(w http.ResponseWriter, r *http.Request) {
 		CurrentYear: time.Now().Year(),
 	}
 
-	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+	if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
 	}
 }
@@ -492,6 +863,10 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	// Get and sanitize search query parameter
 	searchQuery := sanitizeInput(r.URL.Query().Get("search"))
+
+	// Get sort parameters
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
 
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
@@ -519,8 +894,11 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		filteredMigrations = completedMigrations
 	}
 
+	// Apply sorting (before pagination)
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
 	// Apply pagination if pageSize > 0
-	displayMigrations := filteredMigrations
+	displayMigrations := sortedMigrations
 	if pageSize > 0 && len(displayMigrations) > pageSize {
 		displayMigrations = displayMigrations[:pageSize]
 	}
@@ -533,9 +911,11 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		Migrations:  displayMigrations,
 		PageSize:    pageSize,
 		SearchQuery: searchQuery,
+		SortBy:      sortBy,
+		SortDir:     sortDir,
 	}
 
-	if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+	if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
 		http.Error(w, "Failed to render template for history", http.StatusInternalServerError)
 	}
 }
@@ -621,7 +1001,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 			CurrentYear: time.Now().Year(),
 			Error:       "Validation error: " + html.EscapeString(err.Error()),
 		}
-		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
 			http.Error(w, "Failed to render template", http.StatusInternalServerError)
 		}
 		return
@@ -640,7 +1020,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 			CurrentYear: time.Now().Year(),
 			Error:       "Failed to start migration: " + html.EscapeString(err.Error()),
 		}
-		if err := h.templates.ExecuteTemplate(w, "base.html", data); err != nil {
+		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
 			http.Error(w, "Failed to render template", http.StatusInternalServerError)
 		}
 		return
@@ -1117,4 +1497,146 @@ func stringSet(slice []string) map[string]struct{} {
 		set[s] = struct{}{}
 	}
 	return set
+}
+
+// handleHistoryExport handles exporting migration history in various formats
+func (h *Handler) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get and validate format parameter
+	format := r.URL.Query().Get("format")
+	if format != "csv" && format != "json" {
+		http.Error(w, "Invalid export format. Supported formats: csv, json", http.StatusBadRequest)
+		return
+	}
+
+	// Parse page size from query parameters
+	pageSizeStr := r.URL.Query().Get("page-size")
+	pageSize := 0 // Default to all for exports
+	if pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
+			pageSize = ps
+		}
+	}
+
+	// Get search query parameter
+	searchQuery := sanitizeInput(r.URL.Query().Get("search"))
+
+	// Get sort parameters
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
+
+	// Get all migration statuses and convert from map to slice
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+	allMigrations := mapToSlice(migrationsMap)
+
+	// Filter to show only completed (succeeded or failed) migrations in the history
+	var completedMigrations []*payload.MigrationStatus
+	for _, migration := range allMigrations {
+		if migration.Status == payload.StatusSucceeded || migration.Status == payload.StatusFailed {
+			completedMigrations = append(completedMigrations, migration)
+		}
+	}
+
+	// Apply search filter if a search query is provided
+	var filteredMigrations []*payload.MigrationStatus
+	if searchQuery != "" {
+		searchQuery = strings.ToLower(searchQuery)
+		for _, migration := range completedMigrations {
+			// Case-insensitive search of repository name
+			if strings.Contains(strings.ToLower(migration.Repository), searchQuery) {
+				filteredMigrations = append(filteredMigrations, migration)
+			}
+		}
+	} else {
+		filteredMigrations = completedMigrations
+	}
+
+	// Apply sorting
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
+	// Apply pagination if pageSize > 0
+	displayMigrations := sortedMigrations
+	if pageSize > 0 && len(displayMigrations) > pageSize {
+		displayMigrations = displayMigrations[:pageSize]
+	}
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102-150405")
+	filename := fmt.Sprintf("migration-history-%s.%s", timestamp, format)
+
+	// Set content disposition header to trigger download
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+
+	// Export in the requested format
+	switch format {
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv")
+		csvWriter := csv.NewWriter(w)
+
+		// Write header
+		if err := csvWriter.Write([]string{
+			"Repository", "Status", "Stage", "State", "Progress", "Started At", "Duration", "Error",
+		}); err != nil {
+			http.Error(w, "Failed to write CSV header", http.StatusInternalServerError)
+			return
+		}
+
+		// Write data rows
+		for _, m := range displayMigrations {
+			if err := csvWriter.Write([]string{
+				m.Repository,
+				string(m.Status),
+				string(m.Stage),
+				string(m.State),
+				fmt.Sprintf("%d", m.Progress),
+				m.StartedAt.Format(time.RFC3339),
+				m.Duration.String(),
+				m.Error,
+			}); err != nil {
+				http.Error(w, "Failed to write CSV row", http.StatusInternalServerError)
+				return
+			}
+		}
+		csvWriter.Flush()
+
+	case "json":
+		w.Header().Set("Content-Type", "application/json")
+		// Create a simplified struct for export
+		type ExportMigration struct {
+			Repository string    `json:"repository"`
+			Status     string    `json:"status"`
+			Stage      string    `json:"stage"`
+			State      string    `json:"state"`
+			Progress   int       `json:"progress"`
+			StartedAt  time.Time `json:"started_at"`
+			Duration   string    `json:"duration"`
+			Error      string    `json:"error,omitempty"`
+		}
+
+		exportData := make([]ExportMigration, 0, len(displayMigrations))
+		for _, m := range displayMigrations {
+			exportData = append(exportData, ExportMigration{
+				Repository: m.Repository,
+				Status:     string(m.Status),
+				Stage:      string(m.Stage),
+				State:      string(m.State),
+				Progress:   m.Progress,
+				StartedAt:  m.StartedAt,
+				Duration:   m.Duration.String(),
+				Error:      m.Error,
+			})
+		}
+
+		// Encode as JSON
+		encoder := json.NewEncoder(w)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(exportData); err != nil {
+			http.Error(w, "Failed to generate JSON export", http.StatusInternalServerError)
+			return
+		}
+	}
 }
