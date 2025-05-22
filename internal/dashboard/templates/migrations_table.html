@@ -69,23 +69,68 @@
 </table>
 
 <script>
-    // Update header styling based on current sorting
-    document.addEventListener('DOMContentLoaded', function() {
-        const sortBy = document.querySelector('input[name="sort-by"]')?.value;
-        const sortDir = document.querySelector('input[name="sort-dir"]')?.value;
+    // Function to set up sorting functionality
+    function setupTableSorting() {
+        const sortableHeaders = document.querySelectorAll('th.sortable');
+        const sortByInput = document.querySelector('input[name="sort-by"]');
+        const sortDirInput = document.querySelector('input[name="sort-dir"]');
         
-        if (sortBy) {
-            const header = document.querySelector(`th[data-column="${sortBy}"]`);
+        if (!sortableHeaders.length || !sortByInput || !sortDirInput) return;
+        
+        // Update header styling based on current sorting
+        if (sortByInput.value) {
+            const header = document.querySelector(`th[data-column="${sortByInput.value}"]`);
             if (header) {
-                header.classList.add(sortDir === 'desc' ? 'sort-desc' : 'sort-asc');
+                header.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
             }
         }
         
-        // Initialize progress bars
+        // Add click handlers for sortable headers
+        sortableHeaders.forEach(header => {
+            // Remove any existing click listeners to avoid duplicates
+            const newHeader = header.cloneNode(true);
+            header.parentNode.replaceChild(newHeader, header);
+            
+            newHeader.addEventListener('click', function() {
+                const column = this.dataset.column;
+                
+                if (sortByInput.value === column) {
+                    // Toggle direction if already sorting by this column
+                    sortDirInput.value = sortDirInput.value === 'asc' ? 'desc' : 'asc';
+                } else {
+                    // Default to ascending for new column
+                    sortByInput.value = column;
+                    sortDirInput.value = 'asc';
+                }
+                
+                // Update UI immediately to show which column is being sorted
+                document.querySelectorAll('th.sortable').forEach(th => {
+                    th.classList.remove('sort-asc', 'sort-desc');
+                });
+                this.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+                
+                // Trigger refresh
+                document.body.dispatchEvent(new Event('refreshTable'));
+            });
+        });
+    }
+    
+    // Initialize progress bars
+    function initializeProgressBars() {
         document.querySelectorAll('.progress-value').forEach(function(el) {
             const progress = parseFloat(el.getAttribute('data-progress'));
             el.style.width = progress + '%';
         });
+    }
+    
+    // Run initialization when DOM content is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        setupTableSorting();
+        initializeProgressBars();
     });
+    
+    // Also run initialization immediately for AJAX refreshes
+    setupTableSorting();
+    initializeProgressBars();
 </script>
 {{end}} 

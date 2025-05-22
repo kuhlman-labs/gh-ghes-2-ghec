@@ -202,30 +202,10 @@
         return true;
     }
     
-    // Set up sorting functionality
+    // Main initialization function
     document.addEventListener('DOMContentLoaded', function() {
-        const sortableHeaders = document.querySelectorAll('th.sortable');
-        const sortByInput = document.querySelector('input[name="sort-by"]');
-        const sortDirInput = document.querySelector('input[name="sort-dir"]');
+        // Note: Sorting is now handled by the migrations_table.html script
         
-        sortableHeaders.forEach(header => {
-            header.addEventListener('click', function() {
-                const column = this.dataset.column;
-                
-                if (sortByInput.value === column) {
-                    // Toggle direction if already sorting by this column
-                    sortDirInput.value = sortDirInput.value === 'asc' ? 'desc' : 'asc';
-                } else {
-                    // Default to ascending for new column
-                    sortByInput.value = column;
-                    sortDirInput.value = 'asc';
-                }
-                
-                // Trigger refresh
-                document.body.dispatchEvent(new Event('refreshTable'));
-            });
-        });
-
         // Handle dropdown menu on touch devices
         const dropdownBtn = document.querySelector('.btn-export');
         if (dropdownBtn) {
