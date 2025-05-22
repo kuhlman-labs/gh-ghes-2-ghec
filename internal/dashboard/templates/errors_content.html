@@ -5,7 +5,7 @@
      hx-swap="outerHTML">
   <div class="stats-section">
     <div class="dashboard-header">
-      <h2>Error Distribution by Category</h2>
+      <h2>Error Distribution</h2>
       <div class="dashboard-controls">
         <button class="btn btn-secondary" hx-get="/dashboard/errors" hx-target=".dashboard-overview" hx-swap="outerHTML">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -13,48 +13,74 @@
           </svg>
           Refresh
         </button>
+        <div class="dropdown">
+          <button class="btn btn-export">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export
+          </button>
+          <div class="dropdown-content">
+            <a href="/dashboard/errors/export?format=csv" class="dropdown-item">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+              </svg>
+              Export as CSV
+            </a>
+            <a href="/dashboard/errors/export?format=json" class="dropdown-item">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
+              </svg>
+              Export as JSON
+            </a>
+          </div>
+        </div>
       </div>
     </div>
     
-    <div class="info-section">
+    <div class="section-header">
       <h3 class="section-title">Error Statistics</h3>
       <div class="refresh-indicator">
         <span class="last-refreshed">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
         <span class="refresh-spinner"></span>
       </div>
+    </div>
       
-      <div class="error-chart-container">
-        <div class="error-chart">
-          <canvas id="errorChart"></canvas>
-        </div>
-        <div class="error-table">
-          <div class="dashboard-table">
-            <table class="info-table">
-              <thead>
-                <tr>
-                  <th>Category</th>
-                  <th>Count</th>
-                  <th>Percentage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{range $category, $count := .Stats.Categories}}
-                <tr>
-                  <td>{{$category}}</td>
-                  <td>{{$count}}</td>
-                  <td>{{percentage $count $.Stats.TotalErrors}}%</td>
-                </tr>
-                {{end}}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <th>Total</th>
-                  <th>{{.Stats.TotalErrors}}</th>
-                  <th>100%</th>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+    <div class="error-chart-container">
+      <div class="error-chart">
+        <canvas id="errorChart"></canvas>
+      </div>
+      <div class="error-table">
+        <div class="dashboard-table">
+          <table class="info-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th>Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range $category, $count := .Stats.Categories}}
+              <tr>
+                <td>{{$category}}</td>
+                <td>{{$count}}</td>
+                <td>{{percentage $count $.Stats.TotalErrors}}%</td>
+              </tr>
+              {{end}}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th>{{.Stats.TotalErrors}}</th>
+                <th>100%</th>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     </div>
@@ -65,8 +91,8 @@
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     var ctx = document.getElementById('errorChart').getContext('2d');
-    var totalErrors = {{.Stats.TotalErrors}};
-    var chartData = JSON.parse(`{{.ChartData}}`);
+    var totalErrors = parseInt("{{.Stats.TotalErrors}}");
+    var chartData = JSON.parse("{{.ChartData}}");
     
     var errorChart = new Chart(ctx, {
       type: 'pie',
@@ -103,6 +129,29 @@
   document.body.addEventListener('htmx:afterRequest', function(evt) {
     if (evt.detail.target.classList.contains('dashboard-overview')) {
       document.querySelector('.refresh-spinner').classList.remove('active');
+    }
+  });
+  
+  // Handle dropdown menu on touch devices
+  document.addEventListener('DOMContentLoaded', function() {
+    const dropdownBtn = document.querySelector('.btn-export');
+    if (dropdownBtn) {
+      dropdownBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const dropdown = this.closest('.dropdown');
+        const content = dropdown.querySelector('.dropdown-content');
+        content.classList.toggle('show');
+      });
+      
+      // Close dropdown when clicking outside of it
+      document.addEventListener('click', function(event) {
+        const dropdowns = document.querySelectorAll('.dropdown-content');
+        dropdowns.forEach(function(dropdown) {
+          if (dropdown.classList.contains('show')) {
+            dropdown.classList.remove('show');
+          }
+        });
+      });
     }
   });
 </script>
