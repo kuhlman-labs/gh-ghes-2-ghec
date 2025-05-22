@@ -92,7 +92,8 @@
   document.addEventListener('DOMContentLoaded', function() {
     var ctx = document.getElementById('errorChart').getContext('2d');
     var totalErrors = parseInt("{{.Stats.TotalErrors}}");
-    var chartData = JSON.parse("{{.ChartData}}");
+    // Use JS template literals (backticks) to safely include JSON with quotes
+    var chartData = JSON.parse(`{{- .ChartData -}}`);
     
     var errorChart = new Chart(ctx, {
       type: 'pie',
