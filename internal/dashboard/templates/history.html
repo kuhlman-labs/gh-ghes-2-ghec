@@ -190,7 +190,11 @@ function setupHistoryTableSorting() {
             this.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
             
             // Navigate to the sorted URL
-            window.location.href = `/dashboard/history?search=${encodeURIComponent(document.getElementById('repository-search')?.value || '')}&page-size=${document.getElementById('history-page-size')?.value || '20'}&sort-by=${sortByInput.value}&sort-dir=${sortDirInput.value}`;
+            const searchValue = document.getElementById('repository-search')?.value || '';
+            const pageSizeValue = document.getElementById('history-page-size')?.value || '20';
+            
+            // Ensure all parameters are properly encoded to prevent XSS
+            window.location.href = `/dashboard/history?search=${encodeURIComponent(searchValue)}&page-size=${encodeURIComponent(pageSizeValue)}&sort-by=${encodeURIComponent(sortByInput.value)}&sort-dir=${encodeURIComponent(sortDirInput.value)}`;
         });
     });
 }
