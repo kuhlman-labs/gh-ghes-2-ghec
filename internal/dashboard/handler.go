@@ -439,7 +439,10 @@ func exportCSV(w http.ResponseWriter, migrations []*payload.MigrationStatus) {
 		"Started At",
 		"Duration",
 	}
-	writer.Write(header)
+	if err := writer.Write(header); err != nil {
+		http.Error(w, "Failed to write CSV header", http.StatusInternalServerError)
+		return
+	}
 
 	// Write data
 	for _, m := range migrations {
@@ -473,7 +476,10 @@ func exportCSV(w http.ResponseWriter, migrations []*payload.MigrationStatus) {
 			startedAt,
 			duration,
 		}
-		writer.Write(row)
+		if err := writer.Write(row); err != nil {
+			http.Error(w, "Failed to write CSV row", http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -514,7 +520,10 @@ func exportJSON(w http.ResponseWriter, migrations []*payload.MigrationStatus) {
 
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	encoder.Encode(exportData)
+	if err := encoder.Encode(exportData); err != nil {
+		http.Error(w, "Failed to encode JSON data", http.StatusInternalServerError)
+		return
+	}
 }
 
 // filterMigrations applies filters to the migrations list
@@ -1569,13 +1578,16 @@ func (h *Handler) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
 		csvWriter := csv.NewWriter(w)
 
 		// Write header
-		csvWriter.Write([]string{
+		if err := csvWriter.Write([]string{
 			"Repository", "Status", "Stage", "State", "Progress", "Started At", "Duration", "Error",
-		})
+		}); err != nil {
+			http.Error(w, "Failed to write CSV header", http.StatusInternalServerError)
+			return
+		}
 
 		// Write data rows
 		for _, m := range displayMigrations {
-			csvWriter.Write([]string{
+			if err := csvWriter.Write([]string{
 				m.Repository,
 				string(m.Status),
 				string(m.Stage),
@@ -1584,7 +1596,10 @@ func (h *Handler) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
 				m.StartedAt.Format(time.RFC3339),
 				m.Duration.String(),
 				m.Error,
-			})
+			}); err != nil {
+				http.Error(w, "Failed to write CSV row", http.StatusInternalServerError)
+				return
+			}
 		}
 		csvWriter.Flush()
 
