@@ -117,7 +117,12 @@ func New(m *migrator.Migrator) (*Handler, error) {
 	// Create template functions
 	funcMap := template.FuncMap{
 		"ToLower": strings.ToLower,
-		"Title":   cases.Title(language.English).String,
+		"Title": func(s string) string {
+			if s == "" {
+				return ""
+			}
+			return cases.Title(language.English).String(s)
+		},
 		"FormatTime": func(t time.Time) string {
 			if t.IsZero() {
 				return "-"
