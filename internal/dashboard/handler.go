@@ -855,6 +855,10 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 	// Get and sanitize search query parameter
 	searchQuery := sanitizeInput(r.URL.Query().Get("search"))
 
+	// Get sort parameters
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
+
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	allMigrations := mapToSlice(migrationsMap)
@@ -881,8 +885,11 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		filteredMigrations = completedMigrations
 	}
 
+	// Apply sorting (before pagination)
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
 	// Apply pagination if pageSize > 0
-	displayMigrations := filteredMigrations
+	displayMigrations := sortedMigrations
 	if pageSize > 0 && len(displayMigrations) > pageSize {
 		displayMigrations = displayMigrations[:pageSize]
 	}
@@ -895,6 +902,8 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 		Migrations:  displayMigrations,
 		PageSize:    pageSize,
 		SearchQuery: searchQuery,
+		SortBy:      sortBy,
+		SortDir:     sortDir,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
@@ -1507,6 +1516,10 @@ func (h *Handler) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
 	// Get search query parameter
 	searchQuery := sanitizeInput(r.URL.Query().Get("search"))
 
+	// Get sort parameters
+	sortBy := r.URL.Query().Get("sort-by")
+	sortDir := r.URL.Query().Get("sort-dir")
+
 	// Get all migration statuses and convert from map to slice
 	migrationsMap := h.migrator.GetAllMigrationStatuses()
 	allMigrations := mapToSlice(migrationsMap)
@@ -1533,8 +1546,11 @@ func (h *Handler) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
 		filteredMigrations = completedMigrations
 	}
 
+	// Apply sorting
+	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
+
 	// Apply pagination if pageSize > 0
-	displayMigrations := filteredMigrations
+	displayMigrations := sortedMigrations
 	if pageSize > 0 && len(displayMigrations) > pageSize {
 		displayMigrations = displayMigrations[:pageSize]
 	}

@@ -13,14 +13,14 @@
                     Export
                 </button>
                 <div class="dropdown-content">
-                    <a href="/dashboard/history/export?format=csv{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}" class="dropdown-item">
+                    <a href="/dashboard/history/export?format=csv{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" class="dropdown-item">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
                             <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
                         </svg>
                         Export as CSV
                     </a>
-                    <a href="/dashboard/history/export?format=json{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}" class="dropdown-item">
+                    <a href="/dashboard/history/export?format=json{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" class="dropdown-item">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
                             <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
@@ -42,7 +42,7 @@
         <div class="search-controls">
             <div class="page-size-selector">
                 <label for="history-page-size">Show:</label>
-                <select id="history-page-size" name="page-size" hx-get="/dashboard/history{{if .SearchQuery}}?search={{.SearchQuery}}{{end}}" hx-target=".dashboard-history" hx-swap="outerHTML" hx-trigger="change">
+                <select id="history-page-size" name="page-size" hx-get="/dashboard/history{{if .SearchQuery}}?search={{.SearchQuery}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" hx-target=".dashboard-history" hx-swap="outerHTML" hx-trigger="change">
                     <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
                     <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
                     <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
@@ -68,8 +68,10 @@
                             Search
                         </button>
                     </div>
-                    <!-- Preserve page size when submitting search -->
+                    <!-- Preserve params when submitting search -->
                     <input type="hidden" name="page-size" value="{{ .PageSize }}">
+                    <input type="hidden" name="sort-by" value="{{ .SortBy }}">
+                    <input type="hidden" name="sort-dir" value="{{ .SortDir }}">
                     {{if .SearchQuery}}
                     <a href="/dashboard/history" class="btn btn-sm clear-search">Clear</a>
                     {{end}}
@@ -82,12 +84,12 @@
                 <table class="info-table">
                     <thead>
                         <tr>
-                            <th>Source Repository</th>
-                            <th>Status</th>
-                            <th>Stage</th>
-                            <th>Progress</th>
-                            <th>Started</th>
-                            <th>Duration</th>
+                            <th class="sortable" data-column="repository">Source Repository</th>
+                            <th class="sortable" data-column="status">Status</th>
+                            <th class="sortable" data-column="stage">Stage</th>
+                            <th class="sortable" data-column="progress">Progress</th>
+                            <th class="sortable" data-column="started_at">Started</th>
+                            <th class="sortable" data-column="duration">Duration</th>
                             <th class="actions-column">Actions</th>
                         </tr>
                     </thead>
@@ -142,7 +144,65 @@
     </div>
 </div>
 
+<!-- Hidden inputs for sorting -->
+<input type="hidden" name="sort-by" value="{{.SortBy}}">
+<input type="hidden" name="sort-dir" value="{{.SortDir}}">
+
 <script>
+// Function to set up sorting functionality
+function setupHistoryTableSorting() {
+    const sortableHeaders = document.querySelectorAll('th.sortable');
+    const sortByInput = document.querySelector('input[name="sort-by"]');
+    const sortDirInput = document.querySelector('input[name="sort-dir"]');
+    
+    if (!sortableHeaders.length || !sortByInput || !sortDirInput) return;
+    
+    // Update header styling based on current sorting
+    if (sortByInput.value) {
+        const header = document.querySelector(`th[data-column="${sortByInput.value}"]`);
+        if (header) {
+            header.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+        }
+    }
+    
+    // Add click handlers for sortable headers
+    sortableHeaders.forEach(header => {
+        // Remove any existing click listeners to avoid duplicates
+        const newHeader = header.cloneNode(true);
+        header.parentNode.replaceChild(newHeader, header);
+        
+        newHeader.addEventListener('click', function() {
+            const column = this.dataset.column;
+            
+            if (sortByInput.value === column) {
+                // Toggle direction if already sorting by this column
+                sortDirInput.value = sortDirInput.value === 'asc' ? 'desc' : 'asc';
+            } else {
+                // Default to ascending for new column
+                sortByInput.value = column;
+                sortDirInput.value = 'asc';
+            }
+            
+            // Update UI immediately to show which column is being sorted
+            document.querySelectorAll('th.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            this.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+            
+            // Navigate to the sorted URL
+            window.location.href = `/dashboard/history?search=${encodeURIComponent(document.getElementById('repository-search')?.value || '')}&page-size=${document.getElementById('history-page-size')?.value || '20'}&sort-by=${sortByInput.value}&sort-dir=${sortDirInput.value}`;
+        });
+    });
+}
+
+// Initialize progress bars
+function initializeProgressBars() {
+    document.querySelectorAll('.progress-value').forEach(function(el) {
+        const progress = parseFloat(el.getAttribute('data-progress'));
+        el.style.width = progress + '%';
+    });
+}
+
 // Handle dropdown menu on touch devices
 document.addEventListener('DOMContentLoaded', function() {
     const dropdownBtn = document.querySelector('.btn-export');
@@ -166,10 +226,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Initialize progress bars
-    document.querySelectorAll('.progress-value').forEach(function(el) {
-        const progress = parseFloat(el.getAttribute('data-progress'));
-        el.style.width = progress + '%';
-    });
+    initializeProgressBars();
+    
+    // Set up sorting
+    setupHistoryTableSorting();
 });
 </script>
 {{end}} 
