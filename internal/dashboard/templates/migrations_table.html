@@ -1,15 +1,16 @@
 {{define "migrations_table"}}
+<span id="last-updated-timestamp" class="last-refreshed" style="display: none;">Last updated: {{.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
 <table>
     <thead>
         <tr>
-            <th>Source Repository</th>
-            <th>Status</th>
-            <th>Stage</th>
-            <th>Progress</th>
-            <th>Size</th>
-            <th>Started</th>
-            <th>Duration</th>
-            <th>Actions</th>
+            <th class="sortable" data-column="repository">Source Repository</th>
+            <th class="sortable" data-column="status">Status</th>
+            <th class="sortable" data-column="stage">Stage</th>
+            <th class="sortable" data-column="progress">Progress</th>
+            <th class="sortable" data-column="size">Size</th>
+            <th class="sortable" data-column="started_at">Started</th>
+            <th class="sortable" data-column="duration">Duration</th>
+            <th class="actions-column">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -37,7 +38,7 @@
             </td>
             <td>
                 <div class="progress-bar">
-                    <div class="progress-value" data-progress="{{.Progress}}"></div>
+                    <div class="progress-value status-{{.Status | ToLower}}" data-progress="{{.Progress}}"></div>
                 </div>
                 <span class="progress-text">{{.Progress}}%</span>
             </td>
@@ -51,7 +52,7 @@
             </td>
             <td>{{.StartedAt | FormatTime}}</td>
             <td>{{.Duration | FormatDuration}}</td>
-            <td>
+            <td class="actions-column">
                 <a href="/dashboard/migration/{{.Repository}}" class="btn btn-sm btn-secondary">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -66,4 +67,25 @@
         {{end}}
     </tbody>
 </table>
+
+<script>
+    // Update header styling based on current sorting
+    document.addEventListener('DOMContentLoaded', function() {
+        const sortBy = document.querySelector('input[name="sort-by"]')?.value;
+        const sortDir = document.querySelector('input[name="sort-dir"]')?.value;
+        
+        if (sortBy) {
+            const header = document.querySelector(`th[data-column="${sortBy}"]`);
+            if (header) {
+                header.classList.add(sortDir === 'desc' ? 'sort-desc' : 'sort-asc');
+            }
+        }
+        
+        // Initialize progress bars
+        document.querySelectorAll('.progress-value').forEach(function(el) {
+            const progress = parseFloat(el.getAttribute('data-progress'));
+            el.style.width = progress + '%';
+        });
+    });
+</script>
 {{end}} 

@@ -1,42 +1,60 @@
 {{define "errors_content"}}
-<div class="container">
-  <h2>Error Distribution by Category</h2>
-  <div class="card">
-    <div class="card-header">
-      <h5 class="card-title">Error Statistics</h5>
-      <h6 class="card-subtitle text-muted">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</h6>
+<div class="dashboard-overview" 
+     hx-get="/dashboard/errors" 
+     hx-trigger="every 30s" 
+     hx-swap="outerHTML">
+  <div class="stats-section">
+    <div class="dashboard-header">
+      <h2>Error Distribution by Category</h2>
+      <div class="dashboard-controls">
+        <button class="btn btn-secondary" hx-get="/dashboard/errors" hx-target=".dashboard-overview" hx-swap="outerHTML">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
     </div>
-    <div class="card-body">
-      <div class="row">
-        <div class="col-md-8">
-          <canvas id="errorChart" width="400" height="300"></canvas>
+    
+    <div class="info-section">
+      <h3 class="section-title">Error Statistics</h3>
+      <div class="refresh-indicator">
+        <span class="last-refreshed">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
+        <span class="refresh-spinner"></span>
+      </div>
+      
+      <div class="error-chart-container">
+        <div class="error-chart">
+          <canvas id="errorChart"></canvas>
         </div>
-        <div class="col-md-4">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Count</th>
-                <th>%</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{range $category, $count := .Stats.Categories}}
-              <tr>
-                <td>{{$category}}</td>
-                <td>{{$count}}</td>
-                <td>{{percentage $count $.Stats.TotalErrors}}%</td>
-              </tr>
-              {{end}}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th>Total</th>
-                <th>{{.Stats.TotalErrors}}</th>
-                <th>100%</th>
-              </tr>
-            </tfoot>
-          </table>
+        <div class="error-table">
+          <div class="dashboard-table">
+            <table class="info-table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Count</th>
+                  <th>Percentage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range $category, $count := .Stats.Categories}}
+                <tr>
+                  <td>{{$category}}</td>
+                  <td>{{$count}}</td>
+                  <td>{{percentage $count $.Stats.TotalErrors}}%</td>
+                </tr>
+                {{end}}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th>Total</th>
+                  <th>{{.Stats.TotalErrors}}</th>
+                  <th>100%</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -47,9 +65,7 @@
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     var ctx = document.getElementById('errorChart').getContext('2d');
-    // Store total errors as a JavaScript variable
     var totalErrors = {{.Stats.TotalErrors}};
-    // Parse the JSON data - using backticks to handle quotes properly
     var chartData = JSON.parse(`{{.ChartData}}`);
     
     var errorChart = new Chart(ctx, {
@@ -57,6 +73,7 @@
       data: chartData,
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: {
             position: 'right'
@@ -74,6 +91,19 @@
         }
       }
     });
+  });
+
+  // Show refresh indicator when refreshing
+  document.body.addEventListener('htmx:beforeRequest', function(evt) {
+    if (evt.detail.target.classList.contains('dashboard-overview')) {
+      document.querySelector('.refresh-spinner').classList.add('active');
+    }
+  });
+  
+  document.body.addEventListener('htmx:afterRequest', function(evt) {
+    if (evt.detail.target.classList.contains('dashboard-overview')) {
+      document.querySelector('.refresh-spinner').classList.remove('active');
+    }
   });
 </script>
 {{end}} 

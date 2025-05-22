@@ -1,0 +1,20 @@
+{{define "stats_section"}}
+<div class="dashboard-stats">
+    <div class="stat-card">
+        <h3>Active</h3>
+        <span class="stat-value">{{ .Stats.Active }}</span>
+    </div>
+    <div class="stat-card">
+        <h3>Succeeded</h3>
+        <span class="stat-value">{{ .Stats.Succeeded }}</span>
+    </div>
+    <div class="stat-card">
+        <h3>Failed</h3>
+        <span class="stat-value">{{ .Stats.Failed }}</span>
+    </div>
+    <div class="stat-card">
+        <h3>Total</h3>
+        <span class="stat-value">{{ .Stats.Total }}</span>
+    </div>
+</div>
+{{end}} 
