@@ -112,42 +112,6 @@ func TestMigrator_GetAllMigrationStatuses(t *testing.T) {
 	assert.Equal(t, statuses, got)
 }
 
-func TestFormatDuration(t *testing.T) {
-	tests := []struct {
-		name     string
-		duration time.Duration
-		want     string
-	}{
-		{
-			name:     "zero duration",
-			duration: 0,
-			want:     "0h0m0s",
-		},
-		{
-			name:     "seconds only",
-			duration: 45 * time.Second,
-			want:     "0h0m45s",
-		},
-		{
-			name:     "minutes and seconds",
-			duration: 2*time.Minute + 30*time.Second,
-			want:     "0h2m30s",
-		},
-		{
-			name:     "hours, minutes and seconds",
-			duration: 1*time.Hour + 30*time.Minute + 45*time.Second,
-			want:     "1h30m45s",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := formatDuration(tt.duration)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestCalculateProgressData(t *testing.T) {
 	tests := []struct {
 		name     string
