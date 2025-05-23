@@ -34,19 +34,19 @@ var migrations = []Migration{
 		Description: "Add performance indexes",
 		SQL: `
 -- Add index for updated_at on migration_status
-CREATE INDEX IF NOT EXISTS idx_{table_prefix}migration_status_updated_at ON {table_prefix}migration_status(updated_at);
+CREATE INDEX IF NOT EXISTS idx_{table_prefix}_migration_status_updated_at ON {table_prefix}_migration_status(updated_at);
 
 -- Add index for status on migration_status
-CREATE INDEX IF NOT EXISTS idx_{table_prefix}migration_status_status ON {table_prefix}migration_status(status);
+CREATE INDEX IF NOT EXISTS idx_{table_prefix}_migration_status_status ON {table_prefix}_migration_status(status);
 
 -- Add index for status on migration_history
-CREATE INDEX IF NOT EXISTS idx_{table_prefix}migration_history_status ON {table_prefix}migration_history(status);
+CREATE INDEX IF NOT EXISTS idx_{table_prefix}_migration_history_status ON {table_prefix}_migration_history(status);
 
 -- Add index for updated_at on migration_history
-CREATE INDEX IF NOT EXISTS idx_{table_prefix}migration_history_updated_at ON {table_prefix}migration_history(updated_at);
+CREATE INDEX IF NOT EXISTS idx_{table_prefix}_migration_history_updated_at ON {table_prefix}_migration_history(updated_at);
 
 -- Add compound index for repository and updated_at on migration_history
-CREATE INDEX IF NOT EXISTS idx_{table_prefix}migration_history_repository_date ON {table_prefix}migration_history(repository, updated_at);
+CREATE INDEX IF NOT EXISTS idx_{table_prefix}_migration_history_repository_date ON {table_prefix}_migration_history(repository, updated_at);
 `,
 	},
 }
@@ -298,5 +298,15 @@ func (m *MigrationManager) applyMigration(ctx context.Context, migration Migrati
 // replacePlaceholders replaces template placeholders in migration SQL
 func replacePlaceholders(sql string, tablePrefix string) string {
 	// Replace the table_prefix placeholder with the actual table prefix
-	return strings.ReplaceAll(sql, "{table_prefix}", tablePrefix)
+	// If tablePrefix is empty, we need to handle the underscore correctly
+	if tablePrefix == "" {
+		// Replace {table_prefix}_ with empty string (removing the underscore)
+		sql = strings.ReplaceAll(sql, "{table_prefix}_", "")
+		// Replace remaining {table_prefix} with empty string
+		sql = strings.ReplaceAll(sql, "{table_prefix}", "")
+	} else {
+		// Replace {table_prefix} with the actual prefix
+		sql = strings.ReplaceAll(sql, "{table_prefix}", tablePrefix)
+	}
+	return sql
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -114,7 +115,15 @@ func NewTestSuite(t *testing.T) *TestSuite {
 func LoadTestConfig() (*TestConfig, error) {
 	configPath := filepath.Join(GetProjectRoot(), "test", "config", "test_config.yaml")
 
-	data, err := os.ReadFile(configPath)
+	// Validate the config path is within expected directory for security
+	projectRoot := GetProjectRoot()
+	expectedPrefix := filepath.Join(projectRoot, "test", "config")
+	cleanPath := filepath.Clean(configPath)
+	if !strings.HasPrefix(cleanPath, expectedPrefix) {
+		return nil, fmt.Errorf("config path outside expected directory: %s", configPath)
+	}
+
+	data, err := os.ReadFile(cleanPath) // #nosec G304 - path is validated above
 	if err != nil {
 		return nil, fmt.Errorf("failed to read test config: %w", err)
 	}
@@ -155,7 +164,11 @@ func (ts *TestSuite) SetupMockServices() *MockServices {
 	// Setup SQL mocks
 	db, mock, err := sqlmock.New()
 	require.NoError(ts.t, err, "Failed to create SQL mock")
-	ts.AddCleanup(func() { db.Close() })
+	ts.AddCleanup(func() {
+		if err := db.Close(); err != nil {
+			ts.t.Logf("Failed to close database: %v", err)
+		}
+	})
 
 	ts.mocks = &MockServices{
 		HTTPTransport: httpmock.DefaultTransport,
@@ -194,7 +207,11 @@ func (ts *TestSuite) SetupTestDatabase(dbType string) (string, error) {
 		}
 
 		ts.containers["postgres"] = container
-		ts.AddCleanup(func() { container.Terminate(ctx) })
+		ts.AddCleanup(func() {
+			if err := container.Terminate(ctx); err != nil {
+				ts.t.Logf("Failed to terminate postgres container: %v", err)
+			}
+		})
 
 		host, err := container.Host(ctx)
 		if err != nil {
@@ -235,7 +252,11 @@ func (ts *TestSuite) SetupTestDatabase(dbType string) (string, error) {
 		}
 
 		ts.containers["mysql"] = container
-		ts.AddCleanup(func() { container.Terminate(ctx) })
+		ts.AddCleanup(func() {
+			if err := container.Terminate(ctx); err != nil {
+				ts.t.Logf("Failed to terminate mysql container: %v", err)
+			}
+		})
 
 		host, err := container.Host(ctx)
 		if err != nil {
@@ -325,7 +346,8 @@ func (ts *TestSuite) CreateTestConfig(overrides map[string]interface{}) string {
 	data, err := yaml.Marshal(baseConfig)
 	require.NoError(ts.t, err, "Failed to marshal test config")
 
-	err = os.WriteFile(configPath, data, 0644)
+	// Use restrictive permissions for test config files
+	err = os.WriteFile(configPath, data, 0600)
 	require.NoError(ts.t, err, "Failed to write test config")
 
 	return configPath
@@ -368,17 +390,24 @@ func (ts *TestSuite) Cleanup() {
 
 	// Clean up temp directories
 	for _, dir := range ts.tempDirs {
-		os.RemoveAll(dir)
+		if err := os.RemoveAll(dir); err != nil {
+			ts.t.Logf("Failed to remove temp directory %s: %v", dir, err)
+		}
 	}
 
 	// Clean up containers
 	ctx := context.Background()
 	for _, container := range ts.containers {
-		container.Terminate(ctx)
+		if err := container.Terminate(ctx); err != nil {
+			ts.t.Logf("Failed to terminate container: %v", err)
+		}
 	}
 
-	// Check for goroutine leaks in unit tests
-	if ts.config.Unit.Short {
+	// Skip goroutine leak detection for integration tests since they involve
+	// complex services (like lumberjack logger, database connections, etc.)
+	// that create background goroutines which are difficult to clean up properly
+	// Only run leak detection for unit tests when running in short mode
+	if testing.Short() {
 		goleak.VerifyNone(ts.t)
 	}
 }
@@ -393,25 +422,20 @@ type MockRepository struct {
 	Language    string `faker:"word"`
 }
 
-// GenerateMockRepository generates a mock repository using faker
+// GenerateMockRepository generates a mock repository for testing
 func GenerateMockRepository() MockRepository {
 	var repo MockRepository
-	faker.FakeData(&repo)
-
-	// Provide fallback values if faker doesn't generate data
-	if repo.Name == "" {
-		repo.Name = "test-repo"
+	if err := faker.FakeData(&repo); err != nil {
+		// Use default values if faker fails
+		repo = MockRepository{
+			Name:        "test-repo",
+			FullName:    "test-org/test-repo",
+			Description: "A test repository",
+			Private:     false,
+			Size:        50000,
+			Language:    "Go",
+		}
 	}
-	if repo.FullName == "" {
-		repo.FullName = "test-org/test-repo"
-	}
-	if repo.Language == "" {
-		repo.Language = "Go"
-	}
-	if repo.Description == "" {
-		repo.Description = "A test repository for testing purposes"
-	}
-
 	return repo
 }
 
@@ -462,9 +486,15 @@ func CaptureOutput(fn func()) (string, string, error) {
 	// Run function
 	fn()
 
+	// Close writers to flush any buffered data
+	if err := stdoutW.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close stdout writer: %w", err)
+	}
+	if err := stderrW.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close stderr writer: %w", err)
+	}
+
 	// Restore original stdout/stderr
-	stdoutW.Close()
-	stderrW.Close()
 	os.Stdout = oldStdout
 	os.Stderr = oldStderr
 

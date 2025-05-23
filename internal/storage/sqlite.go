@@ -893,10 +893,12 @@ func (s *SQLiteStorage) GetAllMigrationStatuses(ctx context.Context) (map[string
 		return result, nil
 	}
 
-	// Check database file existence
-	if _, err := os.Stat(s.dbPath); err != nil {
-		s.logger.Error("Database file not found", "path", s.dbPath, "error", err)
-		return result, nil
+	// Check database file existence (skip for in-memory databases)
+	if s.dbPath != ":memory:" {
+		if _, err := os.Stat(s.dbPath); err != nil {
+			s.logger.Error("Database file not found", "path", s.dbPath, "error", err)
+			return result, nil
+		}
 	}
 
 	// Use the main connection with retry logic instead of a separate connection

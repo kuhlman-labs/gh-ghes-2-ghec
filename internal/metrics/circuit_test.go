@@ -30,21 +30,27 @@ func TestRegisterCircuitBreaker(t *testing.T) {
 
 	// Check that initial metrics are set
 	metric := &dto.Metric{}
-	CircuitBreakerState.WithLabelValues("test-circuit").Write(metric)
+	if err := CircuitBreakerState.WithLabelValues("test-circuit").Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	if metric.GetGauge().GetValue() != 0 { // Should be closed initially
 		t.Errorf("Expected initial state to be 0 (closed), got %f", metric.GetGauge().GetValue())
 	}
 
 	// Check consecutive failures metric
 	metric = &dto.Metric{}
-	CircuitBreakerConsecutiveFailures.WithLabelValues("test-circuit").Write(metric)
+	if err := CircuitBreakerConsecutiveFailures.WithLabelValues("test-circuit").Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	if metric.GetGauge().GetValue() != 0 {
 		t.Errorf("Expected initial consecutive failures to be 0, got %f", metric.GetGauge().GetValue())
 	}
 
 	// Check that last state change time is set (should be recent)
 	metric = &dto.Metric{}
-	CircuitBreakerLastStateChangeTime.WithLabelValues("test-circuit").Write(metric)
+	if err := CircuitBreakerLastStateChangeTime.WithLabelValues("test-circuit").Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	timestamp := metric.GetGauge().GetValue()
 	if timestamp == 0 {
 		t.Error("Expected last state change time to be set")
@@ -89,14 +95,18 @@ func TestCircuitBreakerStateChangeHandler(t *testing.T) {
 
 			// Check that the state metric is updated
 			metric := &dto.Metric{}
-			CircuitBreakerState.WithLabelValues("test-state-change").Write(metric)
+			if err := CircuitBreakerState.WithLabelValues("test-state-change").Write(metric); err != nil {
+				t.Fatalf("Failed to write metric: %v", err)
+			}
 			if metric.GetGauge().GetValue() != tc.expected {
 				t.Errorf("Expected state metric to be %f, got %f", tc.expected, metric.GetGauge().GetValue())
 			}
 
 			// Check that last state change time is updated
 			metric = &dto.Metric{}
-			CircuitBreakerLastStateChangeTime.WithLabelValues("test-state-change").Write(metric)
+			if err := CircuitBreakerLastStateChangeTime.WithLabelValues("test-state-change").Write(metric); err != nil {
+				t.Fatalf("Failed to write metric: %v", err)
+			}
 			timestamp := metric.GetGauge().GetValue()
 			if timestamp == 0 {
 				t.Error("Expected last state change time to be updated")
@@ -127,7 +137,9 @@ func TestUpdateCircuitBreakerMetrics(t *testing.T) {
 	// Get initial counter values
 	getCounterValue := func(labelValues ...string) float64 {
 		metric := &dto.Metric{}
-		CircuitBreakerTotalCalls.WithLabelValues(labelValues...).Write(metric)
+		if err := CircuitBreakerTotalCalls.WithLabelValues(labelValues...).Write(metric); err != nil {
+			t.Fatalf("Failed to write metric: %v", err)
+		}
 		return metric.GetCounter().GetValue()
 	}
 
@@ -160,7 +172,9 @@ func TestUpdateCircuitBreakerMetrics(t *testing.T) {
 
 	// Check consecutive failures gauge
 	metric := &dto.Metric{}
-	CircuitBreakerConsecutiveFailures.WithLabelValues("test-update-metrics").Write(metric)
+	if err := CircuitBreakerConsecutiveFailures.WithLabelValues("test-update-metrics").Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	consecutiveFailures := metric.GetGauge().GetValue()
 	if consecutiveFailures < 0 {
 		t.Errorf("Consecutive failures should not be negative, got %f", consecutiveFailures)
@@ -196,7 +210,9 @@ func TestCircuitBreakerStateValues(t *testing.T) {
 
 			// Check the metric value
 			metric := &dto.Metric{}
-			CircuitBreakerState.WithLabelValues("test-state-values").Write(metric)
+			if err := CircuitBreakerState.WithLabelValues("test-state-values").Write(metric); err != nil {
+				t.Fatalf("Failed to write metric: %v", err)
+			}
 			if metric.GetGauge().GetValue() != tc.expected {
 				t.Errorf("Expected state value %f for state %s, got %f",
 					tc.expected, string(tc.state), metric.GetGauge().GetValue())
@@ -223,21 +239,27 @@ func TestCircuitBreakerMetricLabels(t *testing.T) {
 
 	// Test state metric
 	metric := &dto.Metric{}
-	CircuitBreakerState.WithLabelValues(labelValues...).Write(metric)
+	if err := CircuitBreakerState.WithLabelValues(labelValues...).Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	if len(metric.GetLabel()) == 0 {
 		t.Error("State metric should have labels")
 	}
 
 	// Test consecutive failures metric
 	metric = &dto.Metric{}
-	CircuitBreakerConsecutiveFailures.WithLabelValues(labelValues...).Write(metric)
+	if err := CircuitBreakerConsecutiveFailures.WithLabelValues(labelValues...).Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	if len(metric.GetLabel()) == 0 {
 		t.Error("Consecutive failures metric should have labels")
 	}
 
 	// Test last state change metric
 	metric = &dto.Metric{}
-	CircuitBreakerLastStateChangeTime.WithLabelValues(labelValues...).Write(metric)
+	if err := CircuitBreakerLastStateChangeTime.WithLabelValues(labelValues...).Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	if len(metric.GetLabel()) == 0 {
 		t.Error("Last state change metric should have labels")
 	}
@@ -245,7 +267,9 @@ func TestCircuitBreakerMetricLabels(t *testing.T) {
 	// Test total calls metric with result labels
 	callLabels := []string{"test-labels", "success"}
 	metric = &dto.Metric{}
-	CircuitBreakerTotalCalls.WithLabelValues(callLabels...).Write(metric)
+	if err := CircuitBreakerTotalCalls.WithLabelValues(callLabels...).Write(metric); err != nil {
+		t.Fatalf("Failed to write metric: %v", err)
+	}
 	if len(metric.GetLabel()) < 2 {
 		t.Error("Total calls metric should have name and result labels")
 	}

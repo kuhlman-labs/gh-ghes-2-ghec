@@ -139,14 +139,18 @@ func TestMetricNames(t *testing.T) {
 // Helper function to get gauge value
 func getGaugeValue(gauge prometheus.Gauge) float64 {
 	metric := &dto.Metric{}
-	gauge.Write(metric)
+	if err := gauge.Write(metric); err != nil {
+		panic(err) // In test helper, panic is acceptable
+	}
 	return metric.GetGauge().GetValue()
 }
 
 // Helper function to get counter value
 func getCounterValue(counter prometheus.Counter) float64 {
 	metric := &dto.Metric{}
-	counter.Write(metric)
+	if err := counter.Write(metric); err != nil {
+		panic(err) // In test helper, panic is acceptable
+	}
 	return metric.GetCounter().GetValue()
 }
 

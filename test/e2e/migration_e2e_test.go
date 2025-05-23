@@ -73,7 +73,11 @@ func TestE2EEnvironmentSetup(t *testing.T) {
 
 	storageProvider, err := storage.NewStorageProvider(storageConfig)
 	require.NoError(t, err, "Failed to initialize storage")
-	defer storageProvider.Close()
+	defer func() {
+		if err := storageProvider.Close(); err != nil {
+			t.Logf("Failed to close storage provider: %v", err)
+		}
+	}()
 
 	err = storageProvider.Initialize(ctx)
 	require.NoError(t, err, "Failed to initialize storage schema")
@@ -156,7 +160,11 @@ func TestE2EMigrationStatusFlow(t *testing.T) {
 
 	storageProvider, err := storage.NewStorageProvider(storageConfig)
 	require.NoError(t, err, "Failed to initialize storage")
-	defer storageProvider.Close()
+	defer func() {
+		if err := storageProvider.Close(); err != nil {
+			t.Logf("Failed to close storage provider: %v", err)
+		}
+	}()
 
 	err = storageProvider.Initialize(ctx)
 	require.NoError(t, err, "Failed to initialize storage schema")
@@ -243,7 +251,11 @@ func TestE2EFailureScenarios(t *testing.T) {
 
 	storageProvider, err := storage.NewStorageProvider(storageConfig)
 	require.NoError(t, err, "Failed to initialize storage")
-	defer storageProvider.Close()
+	defer func() {
+		if err := storageProvider.Close(); err != nil {
+			t.Logf("Failed to close storage provider: %v", err)
+		}
+	}()
 
 	err = storageProvider.Initialize(ctx)
 	require.NoError(t, err, "Failed to initialize storage schema")

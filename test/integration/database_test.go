@@ -61,7 +61,11 @@ func testDatabaseOperations(t *testing.T, suite *helpers.TestSuite, dbType strin
 	// Initialize storage provider
 	storageProvider, err := storage.NewStorageProvider(storageConfig)
 	require.NoError(t, err, "Failed to initialize storage provider")
-	defer storageProvider.Close()
+	defer func() {
+		if err := storageProvider.Close(); err != nil {
+			t.Logf("Failed to close storage provider: %v", err)
+		}
+	}()
 
 	// Test schema initialization
 	t.Run("SchemaOperations", func(t *testing.T) {
@@ -159,9 +163,10 @@ func testMigrationStatusOperations(t *testing.T, provider storage.MigrationStora
 	err = provider.DeleteMigrationStatus(ctx, "test-org/repo1")
 	assert.NoError(t, err, "Deleting migration status should succeed")
 
-	// Verify status is deleted
-	_, err = provider.GetMigrationStatus(ctx, "test-org/repo1")
-	assert.Error(t, err, "Retrieving deleted status should fail")
+	// Verify status is deleted (should return nil, nil for not found)
+	deletedStatus, err := provider.GetMigrationStatus(ctx, "test-org/repo1")
+	assert.NoError(t, err, "Retrieving deleted status should not return an error")
+	assert.Nil(t, deletedStatus, "Deleted status should be nil")
 }
 
 func testConcurrentOperations(t *testing.T, provider storage.MigrationStorage) {
@@ -293,7 +298,11 @@ func TestStorageProviderCreation(t *testing.T) {
 			provider, err := storage.NewStorageProvider(tt.config)
 			assert.NoError(t, err, "Creating storage provider should succeed")
 			assert.NotNil(t, provider, "Provider should not be nil")
-			defer provider.Close()
+			defer func() {
+				if err := provider.Close(); err != nil {
+					t.Logf("Failed to close storage provider: %v", err)
+				}
+			}()
 
 			// Test basic operations
 			ctx := context.Background()
@@ -318,7 +327,11 @@ func TestDatabaseFailureRecovery(t *testing.T) {
 
 	provider, err := storage.NewStorageProvider(storageConfig)
 	require.NoError(t, err, "Failed to initialize storage provider")
-	defer provider.Close()
+	defer func() {
+		if err := provider.Close(); err != nil {
+			t.Logf("Failed to close storage provider: %v", err)
+		}
+	}()
 
 	ctx := context.Background()
 

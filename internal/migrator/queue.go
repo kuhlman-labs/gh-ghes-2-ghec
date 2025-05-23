@@ -99,6 +99,10 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 	// Create GitHub API instance for validation
 	githubAPI := github.New(clients, qmi.logger)
 
+	// Track if any repositories were successfully enqueued
+	successfullyEnqueued := 0
+	var firstError error
+
 	// Process each repository as a separate job
 	for _, repoName := range req.Repositories {
 		// Skip empty repository names
@@ -138,6 +142,10 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 				time.Now(),
 				attemptStartTime)
 
+			// Store the first error
+			if firstError == nil {
+				firstError = fmt.Errorf("failed to enqueue repository %s: %w", sourceRepoFullName, err)
+			}
 			continue
 		}
 
@@ -153,8 +161,20 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 			qmi.logger.Error("Failed to enqueue archive job",
 				"repository", sourceRepoFullName,
 				"error", err)
+
+			// Store the first error
+			if firstError == nil {
+				firstError = fmt.Errorf("failed to enqueue job for repository %s: %w", sourceRepoFullName, err)
+			}
 			continue
 		}
+
+		successfullyEnqueued++
+	}
+
+	// If no repositories were successfully enqueued and we have an error, return it
+	if successfullyEnqueued == 0 && firstError != nil {
+		return firstError
 	}
 
 	return nil
@@ -168,6 +188,11 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 	req *payload.MigrationRequest,
 	sourceRepoFullName string,
 ) (bool, error) {
+	// Check for nil API client
+	if githubAPI == nil {
+		return false, fmt.Errorf("API client is nil")
+	}
+
 	// Extract repo name from full name
 	parts := strings.Split(sourceRepoFullName, "/")
 	if len(parts) != 2 {
@@ -424,47 +449,58 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	qmi.migrator.mu.Unlock()
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "initializing archive job", time.Now(), attemptStartTime)
 
-	// Initialize clients for this migration
-	clients, err := config.NewClients(&config.ClientsConfig{
-		GHESToken:    req.GHESToken,
-		GHCloudToken: req.GHCloudToken,
-		Proxy:        qmi.migrator.config.GitHub.Proxy,
-	})
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to initialize clients: %v", err)
-		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+	var githubAPI github.API
 
-		// Update status with failure
-		qmi.migrator.mu.Lock()
-		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
-			status.Stage = "archive"
-			status.State = "client_init_failed"
+	// Use existing GitHub API client if available (for testing), otherwise create new clients
+	if qmi.migrator.githubAPI != nil {
+		githubAPI = qmi.migrator.githubAPI
+		qmi.logger.Debug("Using existing GitHub API client (likely for testing)",
+			"repository", sourceRepoFullName)
+	} else {
+		// Initialize clients for this migration
+		clients, err := config.NewClients(&config.ClientsConfig{
+			GHESToken:    req.GHESToken,
+			GHCloudToken: req.GHCloudToken,
+			Proxy:        qmi.migrator.config.GitHub.Proxy,
+		})
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to initialize clients: %v", err)
+			qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+
+			// Update status with failure
+			qmi.migrator.mu.Lock()
+			if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				status.Stage = "archive"
+				status.State = "client_init_failed"
+			}
+			qmi.migrator.mu.Unlock()
+
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+			return fmt.Errorf("failed to initialize clients: %w", err)
 		}
-		qmi.migrator.mu.Unlock()
 
-		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
-		return fmt.Errorf("failed to initialize clients: %w", err)
-	}
+		// Update GHES base URL
+		if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
+			errMsg := fmt.Sprintf("failed to update GHES base URL: %v", err)
+			qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
 
-	// Update GHES base URL
-	if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
-		errMsg := fmt.Sprintf("failed to update GHES base URL: %v", err)
-		qmi.logger.Error(errMsg, "repository", sourceRepoFullName)
+			// Update status with failure
+			qmi.migrator.mu.Lock()
+			if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
+				status.Stage = "archive"
+				status.State = "base_url_failed"
+			}
+			qmi.migrator.mu.Unlock()
 
-		// Update status with failure
-		qmi.migrator.mu.Lock()
-		if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
-			status.Stage = "archive"
-			status.State = "base_url_failed"
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
+			return fmt.Errorf("failed to update GHES base URL: %w", err)
 		}
-		qmi.migrator.mu.Unlock()
 
-		qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusFailed, errMsg, time.Now(), attemptStartTime)
-		return fmt.Errorf("failed to update GHES base URL: %w", err)
+		// Create GitHub API instance for this migration
+		githubAPI = github.New(clients, qmi.logger)
+		qmi.logger.Debug("Created new GitHub API client for archive job",
+			"repository", sourceRepoFullName)
 	}
-
-	// Create GitHub API instance for this migration
-	githubAPI := github.New(clients, qmi.logger)
 
 	// Update status to in progress with initial stage
 	qmi.migrator.mu.Lock()

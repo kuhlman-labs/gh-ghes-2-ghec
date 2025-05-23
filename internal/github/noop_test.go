@@ -271,6 +271,7 @@ func TestNoopAPI_GetGHESRateLimit(t *testing.T) {
 
 	if rateLimit == nil {
 		t.Error("GetGHESRateLimit should return a non-nil rate limit")
+		return
 	}
 
 	if rateLimit.Limit != 5000 {
@@ -302,6 +303,7 @@ func TestNoopAPI_GetGHCloudRateLimit(t *testing.T) {
 
 	if rateLimit == nil {
 		t.Error("GetGHCloudRateLimit should return a non-nil rate limit")
+		return
 	}
 
 	if rateLimit.Limit != 5000 {

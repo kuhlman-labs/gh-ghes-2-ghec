@@ -118,6 +118,7 @@ func TestPrepareChartData(t *testing.T) {
 		var data map[string]interface{}
 		if err := json.Unmarshal([]byte(chartData), &data); err != nil {
 			t.Errorf("Chart data should be valid JSON, got error: %v", err)
+			return
 		}
 
 		// Check structure - the chart data should have a labels array (might be empty)
@@ -152,6 +153,7 @@ func TestPrepareChartData(t *testing.T) {
 		var data map[string]interface{}
 		if err := json.Unmarshal([]byte(chartData), &data); err != nil {
 			t.Errorf("Chart data should be valid JSON, got error: %v", err)
+			return
 		}
 
 		// Check labels exist
@@ -205,7 +207,10 @@ func TestPrepareChartData(t *testing.T) {
 		chartData := prepareChartData(stats)
 
 		var data map[string]interface{}
-		json.Unmarshal([]byte(chartData), &data)
+		if err := json.Unmarshal([]byte(chartData), &data); err != nil {
+			t.Errorf("Chart data should be valid JSON, got error: %v", err)
+			return
+		}
 
 		labels := data["labels"].([]interface{})
 		if len(labels) != 2 { // Only non-zero categories
@@ -284,7 +289,10 @@ func TestChartDataColors(t *testing.T) {
 	chartData := prepareChartData(stats)
 
 	var data map[string]interface{}
-	json.Unmarshal([]byte(chartData), &data)
+	if err := json.Unmarshal([]byte(chartData), &data); err != nil {
+		t.Errorf("Chart data should be valid JSON, got error: %v", err)
+		return
+	}
 
 	datasets := data["datasets"].([]interface{})
 	dataset := datasets[0].(map[string]interface{})

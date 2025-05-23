@@ -180,20 +180,26 @@ func (s *MySQLStorage) SaveMigrationStatus(ctx context.Context, status *payload.
 		current_stage_index = VALUES(current_stage_index)
 	`, "migration_status")
 
-	// Format time values for MySQL
-	startedAtStr := formatTimeOrEmpty(status.StartedAt)
+	// Format time values for MySQL TIMESTAMP columns (YYYY-MM-DD HH:MM:SS)
 	var startedAt interface{}
-	if startedAtStr == "" {
+	if status.StartedAt.IsZero() {
 		startedAt = nil
 	} else {
-		startedAt = startedAtStr
+		startedAt = status.StartedAt.UTC().Format("2006-01-02 15:04:05")
+	}
+
+	var updatedAt string
+	if status.UpdatedAt.IsZero() {
+		updatedAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+	} else {
+		updatedAt = status.UpdatedAt.UTC().Format("2006-01-02 15:04:05")
 	}
 
 	_, err = s.db.ExecContext(ctx, query,
 		status.Repository,
 		status.Status,
 		status.Error,
-		status.UpdatedAt.Format(time.RFC3339),
+		updatedAt,
 		status.Stage,
 		status.State,
 		startedAt,
@@ -258,17 +264,35 @@ func (s *MySQLStorage) GetMigrationStatus(ctx context.Context, repoName string) 
 
 	// Parse time fields
 	if updatedAt.Valid && updatedAt.String != "" {
-		parsedTime, err := time.Parse(time.RFC3339, updatedAt.String)
+		// Try multiple formats for MySQL timestamp parsing
+		var parsedTime time.Time
+		var err error
+
+		// Try RFC3339 first (with timezone)
+		parsedTime, err = time.Parse(time.RFC3339, updatedAt.String)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse updated_at time: %w", err)
+			// Try MySQL datetime format (without timezone)
+			parsedTime, err = time.Parse("2006-01-02 15:04:05", updatedAt.String)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse updated_at time: %w", err)
+			}
 		}
 		status.UpdatedAt = parsedTime
 	}
 
 	if startedAt.Valid && startedAt.String != "" {
-		parsedTime, err := time.Parse(time.RFC3339, startedAt.String)
+		// Try multiple formats for MySQL timestamp parsing
+		var parsedTime time.Time
+		var err error
+
+		// Try RFC3339 first (with timezone)
+		parsedTime, err = time.Parse(time.RFC3339, startedAt.String)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse started_at time: %w", err)
+			// Try MySQL datetime format (without timezone)
+			parsedTime, err = time.Parse("2006-01-02 15:04:05", startedAt.String)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse started_at time: %w", err)
+			}
 		}
 		status.StartedAt = parsedTime
 	}
@@ -343,17 +367,35 @@ func (s *MySQLStorage) GetAllMigrationStatuses(ctx context.Context) (map[string]
 
 		// Parse time fields
 		if updatedAt.Valid && updatedAt.String != "" {
-			parsedTime, err := time.Parse(time.RFC3339, updatedAt.String)
+			// Try multiple formats for MySQL timestamp parsing
+			var parsedTime time.Time
+			var err error
+
+			// Try RFC3339 first (with timezone)
+			parsedTime, err = time.Parse(time.RFC3339, updatedAt.String)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse updated_at time: %w", err)
+				// Try MySQL datetime format (without timezone)
+				parsedTime, err = time.Parse("2006-01-02 15:04:05", updatedAt.String)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse updated_at time: %w", err)
+				}
 			}
 			status.UpdatedAt = parsedTime
 		}
 
 		if startedAt.Valid && startedAt.String != "" {
-			parsedTime, err := time.Parse(time.RFC3339, startedAt.String)
+			// Try multiple formats for MySQL timestamp parsing
+			var parsedTime time.Time
+			var err error
+
+			// Try RFC3339 first (with timezone)
+			parsedTime, err = time.Parse(time.RFC3339, startedAt.String)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse started_at time: %w", err)
+				// Try MySQL datetime format (without timezone)
+				parsedTime, err = time.Parse("2006-01-02 15:04:05", startedAt.String)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse started_at time: %w", err)
+				}
 			}
 			status.StartedAt = parsedTime
 		}
@@ -556,20 +598,26 @@ func (s *MySQLStorage) ArchiveMigrationAttempt(ctx context.Context, attempt *pay
 		?, ?, ?
 	)`, "migration_history")
 
-	// Format time values for MySQL
-	startedAtStr := formatTimeOrEmpty(attempt.StartedAt)
+	// Format time values for MySQL TIMESTAMP columns (YYYY-MM-DD HH:MM:SS)
 	var startedAt interface{}
-	if startedAtStr == "" {
+	if attempt.StartedAt.IsZero() {
 		startedAt = nil
 	} else {
-		startedAt = startedAtStr
+		startedAt = attempt.StartedAt.UTC().Format("2006-01-02 15:04:05")
+	}
+
+	var updatedAt string
+	if attempt.UpdatedAt.IsZero() {
+		updatedAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+	} else {
+		updatedAt = attempt.UpdatedAt.UTC().Format("2006-01-02 15:04:05")
 	}
 
 	_, err = s.db.ExecContext(ctx, query,
 		attempt.Repository,
 		attempt.Status,
 		attempt.Error,
-		attempt.UpdatedAt.Format(time.RFC3339),
+		updatedAt,
 		attempt.Stage,
 		attempt.State,
 		startedAt,
@@ -652,22 +700,44 @@ func (s *MySQLStorage) GetArchivedMigrationAttempts(ctx context.Context, repoFul
 
 		// Parse time fields
 		if updatedAt.Valid && updatedAt.String != "" {
-			parsedTime, err := time.Parse(time.RFC3339, updatedAt.String)
+			// Try multiple formats for MySQL timestamp parsing
+			var parsedTime time.Time
+			var err error
+
+			// Try RFC3339 first (with timezone)
+			parsedTime, err = time.Parse(time.RFC3339, updatedAt.String)
 			if err != nil {
-				s.logger.Warn("Failed to parse updated_at time in archived record",
-					"repository", attempt.Repository,
-					"error", err)
+				// Try MySQL datetime format (without timezone)
+				parsedTime, err = time.Parse("2006-01-02 15:04:05", updatedAt.String)
+				if err != nil {
+					s.logger.Warn("Failed to parse updated_at time in archived record",
+						"repository", attempt.Repository,
+						"error", err)
+				} else {
+					attempt.UpdatedAt = parsedTime
+				}
 			} else {
 				attempt.UpdatedAt = parsedTime
 			}
 		}
 
 		if startedAt.Valid && startedAt.String != "" {
-			parsedTime, err := time.Parse(time.RFC3339, startedAt.String)
+			// Try multiple formats for MySQL timestamp parsing
+			var parsedTime time.Time
+			var err error
+
+			// Try RFC3339 first (with timezone)
+			parsedTime, err = time.Parse(time.RFC3339, startedAt.String)
 			if err != nil {
-				s.logger.Warn("Failed to parse started_at time in archived record",
-					"repository", attempt.Repository,
-					"error", err)
+				// Try MySQL datetime format (without timezone)
+				parsedTime, err = time.Parse("2006-01-02 15:04:05", startedAt.String)
+				if err != nil {
+					s.logger.Warn("Failed to parse started_at time in archived record",
+						"repository", attempt.Repository,
+						"error", err)
+				} else {
+					attempt.StartedAt = parsedTime
+				}
 			} else {
 				attempt.StartedAt = parsedTime
 			}
