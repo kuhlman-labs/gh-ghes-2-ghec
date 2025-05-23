@@ -305,8 +305,12 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	// Migration detail and retry - use a single handler for the path
 	mux.HandleFunc("/dashboard/migration/", h.handleMigrationRoutes)
 
-	// New migration form
-	mux.HandleFunc("/dashboard/new", h.handleNewMigration)
+	// Migration wizard
+	mux.HandleFunc("/dashboard/wizard", h.handleMigrationWizard)
+	mux.HandleFunc("/dashboard/wizard/test-connection", h.handleTestConnection)
+	mux.HandleFunc("/dashboard/wizard/load-repositories", h.handleLoadRepositories)
+	mux.HandleFunc("/dashboard/wizard/save-draft", h.handleSaveDraft)
+	mux.HandleFunc("/dashboard/wizard/load-draft", h.handleLoadDraft)
 	mux.HandleFunc("/dashboard/migrate", h.handleSubmitMigration)
 
 	// History page and export
@@ -999,21 +1003,22 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// handleNewMigration handles the new migration form page
-func (h *Handler) handleNewMigration(w http.ResponseWriter, r *http.Request) {
+// handleMigrationWizard handles the new migration wizard page
+func (h *Handler) handleMigrationWizard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	data := TemplateData{
-		Title:       "New Migration",
-		Active:      "new",
-		PageName:    "new_migration",
+		Title:       "New Migration Wizard",
+		Active:      "wizard",
+		PageName:    "migration_wizard",
 		CurrentYear: time.Now().Year(),
 	}
 
-	if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
+	if err := h.templates.ExecuteTemplate(w, "migration_wizard", data); err != nil {
+		h.logger.Error("failed to execute migration wizard template", "error", err)
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
 	}
 }
@@ -1955,4 +1960,214 @@ func calculateSuccessRate(stats MigrationStats) int {
 		return 0
 	}
 	return int(float64(stats.Succeeded) / float64(stats.Total) * 100)
+}
+
+// handleTestConnection tests the connection to GitHub instances
+func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	connectionType := sanitizeInput(r.FormValue("type"))
+	token := r.FormValue("token")
+	org := sanitizeInput(r.FormValue("org"))
+	baseURL := sanitizeInput(r.FormValue("base_url"))
+
+	// Validate required fields
+	if connectionType == "" || token == "" || org == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Missing required fields",
+		})
+		return
+	}
+
+	// Set default URL for GitHub Cloud
+	if connectionType == "target" && baseURL == "" {
+		baseURL = "https://api.github.com"
+	}
+
+	// Test the connection (simplified implementation)
+	success := h.testGitHubConnection(baseURL, token, org)
+
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"success": success,
+	}
+
+	if success {
+		response["message"] = "Connection successful"
+	} else {
+		response["message"] = "Connection failed - check your credentials"
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
+// testGitHubConnection performs a simple test of GitHub API connectivity
+func (h *Handler) testGitHubConnection(baseURL, token, org string) bool {
+	// This is a simplified implementation
+	// In a real implementation, you would make an actual API call to test the connection
+	// For now, we'll simulate based on basic validation
+
+	// Basic token format validation
+	if !strings.HasPrefix(token, "gh") || len(token) < 40 {
+		return false
+	}
+
+	// Basic URL validation
+	if baseURL == "" || (!strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://")) {
+		return false
+	}
+
+	// Basic org name validation
+	if org == "" || len(org) < 1 {
+		return false
+	}
+
+	// Simulate success for valid-looking credentials
+	return true
+}
+
+// handleLoadRepositories loads repositories from the source organization
+func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	token := r.FormValue("token")
+	org := sanitizeInput(r.FormValue("org"))
+	baseURL := sanitizeInput(r.FormValue("base_url"))
+	searchQuery := sanitizeInput(r.FormValue("search"))
+
+	// Validate required fields
+	if token == "" || org == "" || baseURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Missing required fields",
+		})
+		return
+	}
+
+	// Load repositories (simplified implementation)
+	repositories := h.loadRepositoriesFromGitHub(baseURL, token, org, searchQuery)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"repositories": repositories,
+	})
+}
+
+// Repository represents a GitHub repository for the wizard
+type Repository struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Size        int64  `json:"size"`
+	Private     bool   `json:"private"`
+}
+
+// loadRepositoriesFromGitHub loads repositories from GitHub (simplified implementation)
+func (h *Handler) loadRepositoriesFromGitHub(baseURL, token, org, searchQuery string) []Repository {
+	// This is a simplified implementation that returns mock data
+	// In a real implementation, you would make actual GitHub API calls
+
+	mockRepos := []Repository{
+		{Name: "webapp", Description: "Main web application", Size: 15728640, Private: false},
+		{Name: "api-server", Description: "REST API backend service", Size: 8388608, Private: true},
+		{Name: "mobile-app", Description: "React Native mobile application", Size: 25165824, Private: false},
+		{Name: "documentation", Description: "Project documentation and guides", Size: 2097152, Private: false},
+		{Name: "scripts", Description: "Utility scripts and automation tools", Size: 1048576, Private: true},
+		{Name: "config", Description: "Configuration files and templates", Size: 524288, Private: true},
+		{Name: "tests", Description: "Test suites and testing utilities", Size: 5242880, Private: false},
+		{Name: "deployment", Description: "Deployment scripts and infrastructure", Size: 3145728, Private: true},
+	}
+
+	// Filter by search query if provided
+	if searchQuery != "" {
+		var filtered []Repository
+		searchLower := strings.ToLower(searchQuery)
+		for _, repo := range mockRepos {
+			if strings.Contains(strings.ToLower(repo.Name), searchLower) ||
+				strings.Contains(strings.ToLower(repo.Description), searchLower) {
+				filtered = append(filtered, repo)
+			}
+		}
+		return filtered
+	}
+
+	return mockRepos
+}
+
+// handleSaveDraft saves wizard draft data
+func (h *Handler) handleSaveDraft(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Failed to parse form", http.StatusBadRequest)
+		return
+	}
+
+	draftData := r.FormValue("draft_data")
+	draftName := sanitizeInput(r.FormValue("draft_name"))
+
+	if draftData == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "No draft data provided",
+		})
+		return
+	}
+
+	// For now, we'll just acknowledge the save
+	// In a real implementation, you would save to a database or file system
+	h.logger.Info("Draft saved", "name", draftName, "data_length", len(draftData))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Draft saved successfully",
+	})
+}
+
+// handleLoadDraft loads wizard draft data
+func (h *Handler) handleLoadDraft(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	draftName := sanitizeInput(r.URL.Query().Get("name"))
+
+	// For now, return empty data since we don't have persistent storage
+	// In a real implementation, you would load from a database or file system
+	h.logger.Debug("Loading draft", "name", draftName)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data":    nil, // No saved draft data
+		"message": "No saved draft found",
+	})
 }

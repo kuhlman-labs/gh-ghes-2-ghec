@@ -1,0 +1,634 @@
+{{define "migration_wizard_content"}}
+<div class="wizard-container">
+    <div class="wizard-header">
+        <h2>New Migration Wizard</h2>
+        <div class="wizard-controls">
+            <a href="/dashboard" class="btn btn-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Cancel
+            </a>
+        </div>
+    </div>
+
+    <!-- Wizard Progress Indicator -->
+    <div class="wizard-progress">
+        <div class="progress-track">
+            <div class="progress-line" id="progress-line"></div>
+            <div class="step-indicator active" data-step="1">
+                <div class="step-number">1</div>
+                <div class="step-label">Source</div>
+            </div>
+            <div class="step-indicator" data-step="2">
+                <div class="step-number">2</div>
+                <div class="step-label">Target</div>
+            </div>
+            <div class="step-indicator" data-step="3">
+                <div class="step-number">3</div>
+                <div class="step-label">Repositories</div>
+            </div>
+            <div class="step-indicator" data-step="4">
+                <div class="step-number">4</div>
+                <div class="step-label">Options</div>
+            </div>
+            <div class="step-indicator" data-step="5">
+                <div class="step-number">5</div>
+                <div class="step-label">Schedule</div>
+            </div>
+            <div class="step-indicator" data-step="6">
+                <div class="step-number">6</div>
+                <div class="step-label">Review</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template Selection (Initial Step) -->
+    <div class="wizard-template-selection" id="template-selection">
+        <div class="template-header">
+            <h3>Choose Migration Template</h3>
+            <p class="text-muted">Start with a pre-configured template or create a custom migration</p>
+        </div>
+        
+        <div class="template-grid">
+            <div class="template-card" data-template="quick-start">
+                <div class="template-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12,6 12,12 16,14"/>
+                    </svg>
+                </div>
+                <h4>Quick Start</h4>
+                <p>Simple migration with standard settings</p>
+                <ul class="template-features">
+                    <li>Immediate execution</li>
+                    <li>Standard options</li>
+                    <li>Best for small repos</li>
+                </ul>
+            </div>
+            
+            <div class="template-card" data-template="scheduled">
+                <div class="template-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                </div>
+                <h4>Scheduled Migration</h4>
+                <p>Plan migration for optimal timing</p>
+                <ul class="template-features">
+                    <li>Custom scheduling</li>
+                    <li>Maintenance windows</li>
+                    <li>Best for production</li>
+                </ul>
+            </div>
+            
+            <div class="template-card" data-template="bulk">
+                <div class="template-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14,2 14,8 20,8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10,9 9,9 8,9"/>
+                    </svg>
+                </div>
+                <h4>Bulk Migration</h4>
+                <p>Migrate multiple repositories efficiently</p>
+                <ul class="template-features">
+                    <li>Multiple repos</li>
+                    <li>Parallel processing</li>
+                    <li>Advanced options</li>
+                </ul>
+            </div>
+            
+            <div class="template-card" data-template="custom">
+                <div class="template-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9"/>
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                    </svg>
+                </div>
+                <h4>Custom</h4>
+                <p>Full control over all settings</p>
+                <ul class="template-features">
+                    <li>All options available</li>
+                    <li>Maximum flexibility</li>
+                    <li>Advanced users</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="template-actions">
+            <button type="button" class="btn btn-primary" onclick="startWizard()">
+                Continue
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9,18 15,12 9,6"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Wizard Form -->
+    <form id="migration-wizard-form" action="/dashboard/migrate" method="POST" style="display: none;">
+        <input type="hidden" id="template-type" name="template_type" value="">
+        <input type="hidden" id="wizard-data" name="wizard_data" value="">
+        
+        <!-- Step 1: Source Configuration -->
+        <div class="wizard-step active" id="step-1">
+            <div class="step-content">
+                <div class="step-header">
+                    <h3>Source Configuration</h3>
+                    <p class="text-muted">Configure your GitHub Enterprise Server source</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ghes_base_url">GHES URL <span class="required">*</span></label>
+                    <input type="url" id="ghes_base_url" name="ghes_base_url" 
+                           placeholder="https://github.yourdomain.com" 
+                           required 
+                           data-validation="url"
+                           autocomplete="url">
+                    <div class="form-hint">The base URL of your GitHub Enterprise Server instance</div>
+                    <div class="validation-message" id="ghes_base_url-error"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="source_org">Source Organization <span class="required">*</span></label>
+                    <input type="text" id="source_org" name="source_org" 
+                           placeholder="source-organization" 
+                           required 
+                           data-validation="required"
+                           autocomplete="organization">
+                    <div class="form-hint">The name of the organization in your GHES instance</div>
+                    <div class="validation-message" id="source_org-error"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ghes_token">GHES Token <span class="required">*</span></label>
+                    <div class="input-group">
+                        <input type="password" id="ghes_token" name="ghes_token" 
+                               required 
+                               data-validation="token"
+                               placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                               autocomplete="off">
+                        <button type="button" class="input-group-btn" onclick="togglePassword('ghes_token')">
+                            <svg id="ghes_token-eye" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="form-hint">A token with 'repo' and 'admin:org' scopes for your GHES instance</div>
+                    <div class="validation-message" id="ghes_token-error"></div>
+                </div>
+                
+                <div class="connection-test" id="source-connection-test" style="display: none;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="testConnection('source')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23,4 23,10 17,10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        Test Connection
+                    </button>
+                    <div class="connection-status" id="source-connection-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Target Configuration -->
+        <div class="wizard-step" id="step-2">
+            <div class="step-content">
+                <div class="step-header">
+                    <h3>Target Configuration</h3>
+                    <p class="text-muted">Configure your GitHub Enterprise Cloud destination</p>
+                </div>
+                
+                <div class="form-group">
+                    <label for="target_org">Target Organization <span class="required">*</span></label>
+                    <input type="text" id="target_org" name="target_org" 
+                           placeholder="target-organization" 
+                           required 
+                           data-validation="required"
+                           autocomplete="organization">
+                    <div class="form-hint">The name of the organization in GitHub Enterprise Cloud</div>
+                    <div class="validation-message" id="target_org-error"></div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="gh_cloud_token">GHEC Token <span class="required">*</span></label>
+                    <div class="input-group">
+                        <input type="password" id="gh_cloud_token" name="gh_cloud_token" 
+                               required 
+                               data-validation="token"
+                               placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                               autocomplete="off">
+                        <button type="button" class="input-group-btn" onclick="togglePassword('gh_cloud_token')">
+                            <svg id="gh_cloud_token-eye" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="form-hint">A token with 'repo' and 'admin:org' scopes for GitHub Enterprise Cloud</div>
+                    <div class="validation-message" id="gh_cloud_token-error"></div>
+                </div>
+                
+                <div class="connection-test" id="target-connection-test" style="display: none;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="testConnection('target')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23,4 23,10 17,10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        Test Connection
+                    </button>
+                    <div class="connection-status" id="target-connection-status"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Repository Selection -->
+        <div class="wizard-step" id="step-3">
+            <div class="step-content">
+                <div class="step-header">
+                    <h3>Repository Selection</h3>
+                    <p class="text-muted">Choose which repositories to migrate</p>
+                </div>
+                
+                <div class="repo-selection-tabs">
+                    <button type="button" class="tab-btn active" data-tab="manual">Manual Entry</button>
+                    <button type="button" class="tab-btn" data-tab="browse">Browse Repositories</button>
+                    <button type="button" class="tab-btn" data-tab="bulk">Bulk Import</button>
+                </div>
+                
+                <div class="tab-content active" id="manual-tab">
+                    <div class="form-group">
+                        <label for="repositories">Repositories <span class="required">*</span></label>
+                        <textarea id="repositories" name="repositories" 
+                                  rows="6" 
+                                  placeholder="repo1&#10;repo2&#10;repo3" 
+                                  required 
+                                  data-validation="repositories"></textarea>
+                        <div class="form-hint">Enter each repository name on a new line</div>
+                        <div class="validation-message" id="repositories-error"></div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="browse-tab">
+                    <div class="repo-browser">
+                        <div class="repo-search">
+                            <input type="text" placeholder="Search repositories..." id="repo-search">
+                            <button type="button" class="btn btn-secondary" onclick="loadRepositories()">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="23,4 23,10 17,10"/>
+                                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                                </svg>
+                                Load Repositories
+                            </button>
+                        </div>
+                        <div class="repo-list" id="repo-list">
+                            <div class="empty-state">
+                                <p>Load repositories from your source organization to browse and select</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="bulk-tab">
+                    <div class="bulk-import">
+                        <div class="form-group">
+                            <label for="repo-file">Upload Repository List</label>
+                            <input type="file" id="repo-file" accept=".txt,.csv" onchange="handleFileUpload(event)">
+                            <div class="form-hint">Upload a text or CSV file with repository names</div>
+                        </div>
+                        <div class="file-preview" id="file-preview" style="display: none;"></div>
+                    </div>
+                </div>
+                
+                <div class="selected-repos" id="selected-repos">
+                    <h4>Selected Repositories (<span id="selected-count">0</span>)</h4>
+                    <div class="selected-list" id="selected-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Migration Options -->
+        <div class="wizard-step" id="step-4">
+            <div class="step-content">
+                <div class="step-header">
+                    <h3>Migration Options</h3>
+                    <p class="text-muted">Configure migration settings and preferences</p>
+                </div>
+                
+                <div class="options-grid">
+                    <div class="option-group">
+                        <h4>Storage Options</h4>
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="use_ghos" name="use_ghos" value="true" checked>
+                            <label for="use_ghos">Use GitHub Owned Storage (GHOS)</label>
+                            <div class="form-hint">Recommended for migrations with large repositories (>5GB)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="option-group">
+                        <h4>Performance</h4>
+                        <div class="form-group">
+                            <label for="max_duration">Maximum Duration</label>
+                            <input type="text" id="max_duration" name="max_duration" placeholder="24h" data-validation="duration">
+                            <div class="form-hint">Maximum allowed duration for the migration (e.g., "24h", "36h")</div>
+                            <div class="validation-message" id="max_duration-error"></div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="parallelism">Parallel Migrations</label>
+                            <select id="parallelism" name="parallelism">
+                                <option value="1">1 (Sequential)</option>
+                                <option value="2" selected>2 (Recommended)</option>
+                                <option value="3">3</option>
+                                <option value="5">5 (Maximum)</option>
+                            </select>
+                            <div class="form-hint">Number of repositories to migrate simultaneously</div>
+                        </div>
+                    </div>
+                    
+                    <div class="option-group">
+                        <h4>Error Handling</h4>
+                        <div class="form-group form-group-checkbox">
+                            <input type="checkbox" id="continue_on_error" name="continue_on_error" value="true">
+                            <label for="continue_on_error">Continue on errors</label>
+                            <div class="form-hint">Continue migrating other repositories if one fails</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="retry_attempts">Retry Attempts</label>
+                            <select id="retry_attempts" name="retry_attempts">
+                                <option value="0">No retries</option>
+                                <option value="1">1 retry</option>
+                                <option value="2" selected>2 retries</option>
+                                <option value="3">3 retries</option>
+                            </select>
+                            <div class="form-hint">Number of automatic retry attempts on failure</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Scheduling -->
+        <div class="wizard-step" id="step-5">
+            <div class="step-content">
+                <div class="step-header">
+                    <h3>Migration Scheduling</h3>
+                    <p class="text-muted">Choose when to execute the migration</p>
+                </div>
+                
+                <div class="scheduling-options">
+                    <div class="schedule-type">
+                        <input type="radio" id="immediate" name="schedule_type" value="immediate" checked>
+                        <label for="immediate" class="schedule-option">
+                            <div class="option-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12,6 12,12 16,14"/>
+                                </svg>
+                            </div>
+                            <div class="option-content">
+                                <h4>Start Immediately</h4>
+                                <p>Begin migration as soon as submitted</p>
+                            </div>
+                        </label>
+                    </div>
+                    
+                    <div class="schedule-type">
+                        <input type="radio" id="scheduled" name="schedule_type" value="scheduled">
+                        <label for="scheduled" class="schedule-option">
+                            <div class="option-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                    <line x1="16" y1="2" x2="16" y2="6"/>
+                                    <line x1="8" y1="2" x2="8" y2="6"/>
+                                    <line x1="3" y1="10" x2="21" y2="10"/>
+                                </svg>
+                            </div>
+                            <div class="option-content">
+                                <h4>Schedule for Later</h4>
+                                <p>Plan migration for specific time</p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="scheduled-options" id="scheduled-options" style="display: none;">
+                    <div class="form-group">
+                        <label for="scheduled_time">Scheduled Time</label>
+                        <input type="datetime-local" id="scheduled_time" name="scheduled_time">
+                        <div class="form-hint">When the migration should be executed</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduled_time_zone">Time Zone</label>
+                        <select id="scheduled_time_zone" name="scheduled_time_zone">
+                            <option value="">-- Select a time zone --</option>
+                            <option value="UTC">UTC</option>
+                            <option value="America/New_York">Eastern Time (America/New_York)</option>
+                            <option value="America/Chicago">Central Time (America/Chicago)</option>
+                            <option value="America/Denver">Mountain Time (America/Denver)</option>
+                            <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+                            <option value="Europe/London">London Time (Europe/London)</option>
+                            <option value="Europe/Paris">Central European Time (Europe/Paris)</option>
+                            <option value="Asia/Tokyo">Japan Time (Asia/Tokyo)</option>
+                            <option value="Australia/Sydney">Sydney Time (Australia/Sydney)</option>
+                        </select>
+                        <div class="form-hint">The time zone for interpreting the scheduled time</div>
+                    </div>
+                    
+                    <div class="advanced-scheduling">
+                        <h4>Advanced Scheduling</h4>
+                        
+                        <div class="form-group">
+                            <label>Day Restrictions</label>
+                            <div class="day-selector">
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_sunday" name="scheduled_days_only" value="Sunday">
+                                    <label for="day_sunday">Sun</label>
+                                </div>
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_monday" name="scheduled_days_only" value="Monday">
+                                    <label for="day_monday">Mon</label>
+                                </div>
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_tuesday" name="scheduled_days_only" value="Tuesday">
+                                    <label for="day_tuesday">Tue</label>
+                                </div>
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_wednesday" name="scheduled_days_only" value="Wednesday">
+                                    <label for="day_wednesday">Wed</label>
+                                </div>
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_thursday" name="scheduled_days_only" value="Thursday">
+                                    <label for="day_thursday">Thu</label>
+                                </div>
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_friday" name="scheduled_days_only" value="Friday">
+                                    <label for="day_friday">Fri</label>
+                                </div>
+                                <div class="day-checkbox">
+                                    <input type="checkbox" id="day_saturday" name="scheduled_days_only" value="Saturday">
+                                    <label for="day_saturday">Sat</label>
+                                </div>
+                            </div>
+                            <div class="form-hint">Only run migrations on selected days (leave all unchecked for any day)</div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>Time Window</label>
+                            <div class="time-window-container">
+                                <div class="time-input">
+                                    <label for="scheduled_time_start">Start Time</label>
+                                    <input type="time" id="scheduled_time_start" name="scheduled_time_start">
+                                </div>
+                                <div class="time-input">
+                                    <label for="scheduled_time_end">End Time</label>
+                                    <input type="time" id="scheduled_time_end" name="scheduled_time_end">
+                                </div>
+                            </div>
+                            <div class="form-hint">Time window during which migrations are allowed to run</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 6: Review & Submit -->
+        <div class="wizard-step" id="step-6">
+            <div class="step-content">
+                <div class="step-header">
+                    <h3>Review & Submit</h3>
+                    <p class="text-muted">Review your migration configuration before submitting</p>
+                </div>
+                
+                <div class="review-sections">
+                    <div class="review-section">
+                        <h4>Source Configuration</h4>
+                        <div class="review-item">
+                            <span class="label">GHES URL:</span>
+                            <span class="value" id="review-ghes-url">-</span>
+                        </div>
+                        <div class="review-item">
+                            <span class="label">Source Organization:</span>
+                            <span class="value" id="review-source-org">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="review-section">
+                        <h4>Target Configuration</h4>
+                        <div class="review-item">
+                            <span class="label">Target Organization:</span>
+                            <span class="value" id="review-target-org">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="review-section">
+                        <h4>Repositories</h4>
+                        <div class="review-item">
+                            <span class="label">Count:</span>
+                            <span class="value" id="review-repo-count">0</span>
+                        </div>
+                        <div class="review-repos" id="review-repos"></div>
+                    </div>
+                    
+                    <div class="review-section">
+                        <h4>Options</h4>
+                        <div class="review-item">
+                            <span class="label">GHOS:</span>
+                            <span class="value" id="review-ghos">Enabled</span>
+                        </div>
+                        <div class="review-item">
+                            <span class="label">Max Duration:</span>
+                            <span class="value" id="review-duration">No limit</span>
+                        </div>
+                        <div class="review-item">
+                            <span class="label">Parallelism:</span>
+                            <span class="value" id="review-parallelism">2</span>
+                        </div>
+                    </div>
+                    
+                    <div class="review-section">
+                        <h4>Scheduling</h4>
+                        <div class="review-item">
+                            <span class="label">Execution:</span>
+                            <span class="value" id="review-schedule">Immediate</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="final-actions">
+                    <div class="form-group form-group-checkbox">
+                        <input type="checkbox" id="confirm_migration" required>
+                        <label for="confirm_migration">I confirm this migration configuration is correct</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wizard Navigation -->
+        <div class="wizard-navigation">
+            <button type="button" class="btn btn-secondary" id="prev-btn" onclick="previousStep()" style="display: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15,18 9,12 15,6"/>
+                </svg>
+                Previous
+            </button>
+            
+            <div class="wizard-actions">
+                <button type="button" class="btn btn-secondary" onclick="saveDraft()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                        <polyline points="17,21 17,13 7,13 7,21"/>
+                        <polyline points="7,3 7,8 15,8"/>
+                    </svg>
+                    Save Draft
+                </button>
+            </div>
+            
+            <button type="button" class="btn btn-primary" id="next-btn" onclick="nextStep()">
+                Next
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9,18 15,12 9,6"/>
+                </svg>
+            </button>
+            
+            <button type="submit" class="btn btn-primary btn-submit" id="submit-btn" style="display: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <polyline points="19 12 12 19 5 12"></polyline>
+                </svg>
+                Start Migration
+            </button>
+        </div>
+    </form>
+
+    <!-- Auto-save indicator -->
+    <div class="auto-save-indicator" id="auto-save-indicator" style="display: none;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        Draft saved
+    </div>
+</div>
+
+{{if .Error}}
+<div class="alert alert-error">
+    {{.Error}}
+</div>
+{{end}}
+
+{{if .Success}}
+<div class="alert alert-success">
+    {{.Success}}
+</div>
+{{end}}
+
+{{end}} 

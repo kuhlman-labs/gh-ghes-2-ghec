@@ -64,7 +64,7 @@
                 <ul>
                     <li><a href="/dashboard" class="{{ if eq .Active "overview" }}active{{ end }}">Overview</a></li>
                     <li><a href="/dashboard/analytics" class="{{ if eq .Active "analytics" }}active{{ end }}">Analytics</a></li>
-                    <li><a href="/dashboard/new" class="{{ if eq .Active "new" }}active{{ end }}">New Migration</a></li>
+                    <li><a href="/dashboard/wizard" class="{{ if eq .Active "wizard" }}active{{ end }}">New Migration</a></li>
                     <li><a href="/dashboard/history" class="{{ if eq .Active "history" }}active{{ end }}">History</a></li>
                     <li><a href="/dashboard/errors" class="{{ if eq .Active "errors" }}active{{ end }}">Errors</a></li>
                 </ul>
@@ -77,8 +77,6 @@
             {{template "overview_content" .}}
         {{else if eq .PageName "analytics"}}
             {{template "analytics_content" .}}
-        {{else if eq .PageName "new_migration"}}
-            {{template "new_migration_content" .}}
         {{else if eq .PageName "migration_detail"}}
             {{template "migration_detail_content_wrapper" .}}
         {{else if eq .PageName "history"}}

@@ -1,0 +1,59 @@
+{{define "header"}}
+<header>
+    <div class="container">
+        <div class="logo">
+            <img src="/static/images/github-mark-white.png" alt="GitHub Mark" class="github-mark">
+            <h1>
+                <img src="/static/images/GitHub_Logo_White.png" alt="GitHub" class="github-logo">
+                <span>Migration Dashboard</span>
+            </h1>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="/dashboard" class="{{ if eq .Active "overview" }}active{{ end }}">Overview</a></li>
+                <li><a href="/dashboard/analytics" class="{{ if eq .Active "analytics" }}active{{ end }}">Analytics</a></li>
+                <li><a href="/dashboard/wizard" class="{{ if eq .Active "wizard" }}active{{ end }}">New Migration</a></li>
+                <li><a href="/dashboard/history" class="{{ if eq .Active "history" }}active{{ end }}">History</a></li>
+                <li><a href="/dashboard/errors" class="{{ if eq .Active "errors" }}active{{ end }}">Errors</a></li>
+            </ul>
+        </nav>
+    </div>
+</header>
+
+<style>
+    /* Header styles for GitHub logo integration */
+    header .logo {
+        display: flex;
+        align-items: center;
+        height: 36px;
+    }
+    
+    header .logo img.github-mark {
+        height: 32px;
+        margin-right: 10px;
+    }
+    
+    header .logo h1 {
+        display: flex;
+        align-items: center;
+        font-size: 1.5rem;
+        margin: 0;
+        height: 36px;
+    }
+    
+    header .logo h1 img.github-logo {
+        height: 30px;
+        margin-right: 10px;
+    }
+    
+    header .logo h1 span {
+        margin-left: 5px;
+    }
+    
+    header nav {
+        height: 100%;
+        display: flex;
+        align-items: center;
+    }
+</style>
+{{end}} 
