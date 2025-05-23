@@ -30,7 +30,7 @@ lint:
 
 # Run Go Sec
 sec:
-	go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
+	go run -buildvcs=false github.com/securego/gosec/v2/cmd/gosec@latest ./...
 
 # Run go vet
 vet:
