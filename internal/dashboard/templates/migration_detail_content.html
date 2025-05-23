@@ -1,27 +1,50 @@
 {{define "migration_detail_content"}}
-<div id="migration-detail" class="detail-content">
+<div id="migration-detail" class="active-migrations-section">
     {{if .Migration }} {{/* Check if Migration data is available */}}
-    <div class="detail-header status-{{.Migration.Status | ToLower}}">
-        <div class="detail-status">
-            <span class="status-indicator status-{{.Migration.Status | ToLower}}"></span>
-            <span class="status-text">{{.Migration.Status | Title}}</span>
-        </div>
-        <div class="detail-progress">
-            <div class="progress-bar">
-                <div class="progress-value" data-progress="{{.Migration.Progress}}"></div>
+    
+    <!-- Migration Status Overview Card -->
+    <div class="dashboard-stats">
+        <div class="stat-card status-{{.Migration.Status | ToLower}}">
+            <div class="stat-header">
+                <h3>Status</h3>
+                <span class="status-indicator status-{{.Migration.Status | ToLower}}"></span>
             </div>
-            <span class="progress-text">{{.Migration.Progress}}% Complete</span>
+            <span class="stat-value">{{.Migration.Status | Title}}</span>
         </div>
-        <div class="detail-actions">
-            <button class="btn btn-sm btn-secondary" 
+        <div class="stat-card">
+            <h3>Progress</h3>
+            <div class="progress-bar">
+                <div class="progress-value status-{{.Migration.Status | ToLower}}" data-progress="{{.Migration.Progress}}"></div>
+            </div>
+            <span class="stat-value">{{.Migration.Progress}}%</span>
+        </div>
+        <div class="stat-card">
+            <h3>Duration</h3>
+            <span class="stat-value">{{.Migration.Duration | FormatDuration}}</span>
+        </div>
+        {{if .Migration.RepositorySize}}
+        <div class="stat-card">
+            <h3>Repository Size</h3>
+            <div class="stat-value-with-badge">
+                <span class="size-badge size-{{.Migration.SizeCategory}}">{{.Migration.SizeCategory}}</span>
+                <span class="stat-value">{{printf "%.2f MB" (divFloat .Migration.RepositorySize 1048576)}}</span>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="filter-controls-row">
+        <div class="filter-control">
+            <button class="btn btn-secondary" 
                     hx-get="/dashboard/migration/{{.Migration.Repository}}/refresh" 
                     hx-target="#migration-detail" 
                     hx-swap="outerHTML">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/></svg>
-                Refresh
+                Refresh Data
             </button>
             {{if eq .Migration.Status "failed"}}
-            <button class="btn btn-sm btn-primary"
+            <button class="btn btn-primary"
                     hx-get="/dashboard/migration/{{.Migration.Repository}}/retry-form" 
                     hx-target="#retry-modal-content"
                     hx-swap="innerHTML"
@@ -33,146 +56,166 @@
         </div>
     </div>
 
-    <div class="detail-info">
-        <div class="info-section">
-            <h3>General Information</h3>
+    <!-- General Information Section -->
+    <div class="stats-section">
+        <div class="section-header">
+            <h3 class="section-title">General Information</h3>
+        </div>
+        <div class="dashboard-table">
             <table class="info-table">
-                <tr>
-                    <th>Source Repository</th>
-                    <td>{{.Migration.Repository}}</td>
-                </tr>
-                <tr>
-                    <th>Target Organization</th>
-                    <td>{{if .Migration.TargetOrg}}{{.Migration.TargetOrg}}{{else}}-{{end}}</td>
-                </tr>
-                <tr>
-                    <th>Repository Size</th>
-                    <td>
-                        {{if .Migration.RepositorySize}}
-                        <span class="size-badge size-{{.Migration.SizeCategory}}">{{.Migration.SizeCategory}}</span>
-                        {{printf "%.2f MB" (divFloat .Migration.RepositorySize 1048576)}}
-                        {{else}}-{{end}}
-                    </td>
-                </tr>
-                <tr>
-                    <th>Started At</th>
-                    <td>{{.Migration.StartedAt | FormatDateTime}}</td>
-                </tr>
-                <tr>
-                    <th>Last Updated</th>
-                    <td>{{.Migration.UpdatedAt | FormatDateTime}}</td>
-                </tr>
-                <tr>
-                    <th>Duration</th>
-                    <td>{{.Migration.Duration | FormatDuration}}</td>
-                </tr>
-                <tr>
-                    <th>Migration ID</th>
-                    <td>{{if .Migration.MigrationID}}{{.Migration.MigrationID}}{{else}}-{{end}}</td>
-                </tr>
-                {{if .AttemptCount}}
-                <tr>
-                    <th>Retry Attempts</th>
-                    <td>{{.AttemptCount}}</td>
-                </tr>
-                {{end}}
+                <tbody>
+                    <tr>
+                        <th>Source Repository</th>
+                        <td>{{.Migration.Repository}}</td>
+                    </tr>
+                    <tr>
+                        <th>Target Organization</th>
+                        <td>{{if .Migration.TargetOrg}}{{.Migration.TargetOrg}}{{else}}-{{end}}</td>
+                    </tr>
+                    <tr>
+                        <th>Started At</th>
+                        <td>{{.Migration.StartedAt | FormatDateTime}}</td>
+                    </tr>
+                    <tr>
+                        <th>Last Updated</th>
+                        <td>{{.Migration.UpdatedAt | FormatDateTime}}</td>
+                    </tr>
+                    <tr>
+                        <th>Migration ID</th>
+                        <td>{{if .Migration.MigrationID}}{{.Migration.MigrationID}}{{else}}-{{end}}</td>
+                    </tr>
+                    {{if .AttemptCount}}
+                    <tr>
+                        <th>Retry Attempts</th>
+                        <td>{{.AttemptCount}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
             </table>
         </div>
-
-        <div class="info-section">
-            <h3>Migration Progress</h3>
-            <div class="stage-progress">
-                {{range $i, $stage := .Stages}}
-                <div class="stage-item {{/* Directly use status for class */}} {{$stage.Status}}">
-                    <div class="stage-marker">
-                        {{if eq $stage.Status "completed"}}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                            <path d="M22 4L12 14.01l-3-3"/>
-                        </svg>
-                        {{else if eq $stage.Status "current"}}
-                        <div class="current-stage-marker"></div>
-                        {{else if eq $stage.Status "failed"}}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"/>
-                            <line x1="6" y1="6" x2="18" y2="18"/>
-                        </svg>
-                        {{else if eq $stage.Status "skipped"}}
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="grey" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="5" y1="12" x2="19" y2="12"/>
-                        </svg>
-                        {{else}} {{/* Covers "pending" and any other default */}}
-                        <div class="pending-stage-marker"></div>
-                        {{end}}
-                    </div>
-                    <div class="stage-info">
-                        <h4>{{$stage.Name | Title}}</h4>
-                        <p>{{$stage.Description}}</p>
-                        {{if eq $stage.Status "current"}}
-                        <div class="stage-progress-bar">
-                            <div class="stage-progress-value" data-progress="{{$.Migration.StageProgress}}"></div>
-                        </div>
-                        <span class="stage-progress-text">{{$.Migration.StageProgress}}%</span>
-                        <p class="stage-state">Current state: {{$.Migration.State | Title}}</p>
-                        {{end}}
-                    </div>
-                </div>
-                {{end}}
-            </div>
-        </div>
-
-        {{if .Migration.Error}}
-        <div class="info-section error-section">
-            <h3>Error Details</h3>
-            <div class="error-message">
-                {{.Migration.Error}}
-            </div>
-        </div>
-        {{end}}
     </div>
-    {{else}}
-    <div class="detail-header">
-        <div class="detail-status">
-            <span class="status-text">Migration data not available. It might have been deleted or is no longer accessible.</span>
+
+    <!-- Migration Progress Section -->
+    <div class="stats-section">
+        <div class="section-header">
+            <h3 class="section-title">Migration Progress</h3>
+        </div>
+        <div class="migration-timeline">
+            <div class="timeline-body">
+                <div class="timeline-events">
+                    {{range $i, $stage := .Stages}}
+                    <div class="timeline-event">
+                        <div class="timeline-event-marker status-{{$stage.Status}}">
+                            {{if eq $stage.Status "completed"}}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <path d="M22 4L12 14.01l-3-3"/>
+                            </svg>
+                            {{else if eq $stage.Status "current"}}
+                            <div class="current-stage-indicator"></div>
+                            {{else if eq $stage.Status "failed"}}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                            {{else if eq $stage.Status "skipped"}}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="grey" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            {{else}} {{/* Covers "pending" and any other default */}}
+                            <div class="pending-stage-indicator"></div>
+                            {{end}}
+                        </div>
+                        <div class="timeline-event-content">
+                            <div class="timeline-event-header">
+                                <h4 class="timeline-event-title">{{$stage.Name | Title}}</h4>
+                                <span class="timeline-event-time">{{if eq $stage.Status "current"}}In Progress{{else}}{{$stage.Status | Title}}{{end}}</span>
+                            </div>
+                            <div class="timeline-event-details">
+                                {{$stage.Description}}
+                                {{if eq $stage.Status "current"}}
+                                <div class="stage-progress-container">
+                                    <div class="progress-bar">
+                                        <div class="progress-value status-running" data-progress="{{$.Migration.StageProgress}}"></div>
+                                    </div>
+                                    <span class="progress-text">{{$.Migration.StageProgress}}%</span>
+                                    <p class="text-muted">Current state: {{$.Migration.State | Title}}</p>
+                                </div>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{if .Migration.Error}}
+    <!-- Error Details Section -->
+    <div class="stats-section">
+        <div class="section-header">
+            <h3 class="section-title text-danger">Error Details</h3>
+        </div>
+        <div class="dashboard-table">
+            <div class="error-message-container">
+                <div class="error-message">
+                    {{.Migration.Error}}
+                </div>
+            </div>
         </div>
     </div>
     {{end}}
 
-    {{/* Archived Attempts Section */}}
-    <div class="info-section archived-attempts-section">
-        <h3>Archived Migration Attempts</h3>
-        {{if .ArchivedAttempts}}
-        <table class="info-table archived-table">
-            <thead>
-                <tr>
-                    <th>Attempt Started</th>
-                    <th>Attempt Finished</th>
-                    <th>Duration</th>
-                    <th>Status</th>
-                    <th>Migration ID</th>
-                    <th>Error</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range .ArchivedAttempts}}
-                <tr class="status-{{.Status | ToLower}}">
-                    <td>{{.StartedAt | FormatDateTime}}</td>
-                    <td>{{.UpdatedAt | FormatDateTime}}</td> {{/* Using UpdatedAt as 'finished time' for the attempt */}}
-                    <td>{{.Duration | FormatDuration}}</td>
-                    <td>
-                        <span class="status-indicator status-{{.Status | ToLower}}"></span>
-                        {{.Status | Title}}
-                    </td>
-                    <td>{{if .MigrationID}}{{.MigrationID}}{{else}}-{{end}}</td>
-                    <td class="error-message-cell">{{if .Error}}{{.Error}}{{else}}-{{end}}</td>
-                </tr>
-                {{end}}
-            </tbody>
-        </table>
-        {{else}}
-        <p>No archived attempts found for this repository.</p>
-        {{end}}
+    {{else}}
+    <!-- No Migration Data Available -->
+    <div class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+        </svg>
+        <p>Migration data not available</p>
+        <p class="text-muted">It might have been deleted or is no longer accessible.</p>
     </div>
+    {{end}}
+
+    <!-- Archived Attempts Section -->
+    {{if .ArchivedAttempts}}
+    <div class="stats-section">
+        <div class="section-header">
+            <h3 class="section-title">Archived Migration Attempts</h3>
+        </div>
+        <div class="dashboard-table">
+            <table class="info-table">
+                <thead>
+                    <tr>
+                        <th>Attempt Started</th>
+                        <th>Attempt Finished</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Migration ID</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .ArchivedAttempts}}
+                    <tr class="status-{{.Status | ToLower}}">
+                        <td>{{.StartedAt | FormatDateTime}}</td>
+                        <td>{{.UpdatedAt | FormatDateTime}}</td>
+                        <td>{{.Duration | FormatDuration}}</td>
+                        <td>
+                            <span class="status-indicator status-{{.Status | ToLower}}"></span>
+                            {{.Status | Title}}
+                        </td>
+                        <td>{{if .MigrationID}}{{.MigrationID}}{{else}}-{{end}}</td>
+                        <td class="error-message-cell">{{if .Error}}{{.Error}}{{else}}-{{end}}</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {{end}}
 </div>
 
 <!-- Retry Migration Modal -->
@@ -189,26 +232,154 @@
     </div>
 </div>
 
+<style>
+/* Additional styles specific to migration detail view */
+.stat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-2);
+}
+
+.stat-value-with-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.stat-value-with-badge .stat-value {
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+.stage-progress-container {
+    margin-top: var(--space-3);
+    padding: var(--space-3);
+    background-color: var(--gray-50);
+    border-radius: var(--radius-base);
+    border: 1px solid var(--border-color);
+}
+
+.stage-progress-container .progress-bar {
+    margin: var(--space-2) 0;
+}
+
+.stage-progress-container .progress-text {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.current-stage-indicator,
+.pending-stage-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.current-stage-indicator {
+    background-color: var(--primary-color);
+    animation: pulse 2s infinite;
+}
+
+.pending-stage-indicator {
+    background-color: var(--gray-400);
+}
+
+.error-message-container {
+    padding: var(--space-4);
+}
+
+.error-message {
+    background-color: var(--danger-light);
+    border: 1px solid var(--danger-color);
+    border-radius: var(--radius-base);
+    padding: var(--space-4);
+    color: var(--danger-dark);
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-relaxed);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.error-message-cell {
+    max-width: 300px;
+    word-break: break-word;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: var(--font-size-xs);
+}
+
+/* Modal styles using existing design system */
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background-color: var(--surface-color);
+    margin: 5% auto;
+    padding: 0;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-xl);
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow: auto;
+}
+
+.modal-header {
+    padding: var(--space-6);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+}
+
+.modal-body {
+    padding: var(--space-6);
+}
+
+.close {
+    color: var(--text-muted);
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: var(--space-1);
+    line-height: 1;
+    transition: var(--transition-fast);
+}
+
+.close:hover,
+.close:focus {
+    color: var(--text-color);
+}
+</style>
+
 <script>
 // Initialize progress bars
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize main progress bar
-    const progressValue = document.querySelector('.progress-value');
-    if (progressValue) {
-        const progress = progressValue.getAttribute('data-progress');
-        if (progress) {
-            progressValue.style.width = progress + '%';
+    // Initialize main progress bars
+    document.querySelectorAll('.progress-value').forEach(function(el) {
+        const progress = parseFloat(el.getAttribute('data-progress'));
+        if (!isNaN(progress)) {
+            el.style.width = progress + '%';
         }
-    }
-    
-    // Initialize stage progress bar if it exists
-    const stageProgressValue = document.querySelector('.stage-progress-value');
-    if (stageProgressValue) {
-        const stageProgress = stageProgressValue.getAttribute('data-progress');
-        if (stageProgress) {
-            stageProgressValue.style.width = stageProgress + '%';
-        }
-    }
+    });
 });
 
 // Listen for the closeModal event triggered by the server
@@ -216,5 +387,13 @@ document.body.addEventListener('closeModal', function(event) {
     // Close the modal by hiding it
     document.getElementById('retry-modal').style.display = 'none';
 });
+
+// Close modal when clicking outside of it
+window.onclick = function(event) {
+    const modal = document.getElementById('retry-modal');
+    if (event.target === modal) {
+        modal.style.display = 'none';
+    }
+}
 </script>
 {{end}} 
