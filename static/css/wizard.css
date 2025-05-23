@@ -449,6 +449,12 @@
     border: 1px solid var(--info-color);
 }
 
+.connection-status.warning {
+    background: var(--warning-light);
+    color: var(--warning-dark);
+    border: 1px solid var(--warning-color);
+}
+
 /* === Tab System === */
 .repo-selection-tabs {
     display: flex;
@@ -1193,6 +1199,49 @@
 
 .wizard-message-error svg {
     color: var(--error-color);
+}
+
+/* === Enhanced Error Messages === */
+.wizard-error-message {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    margin-bottom: var(--space-4);
+    background: linear-gradient(135deg, var(--danger-light) 0%, rgba(239, 68, 68, 0.1) 100%);
+    border: 1px solid var(--danger-color);
+    border-radius: var(--radius-lg);
+    color: var(--danger-dark);
+    animation: slideInDown var(--transition-base);
+    position: relative;
+}
+
+.wizard-error-message svg {
+    flex-shrink: 0;
+    color: var(--danger-color);
+}
+
+.wizard-error-message span {
+    flex: 1;
+    font-weight: var(--font-weight-medium);
+}
+
+.wizard-error-message .close-btn {
+    background: none;
+    border: none;
+    padding: var(--space-1);
+    cursor: pointer;
+    color: var(--danger-color);
+    border-radius: var(--radius-base);
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.wizard-error-message .close-btn:hover {
+    background: var(--danger-color);
+    color: white;
 }
 
 /* === Print Styles === */

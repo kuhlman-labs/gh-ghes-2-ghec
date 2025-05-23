@@ -61,6 +61,20 @@ func (n *NoopAPI) GetOrganizationID(ctx context.Context, org string) (string, in
 	return "", 0, fmt.Errorf("GetOrganizationID not implemented in NoopAPI")
 }
 
+// ValidateGHESOrganization is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ValidateGHESOrganization(ctx context.Context, org string) error {
+	n.logger.Warn("NoopAPI: ValidateGHESOrganization called but not implemented",
+		"org", org)
+	return fmt.Errorf("ValidateGHESOrganization not implemented in NoopAPI")
+}
+
+// ValidateGHCloudOrganization is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ValidateGHCloudOrganization(ctx context.Context, org string) error {
+	n.logger.Warn("NoopAPI: ValidateGHCloudOrganization called but not implemented",
+		"org", org)
+	return fmt.Errorf("ValidateGHCloudOrganization not implemented in NoopAPI")
+}
+
 // CreateMigrationSource is a no-op implementation that logs the call and returns an error.
 func (n *NoopAPI) CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error) {
 	n.logger.Warn("NoopAPI: CreateMigrationSource called but not implemented",

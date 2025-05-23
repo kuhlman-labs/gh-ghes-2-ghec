@@ -418,3 +418,91 @@ func (a *GitHubAPI) GetRepositorySize(ctx context.Context, org, repo string) (in
 	)
 	return sizeInBytes, nil
 }
+
+// ValidateGHESOrganization checks if an organization exists and is accessible on GitHub Enterprise Server.
+// It makes a REST API call to the GHES instance and verifies the organization's existence and accessibility.
+// Returns an error if the organization doesn't exist, can't be accessed, or if there are API issues.
+func (a *GitHubAPI) ValidateGHESOrganization(ctx context.Context, org string) error {
+	startTime := time.Now()
+	a.logger.Debug("Validating GHES organization",
+		"api", "GHES_REST",
+		"method", "Organizations.Get",
+		"org", org,
+	)
+
+	var respStatus int
+	err := a.circuitProtectedGhesOperation(ctx, "validate_ghes_organization", func() error {
+		_, resp, err := a.clients.GHESClient.Organizations.Get(ctx, org)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("GHES organization validation failed",
+			"api", "GHES_REST",
+			"method", "Organizations.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"error", err,
+		)
+		return a.classifyGitHubError(err)
+	}
+
+	a.logger.Debug("GHES organization validation successful",
+		"api", "GHES_REST",
+		"method", "Organizations.Get",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+	)
+	return nil
+}
+
+// ValidateGHCloudOrganization checks if an organization exists and is accessible on GitHub Enterprise Cloud.
+// It makes a REST API call to the GHEC instance and verifies the organization's existence and accessibility.
+// Returns an error if the organization doesn't exist, can't be accessed, or if there are API issues.
+func (a *GitHubAPI) ValidateGHCloudOrganization(ctx context.Context, org string) error {
+	startTime := time.Now()
+	a.logger.Debug("Validating GitHub Cloud organization",
+		"api", "GHEC_REST",
+		"method", "Organizations.Get",
+		"org", org,
+	)
+
+	var respStatus int
+	err := a.circuitProtectedGhCloudOperation(ctx, "validate_ghcloud_organization", func() error {
+		_, resp, err := a.clients.GHCloudClient.Organizations.Get(ctx, org)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("GitHub Cloud organization validation failed",
+			"api", "GHEC_REST",
+			"method", "Organizations.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"error", err,
+		)
+		return a.classifyGitHubError(err)
+	}
+
+	a.logger.Debug("GitHub Cloud organization validation successful",
+		"api", "GHEC_REST",
+		"method", "Organizations.Get",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+	)
+	return nil
+}

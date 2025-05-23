@@ -12,6 +12,10 @@ class MigrationWizard {
         this.autoSaveTimer = null;
         this.hasDraft = false;
         this.validationRules = this.initValidationRules();
+        this.connectionsTested = {
+            source: false,
+            target: false
+        };
         
         this.init();
     }
@@ -31,8 +35,8 @@ class MigrationWizard {
                 message: 'Please enter a valid URL starting with http:// or https://'
             },
             token: {
-                pattern: /^gh[a-zA-Z]_[a-zA-Z0-9]{32,255}$/,
-                message: 'Please enter a valid GitHub token (starts with gh*_)'
+                pattern: /^.{30,}$/,
+                message: 'Please enter a valid GitHub token (minimum 30 characters)'
             },
             required: {
                 test: (value) => value && value.trim().length > 0,
@@ -86,6 +90,9 @@ class MigrationWizard {
             if (e.target.form?.id === 'migration-wizard-form') {
                 this.scheduleAutoSave();
                 this.validateField(e.target);
+                
+                // Reset connection test status when credentials change
+                this.resetConnectionTestOnFieldChange(e.target);
             }
         });
 
@@ -228,7 +235,26 @@ class MigrationWizard {
 
         // Validate current step
         if (!this.validateCurrentStep()) {
-            this.showError('Please fix the errors before continuing');
+            // Provide more specific error messages based on the step
+            let errorMessage = 'Please fix the errors before continuing';
+            
+            if (this.currentStep === 1) {
+                if (!this.connectionsTested.source) {
+                    errorMessage = 'Please test the source connection before proceeding to the next step';
+                } else {
+                    errorMessage = 'Please check that all source configuration fields are valid';
+                }
+            } else if (this.currentStep === 2) {
+                if (!this.connectionsTested.target) {
+                    errorMessage = 'Please test the target connection before proceeding to the next step';
+                } else {
+                    errorMessage = 'Please check that all target configuration fields are valid';
+                }
+            } else if (this.currentStep === 3) {
+                errorMessage = 'Please select at least one repository to migrate';
+            }
+            
+            this.showError(errorMessage);
             return;
         }
 
@@ -339,6 +365,16 @@ class MigrationWizard {
 
         // Step-specific validation
         switch (this.currentStep) {
+            case 1: // Source configuration
+                if (!this.validateConnectionTested('source')) {
+                    isValid = false;
+                }
+                break;
+            case 2: // Target configuration
+                if (!this.validateConnectionTested('target')) {
+                    isValid = false;
+                }
+                break;
             case 3: // Repository selection
                 if (!this.validateRepositories()) {
                     isValid = false;
@@ -363,6 +399,17 @@ class MigrationWizard {
         let isValid = true;
         let message = '';
 
+        // Debug logging for token validation
+        if (field.id.includes('token')) {
+            console.log('Validating token field:', {
+                fieldId: field.id,
+                hasValue: !!value,
+                valueLength: value ? value.length : 0,
+                validationType: validationType,
+                isRequired: field.required
+            });
+        }
+
         // Clear previous error
         this.clearValidationError(field.id);
 
@@ -379,6 +426,11 @@ class MigrationWizard {
                 if (rule.pattern && !rule.pattern.test(value)) {
                     isValid = false;
                     message = rule.message;
+                    console.log('Token validation failed:', {
+                        pattern: rule.pattern,
+                        value: value.substring(0, 8) + '...',
+                        testResult: rule.pattern.test(value)
+                    });
                 } else if (rule.test && !rule.test(value)) {
                     isValid = false;
                     message = rule.message;
@@ -413,6 +465,44 @@ class MigrationWizard {
         }
 
         return true;
+    }
+
+    validateConnectionTested(connectionType) {
+        if (!this.connectionsTested[connectionType]) {
+            const statusEl = document.getElementById(`${connectionType}-connection-status`);
+            if (statusEl) {
+                statusEl.textContent = '⚠ Please test the connection before proceeding';
+                statusEl.className = 'connection-status warning';
+            }
+            this.showError(`Please test the ${connectionType} connection before proceeding to the next step`);
+            return false;
+        }
+        return true;
+    }
+
+    resetConnectionTestOnFieldChange(field) {
+        // Reset connection test status when relevant fields change
+        const fieldId = field.id;
+        
+        // Source connection fields
+        if (['ghes_base_url', 'ghes_token', 'source_org'].includes(fieldId)) {
+            this.connectionsTested.source = false;
+            const statusEl = document.getElementById('source-connection-status');
+            if (statusEl) {
+                statusEl.textContent = '';
+                statusEl.className = 'connection-status';
+            }
+        }
+        
+        // Target connection fields
+        if (['gh_cloud_token', 'target_org'].includes(fieldId)) {
+            this.connectionsTested.target = false;
+            const statusEl = document.getElementById('target-connection-status');
+            if (statusEl) {
+                statusEl.textContent = '';
+                statusEl.className = 'connection-status';
+            }
+        }
     }
 
     showValidationError(fieldId, message) {
@@ -680,13 +770,37 @@ class MigrationWizard {
         // Get connection details
         let url, token, org;
         if (type === 'source') {
-            url = document.getElementById('ghes_base_url')?.value;
-            token = document.getElementById('ghes_token')?.value;
-            org = document.getElementById('source_org')?.value;
+            const urlField = document.getElementById('ghes_base_url');
+            const tokenField = document.getElementById('ghes_token');
+            const orgField = document.getElementById('source_org');
+            
+            url = urlField?.value || '';
+            token = tokenField?.value || '';
+            org = orgField?.value || '';
+            
+            console.log('Source connection test - field values:', {
+                urlField: urlField ? 'found' : 'NOT FOUND',
+                tokenField: tokenField ? 'found' : 'NOT FOUND', 
+                orgField: orgField ? 'found' : 'NOT FOUND',
+                url: url,
+                token: token ? `${token.substring(0, 8)}...` : 'EMPTY',
+                org: org
+            });
         } else {
+            const tokenField = document.getElementById('gh_cloud_token');
+            const orgField = document.getElementById('target_org');
+            
             url = 'https://api.github.com';
-            token = document.getElementById('gh_cloud_token')?.value;
-            org = document.getElementById('target_org')?.value;
+            token = tokenField?.value || '';
+            org = orgField?.value || '';
+            
+            console.log('Target connection test - field values:', {
+                tokenField: tokenField ? 'found' : 'NOT FOUND',
+                orgField: orgField ? 'found' : 'NOT FOUND',
+                url: url,
+                token: token ? `${token.substring(0, 8)}...` : 'EMPTY',
+                org: org
+            });
         }
 
         if (!url || !token || !org) {
@@ -706,6 +820,14 @@ class MigrationWizard {
         formData.append('token', token);
         formData.append('org', org);
         formData.append('base_url', url);
+        
+        // Debug logging
+        console.log('Connection test data:', {
+            type: type,
+            token: token ? `${token.substring(0, 8)}...` : 'EMPTY',
+            org: org,
+            base_url: url
+        });
 
         fetch('/dashboard/wizard/test-connection', {
             method: 'POST',
@@ -718,15 +840,21 @@ class MigrationWizard {
             if (data.success) {
                 status.textContent = '✓ ' + data.message;
                 status.className = 'connection-status success';
+                // Mark this connection type as successfully tested
+                this.connectionsTested[type] = true;
             } else {
                 status.textContent = '✗ ' + data.message;
                 status.className = 'connection-status error';
+                // Mark this connection type as not tested
+                this.connectionsTested[type] = false;
             }
         })
         .catch(error => {
             button.classList.remove('loading');
             status.textContent = '✗ Connection test failed';
             status.className = 'connection-status error';
+            // Mark this connection type as not tested
+            this.connectionsTested[type] = false;
             console.error('Connection test error:', error);
         });
     }
@@ -1028,8 +1156,43 @@ class MigrationWizard {
     }
 
     showError(message) {
-        // You could implement a toast notification system here
-        alert(message);
+        // Create a more user-friendly error display
+        const existingError = document.querySelector('.wizard-error-message');
+        if (existingError) {
+            existingError.remove();
+        }
+
+        const errorEl = document.createElement('div');
+        errorEl.className = 'wizard-error-message alert alert-error';
+        errorEl.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <span>${message}</span>
+            <button type="button" class="close-btn" onclick="this.parentElement.remove()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        `;
+
+        const wizardContainer = document.querySelector('.wizard-container');
+        if (wizardContainer) {
+            wizardContainer.insertBefore(errorEl, wizardContainer.firstChild);
+            
+            // Auto-remove after 8 seconds
+            setTimeout(() => {
+                if (errorEl.parentNode) {
+                    errorEl.remove();
+                }
+            }, 8000);
+        } else {
+            // Fallback to alert if container not found
+            alert(message);
+        }
     }
 
     setupAutoSave() {

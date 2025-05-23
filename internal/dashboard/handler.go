@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
@@ -1105,10 +1107,13 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Parse form data
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Extract and sanitize form fields
@@ -1660,9 +1665,10 @@ func sanitizeInput(input string) string {
 	// HTML escape the input to prevent XSS
 	escaped := html.EscapeString(input)
 
-	// Only allow alphanumeric characters, slashes, hyphens, underscores, periods, and colons
-	// This is suitable for repository paths, URLs, and organization names
-	re := regexp.MustCompile(`[^a-zA-Z0-9/\-_.:]`)
+	// CORRECTED: Allow alphanumeric, slashes, hyphens, underscores, periods, colons. Replace OTHERS.
+	// Added \\ to correctly escape - within the character class.
+	// Added + to match one or more occurrences of disallowed characters for efficiency.
+	re := regexp.MustCompile(`[^a-zA-Z0-9/\-_.:\s]`) // Allow common safe characters + whitespace
 	sanitized := re.ReplaceAllString(escaped, "")
 
 	return sanitized
@@ -1969,23 +1975,71 @@ func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse form data
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+	// Log Content-Type
+	contentType := r.Header.Get("Content-Type")
+	h.logger.Debug("TestConnection: Request Content-Type", "contentType", contentType)
+
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		h.logger.Debug("TestConnection: ParseMultipartForm failed, trying ParseForm", "error", err)
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			h.logger.Error("TestConnection: Failed to parse form data", "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"message": "Failed to parse form data: " + err.Error(),
+			})
+			return
+		}
 	}
 
-	connectionType := sanitizeInput(r.FormValue("type"))
-	token := r.FormValue("token")
-	org := sanitizeInput(r.FormValue("org"))
-	baseURL := sanitizeInput(r.FormValue("base_url"))
+	// Log the raw form values from r.Form and r.PostForm
+	h.logger.Debug("TestConnection: r.Form after ParseForm", "r.Form", fmt.Sprintf("%#v", r.Form))
+	h.logger.Debug("TestConnection: r.PostForm after ParseForm", "r.PostForm", fmt.Sprintf("%#v", r.PostForm))
+	if r.MultipartForm != nil {
+		h.logger.Debug("TestConnection: r.MultipartForm.Value after ParseForm", "r.MultipartForm.Value", fmt.Sprintf("%#v", r.MultipartForm.Value))
+	}
 
-	// Validate required fields
-	if connectionType == "" || token == "" || org == "" {
+	rawConnectionType := r.FormValue("type")
+	rawToken := r.FormValue("token") // Use raw token
+	rawOrg := r.FormValue("org")
+	rawBaseURL := r.FormValue("base_url")
+
+	h.logger.Debug("TestConnection: Raw form values retrieved",
+		"raw_type", rawConnectionType,
+		"raw_token_present", rawToken != "",
+		"raw_token_length", len(rawToken),
+		"raw_org", rawOrg,
+		"raw_base_url", rawBaseURL,
+	)
+
+	// Apply sanitization only to fields that need it
+	connectionType := sanitizeInput(rawConnectionType)
+	token := rawToken // Do NOT sanitize the token if it's for API use
+	org := sanitizeInput(rawOrg)
+	baseURL := sanitizeInput(rawBaseURL)
+
+	// Debug logging (original style, now shows values after selective sanitization)
+	h.logger.Debug("Connection test request received (values after processing)",
+		"type", connectionType,
+		"token_present", token != "", // This token is rawToken
+		"token_length", len(token), // This token is rawToken
+		"org", org,
+		"base_url", baseURL,
+	)
+
+	// Validate required fields (use raw token for check)
+	if connectionType == "" || rawToken == "" || org == "" {
+		h.logger.Debug("Missing required fields validation hit",
+			"type_empty", connectionType == "",
+			"token_empty", rawToken == "", // Check rawToken
+			"org_empty", org == "",
+		)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"message": "Missing required fields",
+			"message": "Missing required fields (type, token, or org is empty)",
 		})
 		return
 	}
@@ -1995,46 +2049,78 @@ func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 		baseURL = "https://api.github.com"
 	}
 
-	// Test the connection (simplified implementation)
-	success := h.testGitHubConnection(baseURL, token, org)
+	// Validate that base URL is provided for source connections
+	if connectionType == "source" && baseURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "GHES URL is required for source connections",
+		})
+		return
+	}
+
+	// Test the connection using real GitHub API calls
+	success, message := h.testGitHubConnectionReal(r.Context(), connectionType, baseURL, token, org)
 
 	w.Header().Set("Content-Type", "application/json")
-	response := map[string]interface{}{
+	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": success,
-	}
-
-	if success {
-		response["message"] = "Connection successful"
-	} else {
-		response["message"] = "Connection failed - check your credentials"
-	}
-
-	json.NewEncoder(w).Encode(response)
+		"message": message,
+	})
 }
 
-// testGitHubConnection performs a simple test of GitHub API connectivity
-func (h *Handler) testGitHubConnection(baseURL, token, org string) bool {
-	// This is a simplified implementation
-	// In a real implementation, you would make an actual API call to test the connection
-	// For now, we'll simulate based on basic validation
-
-	// Basic token format validation
-	if !strings.HasPrefix(token, "gh") || len(token) < 40 {
-		return false
+// testGitHubConnectionReal performs a real test of GitHub API connectivity by calling the organization endpoint
+func (h *Handler) testGitHubConnectionReal(ctx context.Context, connectionType, baseURL, token, org string) (bool, string) {
+	// Import the config package to create temporary clients
+	clientsConfig := &config.ClientsConfig{
+		Proxy: config.ProxyConfig{
+			Enabled: false, // No proxy for connection testing
+		},
 	}
 
-	// Basic URL validation
-	if baseURL == "" || (!strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://")) {
-		return false
+	// Set appropriate token and base URL based on connection type
+	if connectionType == "source" {
+		clientsConfig.GHESToken = token
+		// For GHES, we need to construct the API URL properly (add /api/v3/ to the base URL)
+		// This matches how the actual migration process handles the URL
+		baseURLTrimmed := strings.TrimSuffix(baseURL, "/")
+		clientsConfig.GHESBaseURL = baseURLTrimmed + "/api/v3/"
+	} else {
+		clientsConfig.GHCloudToken = token
 	}
 
-	// Basic org name validation
-	if org == "" || len(org) < 1 {
-		return false
+	// Create temporary clients for testing
+	clients, err := config.NewClients(clientsConfig)
+	if err != nil {
+		h.logger.Error("Failed to create GitHub clients for connection test", "error", err)
+		return false, "Failed to initialize GitHub client"
 	}
 
-	// Simulate success for valid-looking credentials
-	return true
+	// Create a temporary GitHub API instance for testing
+	githubAPI := github.New(clients, h.logger)
+
+	// Create a context with timeout for the API call
+	testCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Test organization access based on connection type
+	if connectionType == "source" {
+		if err := githubAPI.ValidateGHESOrganization(testCtx, org); err != nil {
+			h.logger.Debug("GHES organization validation failed during connection test",
+				"org", org,
+				"error", err)
+			return false, "Cannot access organization - check your token permissions and organization name"
+		}
+		return true, "Successfully connected to GHES organization"
+	} else {
+		if err := githubAPI.ValidateGHCloudOrganization(testCtx, org); err != nil {
+			h.logger.Debug("GitHub Cloud organization validation failed during connection test",
+				"org", org,
+				"error", err)
+			return false, "Cannot access organization - check your token permissions and organization name"
+		}
+		return true, "Successfully connected to GitHub Cloud organization"
+	}
 }
 
 // handleLoadRepositories loads repositories from the source organization
@@ -2044,10 +2130,13 @@ func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Parse form data
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
 	}
 
 	token := r.FormValue("token")
@@ -2122,10 +2211,13 @@ func (h *Handler) handleSaveDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse form data
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
 	}
 
 	draftData := r.FormValue("draft_data")

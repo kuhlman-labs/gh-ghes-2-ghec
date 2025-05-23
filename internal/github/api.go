@@ -20,6 +20,8 @@ type API interface {
 	CheckCloudRepositoryExists(ctx context.Context, org, repo string) (bool, error)
 	DeleteCloudRepositoryIfExists(ctx context.Context, org, repo string) (bool, error)
 	GetOrganizationID(ctx context.Context, org string) (string, int64, error)
+	ValidateGHESOrganization(ctx context.Context, org string) error
+	ValidateGHCloudOrganization(ctx context.Context, org string) error
 	CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error)
 	GenerateMigrationArchive(ctx context.Context, orgName, repoName string) (int64, error)
 	GetMigrationArchiveStatus(ctx context.Context, migrationID int64, orgName string) (string, error)
