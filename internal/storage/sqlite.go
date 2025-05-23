@@ -775,26 +775,8 @@ func (s *SQLiteStorage) GetMigrationStatus(ctx context.Context, repoName string)
 		}
 
 		// Parse time values
-		var updatedAt, startedAt time.Time
-		if updatedAtStr != "" {
-			updatedAt, err = time.Parse(time.RFC3339, updatedAtStr)
-			if err != nil {
-				s.logger.Warn("Failed to parse updated_at time",
-					"repository", repository,
-					"time_str", updatedAtStr,
-					"error", err)
-			}
-		}
-
-		if startedAtStr != "" {
-			startedAt, err = time.Parse(time.RFC3339, startedAtStr)
-			if err != nil {
-				s.logger.Warn("Failed to parse started_at time",
-					"repository", repository,
-					"time_str", startedAtStr,
-					"error", err)
-			}
-		}
+		updatedAt := s.parseTimestamp(updatedAtStr, "updated_at", repository)
+		startedAt := s.parseTimestamp(startedAtStr, "started_at", repository)
 
 		// Parse completed stages
 		var completedStages []string
@@ -894,7 +876,7 @@ func (s *SQLiteStorage) GetAllMigrationStatuses(ctx context.Context) (map[string
 	}
 
 	// Check database file existence (skip for in-memory databases)
-	if s.dbPath != ":memory:" {
+	if !isInMemoryDatabase(s.dbPath) {
 		if _, err := os.Stat(s.dbPath); err != nil {
 			s.logger.Error("Database file not found", "path", s.dbPath, "error", err)
 			return result, nil
@@ -971,23 +953,8 @@ func (s *SQLiteStorage) GetAllMigrationStatuses(ctx context.Context) (map[string
 			}
 
 			// Parse time fields
-			if updatedAt != "" {
-				parsedTime, err := time.Parse(time.RFC3339, updatedAt)
-				if err != nil {
-					s.logger.Warn("Failed to parse updated_at time", "repository", status.Repository, "error", err)
-				} else {
-					status.UpdatedAt = parsedTime
-				}
-			}
-
-			if startedAt != "" {
-				parsedTime, err := time.Parse(time.RFC3339, startedAt)
-				if err != nil {
-					s.logger.Warn("Failed to parse started_at time", "repository", status.Repository, "error", err)
-				} else {
-					status.StartedAt = parsedTime
-				}
-			}
+			status.UpdatedAt = s.parseTimestamp(updatedAt, "updated_at", status.Repository)
+			status.StartedAt = s.parseTimestamp(startedAt, "started_at", status.Repository)
 
 			// Set duration from seconds
 			status.Duration = time.Duration(durationSeconds) * time.Second
@@ -1445,27 +1412,8 @@ func (s *SQLiteStorage) GetArchivedMigrationAttempts(ctx context.Context, repoFu
 			}
 
 			// Parse time fields
-			if updatedAt != "" {
-				parsedTime, err := time.Parse(time.RFC3339, updatedAt)
-				if err != nil {
-					s.logger.Warn("Failed to parse updated_at time in archived record",
-						"repository", migrationStatus.Repository,
-						"error", err)
-				} else {
-					migrationStatus.UpdatedAt = parsedTime
-				}
-			}
-
-			if startedAt != "" {
-				parsedTime, err := time.Parse(time.RFC3339, startedAt)
-				if err != nil {
-					s.logger.Warn("Failed to parse started_at time in archived record",
-						"repository", migrationStatus.Repository,
-						"error", err)
-				} else {
-					migrationStatus.StartedAt = parsedTime
-				}
-			}
+			migrationStatus.UpdatedAt = s.parseTimestamp(updatedAt, "updated_at", migrationStatus.Repository)
+			migrationStatus.StartedAt = s.parseTimestamp(startedAt, "started_at", migrationStatus.Repository)
 
 			// Set duration from seconds
 			migrationStatus.Duration = time.Duration(durationSeconds) * time.Second
@@ -1497,4 +1445,42 @@ func (s *SQLiteStorage) GetArchivedMigrationAttempts(ctx context.Context, repoFu
 	}
 
 	return attempts, nil
+}
+
+// isInMemoryDatabase checks if the given database path represents an in-memory database
+func isInMemoryDatabase(dbPath string) bool {
+	if dbPath == "" || dbPath == ":memory:" {
+		return true
+	}
+
+	// Check for file::memory: variants
+	if strings.HasPrefix(dbPath, "file::memory:") {
+		return true
+	}
+
+	// Check for file: URLs with mode=memory parameter
+	if strings.HasPrefix(dbPath, "file:") && strings.Contains(dbPath, "mode=memory") {
+		return true
+	}
+
+	return false
+}
+
+// parseTimestamp parses an RFC3339 timestamp string with error handling and logging
+func (s *SQLiteStorage) parseTimestamp(timeStr, fieldName, repository string) time.Time {
+	if timeStr == "" {
+		return time.Time{}
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, timeStr)
+	if err != nil {
+		s.logger.Warn("Failed to parse timestamp",
+			"field", fieldName,
+			"repository", repository,
+			"time_str", timeStr,
+			"error", err)
+		return time.Time{}
+	}
+
+	return parsedTime
 }
