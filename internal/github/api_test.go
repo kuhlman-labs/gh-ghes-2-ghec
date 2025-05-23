@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-github/v70/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	apierrors "github.com/kuhlman-labs/gh-ghes-2-ghec/internal/errors"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/utils"
 )
 
 func setupTestAPI() *GitHubAPI {
@@ -18,14 +19,18 @@ func setupTestAPI() *GitHubAPI {
 	clients := &config.Clients{
 		GHESClient:     github.NewClient(nil),
 		GHCloudClient:  github.NewClient(nil),
-		GHCloudGraphQL: nil,
+		GHCloudGraphQL: nil, // Not needed for the basic API tests
 	}
 	return &GitHubAPI{
-		clients:               clients,
-		logger:                logger,
-		retryConfig:           nil,
-		ghesCircuitBreaker:    nil,
-		ghCloudCircuitBreaker: nil,
+		clients:     clients,
+		logger:      logger,
+		retryConfig: utils.DefaultRetryConfig(logger),
+		ghesCircuitBreaker: utils.NewCircuitBreaker(
+			utils.DefaultCircuitConfig("test-ghes", logger),
+		),
+		ghCloudCircuitBreaker: utils.NewCircuitBreaker(
+			utils.DefaultCircuitConfig("test-ghcloud", logger),
+		),
 	}
 }
 

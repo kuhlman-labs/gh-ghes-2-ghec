@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
 )
 
@@ -106,7 +105,7 @@ func (m *Migrator) persistAndNotifyStatusUpdate(status *payload.MigrationStatus,
 	repoFullName := status.Repository
 
 	// Persist to storage (in a background goroutine to avoid blocking)
-	if config.Get().Storage.Enabled {
+	if m.config != nil && m.config.Storage.Enabled {
 		go func(status payload.MigrationStatus) {
 			// Use a dedicated timeout for saving migration status,
 			// as the server write timeout might be too short for this operation.

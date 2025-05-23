@@ -29,25 +29,36 @@ func (m *Migrator) migrateRepository(
 	repoFullName string,
 	attemptStartTime time.Time,
 ) error {
-	// Initialize clients for this migration
-	clients, err := config.NewClients(&config.ClientsConfig{
-		GHESToken:    req.GHESToken,
-		GHCloudToken: req.GHCloudToken,
-		Proxy:        m.config.GitHub.Proxy,
-	})
-	if err != nil {
-		m.updateStatus(repoFullName, payload.StatusFailed, fmt.Sprintf("failed to initialize clients: %v", err), time.Now(), attemptStartTime)
-		return fmt.Errorf("failed to initialize clients: %w", err)
-	}
+	var githubAPI github.API
 
-	// Update GHES base URL
-	if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
-		m.updateStatus(repoFullName, payload.StatusFailed, fmt.Sprintf("failed to update GHES base URL: %v", err), time.Now(), attemptStartTime)
-		return fmt.Errorf("failed to update GHES base URL: %w", err)
-	}
+	// Use existing GitHub API client if available (for testing), otherwise create new clients
+	if m.githubAPI != nil {
+		githubAPI = m.githubAPI
+		m.logger.Debug("Using existing GitHub API client (likely for testing)",
+			"repository", repoFullName)
+	} else {
+		// Initialize clients for this migration
+		clients, err := config.NewClients(&config.ClientsConfig{
+			GHESToken:    req.GHESToken,
+			GHCloudToken: req.GHCloudToken,
+			Proxy:        m.config.GitHub.Proxy,
+		})
+		if err != nil {
+			m.updateStatus(repoFullName, payload.StatusFailed, fmt.Sprintf("failed to initialize clients: %v", err), time.Now(), attemptStartTime)
+			return fmt.Errorf("failed to initialize clients: %w", err)
+		}
 
-	// Create GitHub API instance for this migration
-	githubAPI := github.New(clients, m.logger)
+		// Update GHES base URL
+		if err := clients.UpdateGHESBaseURL(req.GetGHESAPIURL()); err != nil {
+			m.updateStatus(repoFullName, payload.StatusFailed, fmt.Sprintf("failed to update GHES base URL: %v", err), time.Now(), attemptStartTime)
+			return fmt.Errorf("failed to update GHES base URL: %w", err)
+		}
+
+		// Create GitHub API instance for this migration
+		githubAPI = github.New(clients, m.logger)
+		m.logger.Debug("Created new GitHub API client for migration",
+			"repository", repoFullName)
+	}
 
 	// Update status to in progress with initial stage
 	m.updateStatus(repoFullName, payload.StatusInProgress, "starting migration process", time.Now(), attemptStartTime)
@@ -252,8 +263,12 @@ func (m *Migrator) processArchive(
 	// Wait for migration archive export to complete
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "waiting for archive export", time.Now(), attemptStartTime)
 
-	// Use longer polling intervals for archive export status checks
+	// Use shorter polling intervals for testing, longer for production
 	pollInterval := 15 * time.Second
+	if m.githubAPI != nil {
+		// When using injected GitHub API (testing mode), use much shorter interval
+		pollInterval = 100 * time.Millisecond
+	}
 	exportStartTime := time.Now()
 	var archiveURL string
 	var migrationID string
@@ -544,7 +559,12 @@ func (m *Migrator) monitorMigration(
 	// Monitor the migration progress
 	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "waiting for migration to complete", time.Now(), attemptStartTime)
 
+	// Use shorter polling intervals for testing, longer for production
 	pollInterval := 15 * time.Second
+	if m.githubAPI != nil {
+		// When using injected GitHub API (testing mode), use much shorter interval
+		pollInterval = 100 * time.Millisecond
+	}
 	migrationStartTime := time.Now()
 
 	// Initialize adaptive polling
@@ -613,7 +633,14 @@ func (m *Migrator) monitorMigration(
 			} else {
 				// State changed, reset counter and poll interval
 				consecutiveNoChanges = 0
-				pollInterval = 15 * time.Second
+				// Reset to initial interval (preserve test mode interval)
+				if m.githubAPI != nil {
+					// Testing mode - use short interval
+					pollInterval = 100 * time.Millisecond
+				} else {
+					// Production mode - use normal interval
+					pollInterval = 15 * time.Second
+				}
 				lastState = state
 			}
 			continue

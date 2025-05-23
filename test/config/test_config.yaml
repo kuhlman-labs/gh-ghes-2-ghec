@@ -1,0 +1,156 @@
+# Test Configuration for gh-ghes-2-ghec
+# This file contains configuration for different types of tests
+
+# Unit Test Configuration
+unit:
+  coverage_threshold: 90.0  # 90% minimum coverage requirement
+  timeout: 5m
+  parallel: true
+  short: true
+
+# Integration Test Configuration  
+integration:
+  timeout: 15m
+  database:
+    sqlite:
+      enabled: true
+      path: ":memory:"
+    postgres:
+      enabled: true
+      host: localhost
+      port: 5432
+      database: test_ghes_migration
+      username: test_user
+      password: test_pass
+    mysql:
+      enabled: true
+      host: localhost
+      port: 3306
+      database: test_ghes_migration
+      username: test_user
+      password: test_pass
+  github:
+    mock_api: true
+    rate_limit_test: true
+    timeout: 30s
+
+# End-to-End Test Configuration
+e2e:
+  timeout: 30m
+  scenarios:
+    - name: "simple_repo_migration"
+      source_org: "test-ghes-org"
+      target_org: "test-ghec-org"
+      repositories: ["simple-repo"]
+    - name: "complex_repo_migration"
+      source_org: "test-ghes-org"
+      target_org: "test-ghec-org"
+      repositories: ["complex-repo-with-issues", "repo-with-lfs"]
+    - name: "bulk_migration"
+      source_org: "test-ghes-org"
+      target_org: "test-ghec-org"
+      repositories: ["repo1", "repo2", "repo3", "repo4", "repo5"]
+
+# Load Test Configuration
+load:
+  timeout: 45m
+  concurrent_migrations: [1, 5, 10, 25, 50]
+  repository_sizes: ["small", "medium", "large"]
+  duration: 10m
+  ramp_up: 2m
+  scenarios:
+    - name: "steady_load"
+      concurrent_repos: 10
+      duration: 5m
+    - name: "spike_load"
+      concurrent_repos: 50
+      duration: 1m
+    - name: "sustained_load"
+      concurrent_repos: 25
+      duration: 15m
+
+# Chaos Engineering Test Configuration
+chaos:
+  timeout: 20m
+  scenarios:
+    - name: "database_failure"
+      failure_type: "database_disconnect"
+      duration: 30s
+    - name: "github_api_failure"
+      failure_type: "api_timeout"
+      duration: 60s
+    - name: "network_partition"
+      failure_type: "network_delay"
+      delay: 5s
+      duration: 2m
+    - name: "memory_pressure"
+      failure_type: "memory_limit"
+      limit: "256MB"
+      duration: 2m
+    - name: "disk_full"
+      failure_type: "disk_space"
+      available: "100MB"
+      duration: 1m
+
+# Performance Regression Test Configuration
+performance:
+  timeout: 30m
+  baseline_file: "test/data/performance_baseline.json"
+  threshold_degradation: 10.0  # 10% degradation threshold
+  metrics:
+    - migration_duration
+    - memory_usage
+    - cpu_usage
+    - api_calls_per_second
+    - database_query_time
+  scenarios:
+    - name: "single_repo_performance"
+      repositories: 1
+      iterations: 10
+    - name: "batch_performance"
+      repositories: 10
+      iterations: 5
+
+# Security Test Configuration
+security:
+  timeout: 15m
+  scans:
+    - type: "dependency_check"
+      tool: "gosec"
+    - type: "secret_scanning"
+      tool: "truffleHog"
+    - type: "license_check"
+      tool: "fossa"
+    - type: "vulnerability_scan"
+      tool: "snyk"
+  compliance:
+    - standard: "SOC2"
+    - standard: "GDPR"
+    - standard: "PCI-DSS"
+
+# Test Data Configuration
+data:
+  mock_repositories:
+    small:
+      size: "1MB"
+      files: 10
+      commits: 50
+      issues: 5
+    medium:
+      size: "100MB"
+      files: 500
+      commits: 1000
+      issues: 100
+    large:
+      size: "1GB"
+      files: 5000
+      commits: 10000
+      issues: 1000
+  
+  mock_organizations:
+    - name: "test-ghes-org"
+      repositories: 10
+      members: 5
+    - name: "test-ghec-org"
+      repositories: 0
+      members: 5 

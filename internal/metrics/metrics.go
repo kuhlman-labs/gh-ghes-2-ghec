@@ -5,6 +5,7 @@ package metrics
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
@@ -23,6 +24,10 @@ var (
 
 	// Enabled flag to track if metrics are enabled
 	enabled = false
+
+	// Guard to prevent duplicate collector registration
+	collectorsRegistered = false
+	registrationMutex    sync.Mutex
 
 	// Migration metrics
 	migrationTotal = promauto.With(registry).NewCounterVec(
@@ -199,9 +204,14 @@ func Init(cfg Config) error {
 		namespace = cfg.ServiceName
 	}
 
-	// Register default Go collectors
-	registry.MustRegister(collectors.NewGoCollector())
-	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	// Register default Go collectors only once
+	registrationMutex.Lock()
+	if !collectorsRegistered {
+		registry.MustRegister(collectors.NewGoCollector())
+		registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+		collectorsRegistered = true
+	}
+	registrationMutex.Unlock()
 
 	// Start metrics server on separate port if configured
 	if cfg.Port > 0 {
@@ -234,6 +244,11 @@ func Init(cfg Config) error {
 	enabled = true
 	logging.Get().Info("Metrics collection initialized", "namespace", namespace)
 	return nil
+}
+
+// IsEnabled returns true if metrics collection is enabled.
+func IsEnabled() bool {
+	return enabled
 }
 
 // Handler returns the Prometheus HTTP handler for metrics.
