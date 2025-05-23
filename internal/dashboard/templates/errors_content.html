@@ -39,11 +39,19 @@
             </a>
           </div>
         </div>
+        <a href="/dashboard" class="btn btn-secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          Back to Overview
+        </a>
       </div>
     </div>
-    
+  </div>
+  
+  <div class="active-migrations-section">
     <div class="section-header">
-      <h3 class="section-title">Error Statistics</h3>
+      <h3 class="section-title">Error Analysis</h3>
       <div class="refresh-indicator">
         <span class="last-refreshed">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
         <span class="refresh-spinner"></span>
@@ -133,27 +141,63 @@
     }
   });
   
-  // Handle dropdown menu on touch devices
+  // Enhanced dropdown handling with modern interaction patterns
   document.addEventListener('DOMContentLoaded', function() {
-    const dropdownBtn = document.querySelector('.btn-export');
-    if (dropdownBtn) {
-      dropdownBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        const dropdown = this.closest('.dropdown');
-        const content = dropdown.querySelector('.dropdown-content');
-        content.classList.toggle('show');
-      });
+    const dropdowns = document.querySelectorAll('.dropdown');
+    
+    dropdowns.forEach(dropdown => {
+      const btn = dropdown.querySelector('.btn-export');
+      const content = dropdown.querySelector('.dropdown-content');
       
-      // Close dropdown when clicking outside of it
-      document.addEventListener('click', function(event) {
-        const dropdowns = document.querySelectorAll('.dropdown-content');
-        dropdowns.forEach(function(dropdown) {
-          if (dropdown.classList.contains('show')) {
-            dropdown.classList.remove('show');
+      if (btn && content) {
+        // Handle click events
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          
+          // Close other dropdowns
+          dropdowns.forEach(otherDropdown => {
+            if (otherDropdown !== dropdown) {
+              const otherContent = otherDropdown.querySelector('.dropdown-content');
+              if (otherContent) otherContent.classList.remove('show');
+            }
+          });
+          
+          // Toggle current dropdown
+          content.classList.toggle('show');
+        });
+        
+        // Handle keyboard events
+        btn.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            content.classList.toggle('show');
           }
         });
+      }
+    });
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+      dropdowns.forEach(dropdown => {
+        const content = dropdown.querySelector('.dropdown-content');
+        if (content && content.classList.contains('show')) {
+          content.classList.remove('show');
+        }
       });
-    }
+    });
+    
+    // Close dropdowns on escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        dropdowns.forEach(dropdown => {
+          const content = dropdown.querySelector('.dropdown-content');
+          if (content && content.classList.contains('show')) {
+            content.classList.remove('show');
+          }
+        });
+      }
+    });
   });
 </script>
 {{end}} 

@@ -3,12 +3,12 @@
     <div class="wizard-header">
         <h2>New Migration Wizard</h2>
         <div class="wizard-controls">
-            <a href="/dashboard" class="btn btn-secondary">
+            <button type="button" class="btn btn-secondary" onclick="handleCancel()">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
                 Cancel
-            </a>
+            </button>
         </div>
     </div>
 
@@ -48,6 +48,35 @@
         <div class="template-header">
             <h3>Choose Migration Template</h3>
             <p class="text-muted">Start with a pre-configured template or create a custom migration</p>
+            
+            <!-- Draft Indicator -->
+            <div class="draft-indicator" id="draft-indicator" style="display: none;">
+                <div class="draft-message">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                        <path d="M8 7h8"/>
+                        <path d="M8 11h8"/>
+                    </svg>
+                    <span>Draft found - you can continue where you left off</span>
+                    <div class="draft-actions">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="startWizard()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="9,18 15,12 9,6"/>
+                            </svg>
+                            Continue Draft
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearDraft()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 6h18"/>
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                            </svg>
+                            Start Over
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="template-grid">

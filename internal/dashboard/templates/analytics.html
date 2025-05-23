@@ -1,60 +1,62 @@
 {{define "analytics_content"}}
 <div class="analytics-dashboard">
-    <div class="analytics-header">
-        <h2>Migration Analytics</h2>
-        <div class="analytics-controls">
-            <a href="/dashboard" class="btn btn-secondary">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-                Back to Overview
-            </a>
-            <div class="dropdown">
-                <button class="btn btn-export">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Export Analytics
-                </button>
-                <div class="dropdown-content">
-                    <a href="/dashboard/export?format=csv" class="dropdown-item">
+    <div class="stats-section">
+        <div class="dashboard-header">
+            <h2>Migration Analytics</h2>
+            <div class="dashboard-controls">
+                <div class="dropdown">
+                    <button class="btn btn-export">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
-                            <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
-                        Export Data as CSV
-                    </a>
-                    <a href="/dashboard/export?format=json" class="dropdown-item">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
-                            <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
-                        </svg>
-                        Export Data as JSON
-                    </a>
+                        Export Analytics
+                    </button>
+                    <div class="dropdown-content">
+                        <a href="/dashboard/export?format=csv" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+                            </svg>
+                            Export Data as CSV
+                        </a>
+                        <a href="/dashboard/export?format=json" class="dropdown-item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
+                            </svg>
+                            Export Data as JSON
+                        </a>
+                    </div>
                 </div>
+                <a href="/dashboard" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back to Overview
+                </a>
             </div>
         </div>
-    </div>
 
-    <!-- Summary Stats for Analytics Context -->
-    <div class="analytics-stats">
-        <div class="stat-card">
-            <h3>Active</h3>
-            <span class="stat-value">{{ .Stats.Active }}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Succeeded</h3>
-            <span class="stat-value">{{ .Stats.Succeeded }}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Failed</h3>
-            <span class="stat-value">{{ .Stats.Failed }}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Total</h3>
-            <span class="stat-value">{{ .Stats.Total }}</span>
+        <!-- Summary Stats for Analytics Context -->
+        <div class="analytics-stats">
+            <div class="stat-card">
+                <h3>Active</h3>
+                <span class="stat-value">{{ .Stats.Active }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Succeeded</h3>
+                <span class="stat-value">{{ .Stats.Succeeded }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Failed</h3>
+                <span class="stat-value">{{ .Stats.Failed }}</span>
+            </div>
+            <div class="stat-card">
+                <h3>Total</h3>
+                <span class="stat-value">{{ .Stats.Total }}</span>
+            </div>
         </div>
     </div>
 
@@ -64,7 +66,7 @@
         <div class="insights-grid">
             <div class="insight-item">
                 <div class="insight-label">Success Rate</div>
-                <div class="insight-value">{{if gt .Stats.Total 0}}{{printf "%.1f%%" (mul (div (float64 .Stats.Succeeded) (float64 .Stats.Total)) 100)}}{{else}}0%{{end}}</div>
+                <div class="insight-value">{{if gt .Stats.Total 0}}{{percentage .Stats.Succeeded .Stats.Total}}%{{else}}0%{{end}}</div>
                 <div class="insight-trend positive">↗ +2.3% vs last week</div>
             </div>
             <div class="insight-item">
@@ -79,7 +81,7 @@
             </div>
             <div class="insight-item">
                 <div class="insight-label">Failed Rate</div>
-                <div class="insight-value">{{if gt .Stats.Total 0}}{{printf "%.1f%%" (mul (div (float64 .Stats.Failed) (float64 .Stats.Total)) 100)}}{{else}}0%{{end}}</div>
+                <div class="insight-value">{{if gt .Stats.Total 0}}{{percentage .Stats.Failed .Stats.Total}}%{{else}}0%{{end}}</div>
                 <div class="insight-trend positive">↘ -1.2% vs last week</div>
             </div>
         </div>
@@ -206,26 +208,62 @@
     
     // Main initialization function
     document.addEventListener('DOMContentLoaded', function() {
-        // Handle dropdown menu on touch devices
-        const dropdownBtn = document.querySelector('.btn-export');
-        if (dropdownBtn) {
-            dropdownBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const dropdown = this.closest('.dropdown');
-                const content = dropdown.querySelector('.dropdown-content');
-                content.classList.toggle('show');
-            });
+        // Enhanced dropdown handling with modern interaction patterns
+        const dropdowns = document.querySelectorAll('.dropdown');
+        
+        dropdowns.forEach(dropdown => {
+            const btn = dropdown.querySelector('.btn-export');
+            const content = dropdown.querySelector('.dropdown-content');
             
-            // Close dropdown when clicking outside of it
-            document.addEventListener('click', function(event) {
-                const dropdowns = document.querySelectorAll('.dropdown-content');
-                dropdowns.forEach(function(dropdown) {
-                    if (dropdown.classList.contains('show')) {
-                        dropdown.classList.remove('show');
+            if (btn && content) {
+                // Handle click events
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    
+                    // Close other dropdowns
+                    dropdowns.forEach(otherDropdown => {
+                        if (otherDropdown !== dropdown) {
+                            const otherContent = otherDropdown.querySelector('.dropdown-content');
+                            if (otherContent) otherContent.classList.remove('show');
+                        }
+                    });
+                    
+                    // Toggle current dropdown
+                    content.classList.toggle('show');
+                });
+                
+                // Handle keyboard events
+                btn.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        content.classList.toggle('show');
                     }
                 });
+            }
+        });
+        
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(event) {
+            dropdowns.forEach(dropdown => {
+                const content = dropdown.querySelector('.dropdown-content');
+                if (content && content.classList.contains('show')) {
+                    content.classList.remove('show');
+                }
             });
-        }
+        });
+        
+        // Close dropdowns on escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                dropdowns.forEach(dropdown => {
+                    const content = dropdown.querySelector('.dropdown-content');
+                    if (content && content.classList.contains('show')) {
+                        content.classList.remove('show');
+                    }
+                });
+            }
+        });
     });
 </script>
 {{end}} 

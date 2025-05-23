@@ -1103,10 +1103,104 @@
     }
 }
 
+/* === Draft Indicator === */
+.draft-indicator {
+    background: linear-gradient(135deg, var(--warning-light) 0%, rgba(251, 191, 36, 0.1) 100%);
+    border: 1px solid var(--warning-color);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    margin-bottom: var(--space-6);
+    animation: slideInDown 0.3s ease-out;
+}
+
+.draft-message {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--warning-dark);
+}
+
+.draft-message svg {
+    color: var(--warning-color);
+    flex-shrink: 0;
+}
+
+.draft-message span {
+    flex: 1;
+    font-weight: var(--font-weight-medium);
+}
+
+.draft-actions {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+@keyframes slideInDown {
+    from {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* === Wizard Messages === */
+.wizard-message {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-4);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    animation: slideInDown 0.3s ease-out;
+}
+
+.wizard-message svg {
+    flex-shrink: 0;
+}
+
+.wizard-message-success {
+    background: linear-gradient(135deg, var(--success-light) 0%, rgba(34, 197, 94, 0.1) 100%);
+    color: var(--success-dark);
+    border: 1px solid var(--success-color);
+}
+
+.wizard-message-success svg {
+    color: var(--success-color);
+}
+
+.wizard-message-info {
+    background: linear-gradient(135deg, var(--info-light) 0%, rgba(59, 130, 246, 0.1) 100%);
+    color: var(--info-dark);
+    border: 1px solid var(--info-color);
+}
+
+.wizard-message-info svg {
+    color: var(--info-color);
+}
+
+.wizard-message-error {
+    background: linear-gradient(135deg, var(--error-light) 0%, rgba(239, 68, 68, 0.1) 100%);
+    color: var(--error-dark);
+    border: 1px solid var(--error-color);
+}
+
+.wizard-message-error svg {
+    color: var(--error-color);
+}
+
 /* === Print Styles === */
 @media print {
     .wizard-navigation,
-    .auto-save-indicator {
+    .auto-save-indicator,
+    .draft-indicator,
+    .wizard-message {
         display: none;
     }
     

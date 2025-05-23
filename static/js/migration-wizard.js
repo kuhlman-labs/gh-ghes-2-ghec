@@ -10,6 +10,7 @@ class MigrationWizard {
         this.selectedTemplate = null;
         this.wizardData = {};
         this.autoSaveTimer = null;
+        this.hasDraft = false;
         this.validationRules = this.initValidationRules();
         
         this.init();
@@ -107,6 +108,8 @@ class MigrationWizard {
         window.handleFileUpload = (event) => this.handleFileUpload(event);
         window.nextStep = () => this.nextStep();
         window.previousStep = () => this.previousStep();
+        window.clearDraft = () => this.clearDraft();
+        window.handleCancel = () => this.handleCancel();
     }
 
     initializeTemplateSelection() {
@@ -183,11 +186,15 @@ class MigrationWizard {
         // Set template type
         document.getElementById('template-type').value = this.selectedTemplate;
 
-        // Apply template defaults to form
-        this.applyDefaultsToForm();
-
-        // Initialize first step
-        this.goToStep(1);
+        // If we have draft data, restore it, otherwise apply defaults
+        if (this.hasDraft && this.wizardData) {
+            this.restoreFormData();
+            this.goToStep(this.currentStep);
+        } else {
+            this.applyDefaultsToForm();
+            this.goToStep(1);
+        }
+        
         this.updateProgress();
     }
 
@@ -508,20 +515,22 @@ class MigrationWizard {
                 return;
             }
 
-            // Ask user if they want to restore draft
-            if (confirm('Found a recent draft. Would you like to continue where you left off?')) {
-                this.selectedTemplate = draft.selectedTemplate;
-                this.wizardData = draft.wizardData;
-                this.restoreFormData();
-                
-                // Select template
-                if (this.selectedTemplate) {
-                    const templateCard = document.querySelector(`[data-template="${this.selectedTemplate}"]`);
-                    if (templateCard) {
-                        this.selectTemplate(templateCard);
-                    }
+            // Store draft data but don't auto-continue to wizard
+            this.selectedTemplate = draft.selectedTemplate;
+            this.wizardData = draft.wizardData;
+            this.currentStep = draft.currentStep || 1;
+            this.hasDraft = true;
+            
+            // Select template to show it's selected
+            if (this.selectedTemplate) {
+                const templateCard = document.querySelector(`[data-template="${this.selectedTemplate}"]`);
+                if (templateCard) {
+                    this.selectTemplate(templateCard);
                 }
             }
+            
+            // Show draft indicator with continue option
+            this.showDraftIndicator();
         } catch (error) {
             console.error('Error loading draft data:', error);
             localStorage.removeItem('migration-wizard-draft');
@@ -556,6 +565,84 @@ class MigrationWizard {
             setTimeout(() => {
                 indicator.style.display = 'none';
             }, 2000);
+        }
+    }
+
+    showDraftIndicator() {
+        const draftIndicator = document.getElementById('draft-indicator');
+        if (draftIndicator) {
+            draftIndicator.style.display = 'flex';
+        }
+    }
+
+    clearDraft() {
+        // Clear localStorage
+        localStorage.removeItem('migration-wizard-draft');
+        
+        // Reset wizard state
+        this.selectedTemplate = null;
+        this.wizardData = {};
+        this.currentStep = 1;
+        this.hasDraft = false;
+        
+        // Reset form
+        const form = document.getElementById('migration-wizard-form');
+        if (form) {
+            form.reset();
+        }
+        
+        // Reset template selection
+        document.querySelectorAll('.template-card').forEach(card => {
+            card.classList.remove('selected');
+        });
+        
+        // Hide wizard form and show template selection
+        document.getElementById('template-selection').style.display = 'block';
+        document.getElementById('migration-wizard-form').style.display = 'none';
+        
+        // Hide draft indicator
+        const draftIndicator = document.getElementById('draft-indicator');
+        if (draftIndicator) {
+            draftIndicator.style.display = 'none';
+        }
+        
+        // Show success message
+        this.showMessage('Draft cleared. Starting fresh!', 'success');
+    }
+
+    handleCancel() {
+        const wizardForm = document.getElementById('migration-wizard-form');
+        const templateSelection = document.getElementById('template-selection');
+        
+        // If we're in the wizard form, go back to template selection
+        if (wizardForm.style.display !== 'none') {
+            wizardForm.style.display = 'none';
+            templateSelection.style.display = 'block';
+        } else {
+            // If we're in template selection, go back to dashboard
+            window.location.href = '/dashboard';
+        }
+    }
+
+    showMessage(message, type = 'info') {
+        // Create temporary message element
+        const messageEl = document.createElement('div');
+        messageEl.className = `wizard-message wizard-message-${type}`;
+        messageEl.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 6L9 17l-5-5"/>
+            </svg>
+            ${message}
+        `;
+        
+        const container = document.querySelector('.wizard-container');
+        if (container) {
+            container.insertBefore(messageEl, container.firstChild);
+            
+            // Auto-remove after 3 seconds
+            setTimeout(() => {
+                messageEl.remove();
+            }, 3000);
         }
     }
 
