@@ -6,8 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .Title }} - GitHub Migration Dashboard</title>
     <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/charts.css">
     <link rel="stylesheet" href="/static/css/dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
     <script src="/static/js/htmx.min.js" defer></script>
+    <script src="/static/js/charts.js" defer></script>
+    <script src="/static/js/progress-indicator.js" defer></script>
     <script src="/static/js/dashboard.js" defer></script>
     <style>
         /* Additional styles for GitHub logo integration */
@@ -59,6 +63,7 @@
             <nav>
                 <ul>
                     <li><a href="/dashboard" class="{{ if eq .Active "overview" }}active{{ end }}">Overview</a></li>
+                    <li><a href="/dashboard/analytics" class="{{ if eq .Active "analytics" }}active{{ end }}">Analytics</a></li>
                     <li><a href="/dashboard/new" class="{{ if eq .Active "new" }}active{{ end }}">New Migration</a></li>
                     <li><a href="/dashboard/history" class="{{ if eq .Active "history" }}active{{ end }}">History</a></li>
                     <li><a href="/dashboard/errors" class="{{ if eq .Active "errors" }}active{{ end }}">Errors</a></li>
@@ -70,6 +75,8 @@
     <main class="container">
         {{if eq .PageName "overview"}}
             {{template "overview_content" .}}
+        {{else if eq .PageName "analytics"}}
+            {{template "analytics_content" .}}
         {{else if eq .PageName "new_migration"}}
             {{template "new_migration_content" .}}
         {{else if eq .PageName "migration_detail"}}

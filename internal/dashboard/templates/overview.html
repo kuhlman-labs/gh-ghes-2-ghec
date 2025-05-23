@@ -2,7 +2,7 @@
 <div class="dashboard-overview">
     <div class="stats-section">
         <div class="dashboard-header">
-            <h2>Migration Dashboard</h2>
+            <h2>Migration Overview</h2>
             <div class="dashboard-controls">
                 <a href="/dashboard/new" class="btn btn-primary">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -10,6 +10,12 @@
                         <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
                     New Migration
+                </a>
+                <a href="/dashboard/analytics" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                    </svg>
+                    View Analytics
                 </a>
                 <button class="btn btn-secondary" hx-get="/dashboard/refresh" hx-target="#migrations-table" hx-swap="innerHTML" hx-include="[name='page-size'], [name='filter-status'], [name='filter-repo'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -204,8 +210,6 @@
     
     // Main initialization function
     document.addEventListener('DOMContentLoaded', function() {
-        // Note: Sorting is now handled by the migrations_table.html script
-        
         // Handle dropdown menu on touch devices
         const dropdownBtn = document.querySelector('.btn-export');
         if (dropdownBtn) {
@@ -237,9 +241,6 @@
         document.body.addEventListener('htmx:afterRequest', function(evt) {
             if (evt.detail.target.id === 'migrations-table') {
                 document.querySelector('.refresh-spinner').classList.remove('active');
-                
-                // We don't need to update last-refreshed manually anymore as it's 
-                // updated via the template using HTMX with #last-updated-timestamp
             }
         });
     });
