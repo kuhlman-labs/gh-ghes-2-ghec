@@ -2019,14 +2019,6 @@ func (h *Handler) generateActivityHeatmap(migrations []*payload.MigrationStatus)
 	}
 }
 
-// calculateSuccessRate returns the success rate as a percentage
-func calculateSuccessRate(stats MigrationStats) int {
-	if stats.Total == 0 {
-		return 0
-	}
-	return int(float64(stats.Succeeded) / float64(stats.Total) * 100)
-}
-
 // handleTestConnection tests the connection to GitHub instances
 func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -2045,10 +2037,12 @@ func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			h.logger.Error("TestConnection: Failed to parse form data", "error", err)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": false,
 				"message": "Failed to parse form data: " + err.Error(),
-			})
+			}); err != nil {
+				h.logger.Error("Failed to encode JSON response", "error", err)
+			}
 			return
 		}
 	}
@@ -2096,10 +2090,12 @@ func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 			"org_empty", org == "",
 		)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"message": "Missing required fields (type, token, or org is empty)",
-		})
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
 		return
 	}
 
@@ -2111,10 +2107,12 @@ func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	// Validate that base URL is provided for source connections
 	if connectionType == "source" && baseURL == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"message": "GHES URL is required for source connections",
-		})
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
 		return
 	}
 
@@ -2122,10 +2120,12 @@ func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	success, message := h.testGitHubConnectionReal(r.Context(), connectionType, baseURL, token, org)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": success,
 		"message": message,
-	})
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 // testGitHubConnectionReal performs a real test of GitHub API connectivity by calling the organization endpoint
@@ -2206,10 +2206,12 @@ func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request)
 	// Validate required fields
 	if token == "" || org == "" || baseURL == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"message": "Missing required fields",
-		})
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
 		return
 	}
 
@@ -2222,18 +2224,22 @@ func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request)
 			"error", err)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"message": fmt.Sprintf("Failed to load repositories: %v", err),
-		})
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":      true,
 		"repositories": repositories,
-	})
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 // loadRepositoriesFromGitHub loads repositories from GitHub using the actual API
@@ -2321,10 +2327,12 @@ func (h *Handler) handleSaveDraft(w http.ResponseWriter, r *http.Request) {
 
 	if draftData == "" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"message": "No draft data provided",
-		})
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
 		return
 	}
 
@@ -2333,10 +2341,12 @@ func (h *Handler) handleSaveDraft(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Draft saved", "name", draftName, "data_length", len(draftData))
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Draft saved successfully",
-	})
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
 }
 
 // handleLoadDraft loads wizard draft data
@@ -2353,9 +2363,11 @@ func (h *Handler) handleLoadDraft(w http.ResponseWriter, r *http.Request) {
 	h.logger.Debug("Loading draft", "name", draftName)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"data":    nil, // No saved draft data
 		"message": "No saved draft found",
-	})
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
 }
