@@ -411,14 +411,14 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 	// Update state to "queued"
 	qmi.migrator.mu.Lock()
 	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
-		status.Stage = "preparation"
-		status.State = "queued"
+		status.Stage = "queue"
+		status.State = "waiting_archive_worker"
 	}
 	qmi.migrator.mu.Unlock()
 
 	// Repository passed validation
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
-		"pre-enqueue validation successful, queuing for archive generation",
+		"validation complete, waiting for archive worker",
 		time.Now(), attemptStartTime)
 	return true, nil
 }
@@ -656,11 +656,11 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 			// Update status to queueing for migration
 			qmi.migrator.mu.Lock()
 			if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
-				migStatus.Stage = "archive"
-				migStatus.State = "completed"
+				migStatus.Stage = "queue"
+				migStatus.State = "waiting_migration_worker"
 			}
 			qmi.migrator.mu.Unlock()
-			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "archive generated, queueing for migration", time.Now(), attemptStartTime)
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "archive complete, waiting for migration worker", time.Now(), attemptStartTime)
 
 			// Enqueue the migration job (second phase)
 			err = qmi.queueManager.EnqueueMigrationJob(sourceRepoFullName, req, job.Priority)

@@ -269,9 +269,8 @@ func (m *Migrator) StartMigration(ctx context.Context, req *payload.MigrationReq
 			}
 			m.mu.Unlock() // Release lock before starting the long-running task
 
-			// Initial status update to ensure it's logged and persisted, especially for new migrations.
-			// For retries, this re-affirms the reset status.
-			m.updateStatus(rfn, payload.StatusInProgress, "Starting migration process", time.Now(), attemptStartTime)
+			// Log initial status (already done in StartMigration before goroutine, but can be updated here if needed)
+			m.updateStatusWithContext(rfn, payload.StatusInProgress, "Migration process initiated", time.Now(), attemptStartTime, currentReq)
 
 			// Perform the actual migration steps
 			if err := m.performMigration(repoCtx, currentReq, rfn, attemptStartTime, repoCancel); err != nil {
@@ -344,7 +343,7 @@ func (m *Migrator) performMigration(
 	}
 
 	// Log initial status (already done in StartMigration before goroutine, but can be updated here if needed)
-	m.updateStatus(sourceRepoFullName, payload.StatusInProgress, "Migration process initiated", time.Now(), attemptStartTime)
+	m.updateStatusWithContext(sourceRepoFullName, payload.StatusInProgress, "Migration process initiated", time.Now(), attemptStartTime, req)
 
 	err := m.migrateRepository(ctx, req, repoName, sourceRepoFullName, attemptStartTime)
 	if err != nil {

@@ -98,6 +98,7 @@ var stageDescriptions = map[string]string{
 	"archive":    "Archive generation and export",
 	"storage":    "Storage upload (e.g., GitHub Owned Storage)",
 	"migration":  "Repository migration to target",
+	"queue":      "Waiting in queue for worker",
 	// "completion" was in the old hardcoded list, but not in payload.MigrationStages.
 	// If there are other stages from payload.MigrationStages, they can be added here.
 }
