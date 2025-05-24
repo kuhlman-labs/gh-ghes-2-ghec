@@ -296,10 +296,15 @@ func (qm *QueueManager) archiveWorker() {
 		case <-qm.shutdown:
 			return
 		case <-qm.jobAvailable:
-			qm.processNextJob(true)
+			// Process as many jobs as possible when signaled
+			for qm.processNextJob(true) {
+				// Continue processing while jobs are available and slots are open
+			}
 		case <-time.After(100 * time.Millisecond):
 			// Periodically check for jobs even if not signaled
-			qm.processNextJob(true)
+			for qm.processNextJob(true) {
+				// Continue processing while jobs are available and slots are open
+			}
 		}
 	}
 }
@@ -313,32 +318,37 @@ func (qm *QueueManager) migrationWorker() {
 		case <-qm.shutdown:
 			return
 		case <-qm.jobAvailable:
-			qm.processNextJob(false)
+			// Process as many jobs as possible when signaled
+			for qm.processNextJob(false) {
+				// Continue processing while jobs are available and slots are open
+			}
 		case <-time.After(100 * time.Millisecond):
 			// Periodically check for jobs even if not signaled
-			qm.processNextJob(false)
+			for qm.processNextJob(false) {
+				// Continue processing while jobs are available and slots are open
+			}
 		}
 	}
 }
 
-// processNextJob processes the next job in the queue
-func (qm *QueueManager) processNextJob(isArchive bool) {
+// processNextJob processes the next job in the queue and returns true if a job was processed
+func (qm *QueueManager) processNextJob(isArchive bool) bool {
 	qm.mu.Lock()
 
 	// Check if there are any jobs in the queue
 	if qm.queue.Len() == 0 {
 		qm.mu.Unlock()
-		return
+		return false
 	}
 
 	// Check if we've hit the concurrency limit
 	if isArchive && qm.activeArchiveGenerations >= qm.maxArchiveGenerations {
 		qm.mu.Unlock()
-		return
+		return false
 	}
 	if !isArchive && qm.activeMigrations >= qm.maxMigrations {
 		qm.mu.Unlock()
-		return
+		return false
 	}
 
 	// Find the next job of the right type
@@ -355,7 +365,7 @@ func (qm *QueueManager) processNextJob(isArchive bool) {
 	// If no job of the right type was found, unlock and return
 	if nextJob == nil {
 		qm.mu.Unlock()
-		return
+		return false
 	}
 
 	// Update active job counters
@@ -381,7 +391,9 @@ func (qm *QueueManager) processNextJob(isArchive bool) {
 	// Process the job
 	qm.logger.Info("Processing job",
 		"repository", nextJob.Repository,
-		"is_archive", isArchive)
+		"is_archive", isArchive,
+		"active_archives", qm.activeArchiveGenerations,
+		"active_migrations", qm.activeMigrations)
 
 	var err error
 	if isArchive {
@@ -408,6 +420,10 @@ func (qm *QueueManager) processNextJob(isArchive bool) {
 			"repository", nextJob.Repository,
 			"is_archive", isArchive,
 			"error", err)
+	} else {
+		qm.logger.Info("Job completed successfully",
+			"repository", nextJob.Repository,
+			"is_archive", isArchive)
 	}
 
 	// Signal that more jobs can be processed
@@ -416,6 +432,8 @@ func (qm *QueueManager) processNextJob(isArchive bool) {
 	default:
 		// Channel is already signaled, which is fine
 	}
+
+	return true
 }
 
 // GetQueueStats returns statistics about the queue
