@@ -67,22 +67,18 @@
             <div class="insight-item">
                 <div class="insight-label">Success Rate</div>
                 <div class="insight-value">{{if gt .Stats.Total 0}}{{percentage .Stats.Succeeded .Stats.Total}}%{{else}}0%{{end}}</div>
-                <div class="insight-trend positive">↗ +2.3% vs last week</div>
-            </div>
-            <div class="insight-item">
-                <div class="insight-label">Avg Duration</div>
-                <div class="insight-value">2.4h</div>
-                <div class="insight-trend negative">↗ +12% vs last week</div>
-            </div>
-            <div class="insight-item">
-                <div class="insight-label">Peak Activity</div>
-                <div class="insight-value">14:00</div>
-                <div class="insight-trend neutral">→ Same as last week</div>
             </div>
             <div class="insight-item">
                 <div class="insight-label">Failed Rate</div>
                 <div class="insight-value">{{if gt .Stats.Total 0}}{{percentage .Stats.Failed .Stats.Total}}%{{else}}0%{{end}}</div>
-                <div class="insight-trend positive">↘ -1.2% vs last week</div>
+            </div>
+            <div class="insight-item">
+                <div class="insight-label">Total Migrations</div>
+                <div class="insight-value">{{ .Stats.Total }}</div>
+            </div>
+            <div class="insight-item">
+                <div class="insight-label">Active Migrations</div>
+                <div class="insight-value">{{ .Stats.Active }}</div>
             </div>
         </div>
     </div>

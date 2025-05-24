@@ -1937,25 +1937,25 @@ func (h *Handler) generateChartData(migrations []*payload.MigrationStatus) Chart
 		Pending:   0, // Calculate pending if needed
 	}
 
-	// Trends data (mock data for now - in production, you'd query historical data)
+	// Trends data - no historical data available without database
 	trendsData := TrendsChartData{
-		Labels:     []string{"6 days ago", "5 days ago", "4 days ago", "3 days ago", "2 days ago", "Yesterday", "Today"},
-		Successful: []int{12, 18, 15, 22, 19, 25, stats.Succeeded},
-		Failed:     []int{2, 1, 3, 2, 1, 2, stats.Failed},
-		Total:      []int{14, 19, 18, 24, 20, 27, stats.Total},
+		Labels:     []string{},
+		Successful: []int{},
+		Failed:     []int{},
+		Total:      []int{},
 	}
 
 	// Repository size distribution
 	sizeData := h.calculateSizeDistribution(migrations)
 
-	// Performance metrics (mock data - in production, calculate from actual data)
+	// Performance metrics - no historical data available without database
 	performanceData := PerformanceChartData{
-		Labels:      []string{"Week 1", "Week 2", "Week 3", "Week 4"},
-		Duration:    []float64{2.5, 3.2, 2.8, 3.1},
-		SuccessRate: []int{92, 88, 95, calculateSuccessRate(stats)},
+		Labels:      []string{},
+		Duration:    []float64{},
+		SuccessRate: []int{},
 	}
 
-	// Activity heatmap (mock data - in production, analyze migration start times)
+	// Activity heatmap - only use real migration data
 	activityData := h.generateActivityHeatmap(migrations)
 
 	return ChartData{
@@ -2009,32 +2009,6 @@ func (h *Handler) generateActivityHeatmap(migrations []*payload.MigrationStatus)
 			heatmap[weekday][hour]++
 			if heatmap[weekday][hour] > maxActivity {
 				maxActivity = heatmap[weekday][hour]
-			}
-		}
-	}
-
-	// If no real data, generate some mock activity for demonstration
-	if maxActivity == 0 {
-		for day := 0; day < 7; day++ {
-			for hour := 0; hour < 24; hour++ {
-				// Create realistic activity patterns
-				var activity int
-				if day >= 1 && day <= 5 { // Weekdays
-					if hour >= 9 && hour <= 17 { // Business hours
-						activity = 2 + (hour-9)%3 + day%2
-					} else if hour >= 7 && hour <= 9 || hour >= 17 && hour <= 19 {
-						activity = 1 + day%2
-					}
-				} else { // Weekends
-					if hour >= 10 && hour <= 16 {
-						activity = 1 + hour%2
-					}
-				}
-
-				heatmap[day][hour] = activity
-				if activity > maxActivity {
-					maxActivity = activity
-				}
 			}
 		}
 	}

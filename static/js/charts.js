@@ -112,8 +112,7 @@ function createStatusDistributionChart(canvasId, data) {
             plugins: {
                 ...CHART_DEFAULTS.plugins,
                 legend: {
-                    ...CHART_DEFAULTS.plugins.legend,
-                    position: 'right'
+                    display: false // Disable Chart.js legend since we have a custom HTML legend
                 }
             },
             cutout: '60%'
@@ -411,53 +410,37 @@ async function fetchChartData() {
         return await response.json();
     } catch (error) {
         console.error('Error fetching chart data:', error);
-        // Return mock data for development
-        return getMockChartData();
+        // Return empty data structure instead of mock data
+        return {
+            status: {
+                succeeded: 0,
+                running: 0,
+                failed: 0,
+                pending: 0
+            },
+            trends: {
+                labels: [],
+                successful: [],
+                failed: [],
+                total: []
+            },
+            sizes: {
+                small: 0,
+                medium: 0,
+                large: 0,
+                extraLarge: 0
+            },
+            performance: {
+                labels: [],
+                duration: [],
+                successRate: []
+            },
+            activity: {
+                maxActivity: 0,
+                heatmap: Array.from({length: 7}, () => Array(24).fill(0))
+            }
+        };
     }
-}
-
-/**
- * Mock data for development/fallback
- */
-function getMockChartData() {
-    return {
-        status: {
-            succeeded: 45,
-            running: 8,
-            failed: 5,
-            pending: 12
-        },
-        trends: {
-            labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-            successful: [20, 35, 28, 42, 38, 45],
-            failed: [3, 2, 5, 3, 4, 2],
-            total: [23, 37, 33, 45, 42, 47]
-        },
-        sizes: {
-            small: 25,
-            medium: 15,
-            large: 8,
-            extraLarge: 3
-        },
-        performance: {
-            labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-            duration: [2.5, 3.2, 2.8, 3.1],
-            successRate: [92, 88, 95, 89]
-        },
-        activity: {
-            maxActivity: 10,
-            heatmap: [
-                // Sunday through Saturday, 24 hours each
-                Array.from({length: 24}, () => Math.floor(Math.random() * 8)),
-                Array.from({length: 24}, () => Math.floor(Math.random() * 10)),
-                Array.from({length: 24}, () => Math.floor(Math.random() * 10)),
-                Array.from({length: 24}, () => Math.floor(Math.random() * 10)),
-                Array.from({length: 24}, () => Math.floor(Math.random() * 10)),
-                Array.from({length: 24}, () => Math.floor(Math.random() * 8)),
-                Array.from({length: 24}, () => Math.floor(Math.random() * 6))
-            ]
-        }
-    };
 }
 
 /**
