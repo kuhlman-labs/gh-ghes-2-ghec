@@ -592,16 +592,32 @@ class MigrationWizard {
 
     validateRepositories() {
         const activeTab = document.querySelector('.tab-content.active');
-        if (!activeTab) return false;
+        console.log('Validating repositories - active tab:', activeTab?.id);
+        
+        if (!activeTab) {
+            console.log('No active tab found');
+            return false;
+        }
 
         if (activeTab.id === 'manual-tab') {
             const textarea = document.getElementById('repositories');
+            console.log('Manual tab - textarea value:', textarea?.value);
             return this.validateField(textarea);
         } else if (activeTab.id === 'browse-tab' || activeTab.id === 'bulk-tab') {
             const selectedRepos = this.getSelectedRepositories();
+            console.log('Browse/Bulk tab - selected repos:', selectedRepos);
+            console.log('Selected repos count:', selectedRepos.length);
+            
             if (selectedRepos.length === 0) {
                 this.showError('Please select at least one repository');
                 return false;
+            }
+            
+            // Also update the hidden repositories textarea with selected repos
+            const textarea = document.getElementById('repositories');
+            if (textarea) {
+                textarea.value = selectedRepos.join('\n');
+                console.log('Updated repositories textarea with:', textarea.value);
             }
         }
 
@@ -1213,6 +1229,8 @@ class MigrationWizard {
 
     updateSelectedRepos() {
         const selectedRepos = this.getSelectedRepositories();
+        console.log('updateSelectedRepos called - selected repos:', selectedRepos);
+        
         const countEl = document.getElementById('selected-count');
         const listEl = document.getElementById('selected-list');
         
@@ -1232,25 +1250,48 @@ class MigrationWizard {
             `).join('');
         }
 
-        // Update repositories textarea if on manual tab
-        const manualTab = document.getElementById('manual-tab');
+        // Always update repositories textarea with current selection for form submission
         const repositoriesTextarea = document.getElementById('repositories');
-        if (manualTab?.classList.contains('active') && repositoriesTextarea) {
-            repositoriesTextarea.value = selectedRepos.join('\n');
+        if (repositoriesTextarea) {
+            const currentValue = repositoriesTextarea.value;
+            const newValue = selectedRepos.join('\n');
+            repositoriesTextarea.value = newValue;
+            console.log('Updated repositories textarea:', {
+                currentValue: currentValue,
+                newValue: newValue,
+                selectedReposLength: selectedRepos.length
+            });
+        } else {
+            console.error('repositories textarea not found');
         }
     }
 
     getSelectedRepositories() {
         const activeTab = document.querySelector('.tab-content.active');
-        if (!activeTab) return [];
+        console.log('getSelectedRepositories - active tab:', activeTab?.id);
+        
+        if (!activeTab) {
+            console.log('No active tab found in getSelectedRepositories');
+            return [];
+        }
 
         if (activeTab.id === 'manual-tab') {
             const textarea = document.getElementById('repositories');
-            if (!textarea?.value) return [];
-            return textarea.value.split('\n').filter(r => r.trim()).map(r => r.trim());
+            if (!textarea?.value) {
+                console.log('Manual tab - no textarea value');
+                return [];
+            }
+            const repos = textarea.value.split('\n').filter(r => r.trim()).map(r => r.trim());
+            console.log('Manual tab - parsed repos:', repos);
+            return repos;
         } else {
             const checkboxes = activeTab.querySelectorAll('input[type="checkbox"]:checked');
-            return Array.from(checkboxes).map(cb => cb.value);
+            console.log('Browse/Bulk tab - found checkboxes:', checkboxes.length);
+            console.log('Checkboxes:', Array.from(checkboxes).map(cb => ({id: cb.id, value: cb.value, checked: cb.checked})));
+            
+            const repos = Array.from(checkboxes).map(cb => cb.value);
+            console.log('Browse/Bulk tab - extracted repo values:', repos);
+            return repos;
         }
     }
 
@@ -1479,4 +1520,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     `;
     document.head.appendChild(style);
-}); 
+});
