@@ -269,17 +269,35 @@
 }
 
 /* === Wizard Steps === */
-.wizard-step {
-    display: none;
+#migration-wizard-form .wizard-step {
+    display: none !important;
     opacity: 0;
-    transform: translateX(20px);
-    transition: all var(--transition-base);
+    position: relative;
+    z-index: 1;
 }
 
-.wizard-step.active {
-    display: block;
+#migration-wizard-form .wizard-step.active {
+    display: block !important;
     opacity: 1;
-    transform: translateX(0);
+    z-index: 2;
+}
+
+/* Ensure only one step is visible at a time - no transitions to avoid conflicts */
+#migration-wizard-form .wizard-step:not(.active) {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+}
+
+/* Force hide all steps that come after the active step */
+#migration-wizard-form .wizard-step.active ~ .wizard-step {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
 }
 
 .step-content {

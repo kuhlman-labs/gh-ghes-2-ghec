@@ -11,6 +11,7 @@ class MigrationWizard {
         this.wizardData = {};
         this.autoSaveTimer = null;
         this.hasDraft = false;
+        this.isNavigating = false; // Prevent rapid navigation calls
         this.validationRules = this.initValidationRules();
         this.connectionsTested = {
             source: false,
@@ -120,6 +121,7 @@ class MigrationWizard {
         window.previousStep = () => this.previousStep();
         window.clearDraft = () => this.clearDraft();
         window.handleCancel = () => this.handleCancel();
+        window.debugWizardState = () => this.debugWizardState();
     }
 
     initializeTemplateSelection() {
@@ -232,6 +234,15 @@ class MigrationWizard {
     nextStep() {
         if (this.currentStep >= this.maxSteps) return;
 
+        // Prevent rapid multiple calls
+        if (this.isNavigating) {
+            console.log('Navigation in progress, skipping rapid call');
+            return;
+        }
+        this.isNavigating = true;
+
+        console.log(`NextStep called: current step is ${this.currentStep}`);
+
         // Validate current step
         if (!this.validateCurrentStep()) {
             // Provide more specific error messages based on the step
@@ -254,6 +265,7 @@ class MigrationWizard {
             }
             
             this.showError(errorMessage);
+            this.isNavigating = false;
             return;
         }
 
@@ -261,34 +273,162 @@ class MigrationWizard {
         this.saveStepData();
 
         // Move to next step
-        this.currentStep++;
-        this.goToStep(this.currentStep);
+        const nextStepNumber = this.currentStep + 1;
+        console.log(`NextStep: moving from ${this.currentStep} to ${nextStepNumber}`);
+        
+        this.goToStep(nextStepNumber);
+        
+        // Allow navigation again after a short delay
+        setTimeout(() => {
+            this.isNavigating = false;
+        }, 100);
     }
 
     previousStep() {
         if (this.currentStep <= 1) return;
 
-        this.currentStep--;
-        this.goToStep(this.currentStep);
+        // Prevent rapid multiple calls
+        if (this.isNavigating) {
+            console.log('Navigation in progress, skipping rapid call');
+            return;
+        }
+        this.isNavigating = true;
+
+        const prevStepNumber = this.currentStep - 1;
+        console.log(`PreviousStep: moving from ${this.currentStep} to ${prevStepNumber}`);
+        
+        this.goToStep(prevStepNumber);
+        
+        // Allow navigation again after a short delay
+        setTimeout(() => {
+            this.isNavigating = false;
+        }, 100);
+    }
+
+    hideAllSteps() {
+        console.log('Hiding all steps...');
+        document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
+            step.classList.remove('active');
+            step.style.display = 'none';
+            step.style.visibility = 'hidden';
+            step.style.height = '0';
+            step.style.overflow = 'hidden';
+            console.log(`Step ${index + 1} hidden:`, step.id);
+        });
+        
+        // Debug: check which steps are still visible
+        this.debugVisibleSteps();
+    }
+
+    debugVisibleSteps() {
+        const visibleSteps = [];
+        document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
+            const isVisible = step.style.display !== 'none' && 
+                             step.style.visibility !== 'hidden' && 
+                             step.classList.contains('active');
+            if (isVisible) {
+                visibleSteps.push(`Step ${index + 1} (${step.id})`);
+            }
+        });
+        
+        if (visibleSteps.length > 1) {
+            console.warn('Multiple steps visible:', visibleSteps);
+        } else if (visibleSteps.length === 1) {
+            console.log('Currently visible:', visibleSteps[0]);
+        } else {
+            console.log('No steps visible');
+        }
+    }
+
+    // Add comprehensive debug function
+    debugWizardState() {
+        console.log('=== WIZARD DEBUG STATE ===');
+        console.log('Current step:', this.currentStep);
+        
+        document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
+            const stepNum = index + 1;
+            const computedStyle = window.getComputedStyle(step);
+            const stepInfo = {
+                id: step.id,
+                hasActiveClass: step.classList.contains('active'),
+                display: step.style.display,
+                visibility: step.style.visibility,
+                height: step.style.height,
+                overflow: step.style.overflow,
+                computedDisplay: computedStyle.display,
+                computedVisibility: computedStyle.visibility,
+                computedHeight: computedStyle.height,
+                computedOpacity: computedStyle.opacity,
+                offsetHeight: step.offsetHeight,
+                offsetWidth: step.offsetWidth
+            };
+            
+            console.log(`Step ${stepNum}:`, stepInfo);
+            
+            if (stepInfo.offsetHeight > 0 || stepInfo.computedDisplay !== 'none') {
+                console.warn(`⚠️ Step ${stepNum} might be visible!`);
+            }
+        });
+        
+        console.log('=== END DEBUG STATE ===');
     }
 
     goToStep(stepNumber) {
-        if (stepNumber < 1 || stepNumber > this.maxSteps) return;
+        if (stepNumber < 1 || stepNumber > this.maxSteps) {
+            console.warn(`Invalid step number: ${stepNumber}`);
+            return;
+        }
 
+        console.log(`Going to step ${stepNumber} from step ${this.currentStep}`);
+        
+        // Prevent multiple rapid calls to the same step
+        if (this.currentStep === stepNumber) {
+            console.log(`Already on step ${stepNumber}, skipping`);
+            return;
+        }
+        
+        // Update current step immediately
+        const previousStep = this.currentStep;
         this.currentStep = stepNumber;
 
-        // Hide all steps
-        document.querySelectorAll('.wizard-step').forEach(step => {
+        // Force immediate style reset for all steps
+        document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
+            const stepNum = index + 1;
+            const isTargetStep = stepNum === stepNumber;
+            
+            // Remove all classes first
             step.classList.remove('active');
+            
+            // Force hide all steps immediately
+            step.style.display = 'none';
+            step.style.visibility = 'hidden';
+            step.style.height = '0';
+            step.style.overflow = 'hidden';
+            step.style.opacity = '0';
+            
+            console.log(`Step ${stepNum} (${step.id}) hidden`);
         });
 
-        // Show current step with animation
-        const currentStepEl = document.getElementById(`step-${stepNumber}`);
-        if (currentStepEl) {
-            setTimeout(() => {
-                currentStepEl.classList.add('active');
-            }, 100);
+        // Force a reflow to ensure styles are applied
+        document.getElementById('migration-wizard-form').offsetHeight;
+
+        // Now show only the target step
+        const targetStepEl = document.getElementById(`step-${stepNumber}`);
+        if (targetStepEl) {
+            targetStepEl.style.display = 'block';
+            targetStepEl.style.visibility = 'visible';
+            targetStepEl.style.height = 'auto';
+            targetStepEl.style.overflow = 'visible';
+            targetStepEl.style.opacity = '1';
+            targetStepEl.classList.add('active');
+            
+            console.log(`Step ${stepNumber} (${targetStepEl.id}) activated and shown`);
+        } else {
+            console.error(`Step element not found: step-${stepNumber}`);
         }
+
+        // Debug check immediately
+        setTimeout(() => this.debugVisibleSteps(), 10);
 
         // Update navigation buttons
         this.updateNavigationButtons();
@@ -303,6 +443,8 @@ class MigrationWizard {
 
         // Show connection test if credentials are filled
         this.checkConnectionTestVisibility();
+        
+        console.log(`Step transition complete: ${previousStep} -> ${stepNumber}`);
     }
 
     updateNavigationButtons() {
@@ -1315,6 +1457,16 @@ class MigrationWizard {
 
 // Initialize wizard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
+    // Ensure proper initial state - hide all wizard steps immediately
+    document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
+        step.classList.remove('active');
+        step.style.display = 'none';
+        step.style.visibility = 'hidden';
+        step.style.height = '0';
+        step.style.overflow = 'hidden';
+        console.log(`Initial hide of step ${index + 1}:`, step.id);
+    });
+    
     window.migrationWizard = new MigrationWizard();
 });
 
