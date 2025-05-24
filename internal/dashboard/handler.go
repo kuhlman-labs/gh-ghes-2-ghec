@@ -300,6 +300,7 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/dashboard/refresh", h.handleRefresh)
 	mux.HandleFunc("/dashboard/stats", h.handleStats)
 	mux.HandleFunc("/dashboard/queue-stats", h.handleQueueStats)
+	mux.HandleFunc("/dashboard/timeline", h.handleTimeline)
 	mux.HandleFunc("/dashboard/chart-data", h.handleChartData)
 
 	// New export endpoints
@@ -396,7 +397,14 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply filters
-	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	var filteredMigrations []*payload.MigrationStatus
+	if statusFilter != "" {
+		// If a specific status filter is applied, use the normal filtering
+		filteredMigrations = filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	} else {
+		// If no status filter is applied, show only active migrations (exclude succeeded and failed)
+		filteredMigrations = filterActiveMigrations(migrationsSlice, repoFilter, timeRangeFilter)
+	}
 
 	// Apply sorting
 	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
@@ -534,7 +542,14 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Apply filters
-	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	var filteredMigrations []*payload.MigrationStatus
+	if statusFilter != "" {
+		// If a specific status filter is applied, use the normal filtering
+		filteredMigrations = filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	} else {
+		// If no status filter is applied, show only active migrations (exclude succeeded and failed)
+		filteredMigrations = filterActiveMigrations(migrationsSlice, repoFilter, timeRangeFilter)
+	}
 
 	// Apply sorting
 	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
@@ -719,6 +734,33 @@ func filterMigrations(migrations []*payload.MigrationStatus, statusFilter, repoF
 	for _, m := range migrations {
 		// Apply status filter
 		if statusFilter != "" && !strings.EqualFold(m.Status, statusFilter) {
+			continue
+		}
+
+		// Apply repository filter
+		if repoFilter != "" && !strings.Contains(strings.ToLower(m.Repository), strings.ToLower(repoFilter)) {
+			continue
+		}
+
+		// Apply time range filter
+		if !passesTimeFilter(m, timeRangeFilter) {
+			continue
+		}
+
+		result = append(result, m)
+	}
+
+	return result
+}
+
+// filterActiveMigrations filters migrations to only include active ones (excludes succeeded and failed)
+// This is used for the "Active Migrations" table to only show in-progress migrations
+func filterActiveMigrations(migrations []*payload.MigrationStatus, repoFilter, timeRangeFilter string) []*payload.MigrationStatus {
+	result := make([]*payload.MigrationStatus, 0, len(migrations))
+
+	for _, m := range migrations {
+		// Only include in-progress migrations (exclude succeeded and failed)
+		if m.Status == payload.StatusSucceeded || m.Status == payload.StatusFailed {
 			continue
 		}
 
@@ -1464,6 +1506,48 @@ func (h *Handler) handleQueueStats(w http.ResponseWriter, r *http.Request) {
 
 	if err := tmpl.Execute(w, queueStats); err != nil {
 		http.Error(w, "Failed to render queue stats", http.StatusInternalServerError)
+	}
+}
+
+// handleTimeline returns just the timeline section for HTMX updates
+func (h *Handler) handleTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get migrations from the migrator
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+
+	// Get queued repositories (waiting for worker)
+	queuedRepos := h.migrator.GetQueuedRepositories()
+	queuedReposSet := stringSet(queuedRepos)
+
+	// Convert map to slice
+	migrationsSlice := mapToSlice(migrationsMap)
+
+	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
+	for _, m := range migrationsSlice {
+		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
+			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
+				m.Stage = "queued"
+				m.State = "waiting for worker"
+			}
+		}
+	}
+
+	// Get recent activity events
+	recentActivity := getRecentActivity(migrationsSlice, 10)
+
+	data := TemplateData{
+		RecentActivity: recentActivity,
+	}
+
+	err := h.templates.ExecuteTemplate(w, "timeline_section", data)
+	if err != nil {
+		h.logger.Error("failed to execute timeline template", "error", err)
+		http.Error(w, "Failed to render timeline", http.StatusInternalServerError)
+		return
 	}
 }
 

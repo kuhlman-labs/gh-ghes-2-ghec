@@ -1,0 +1,24 @@
+{{define "timeline_section"}}
+<div class="timeline-events">
+    {{if eq (len .RecentActivity) 0}}
+    <div class="empty-state">
+        <p>No recent migration activity</p>
+    </div>
+    {{else}}
+    {{range .RecentActivity}}
+    <div class="timeline-event">
+        <div class="timeline-event-marker status-{{.Status | ToLower}}"></div>
+        <div class="timeline-event-content">
+            <div class="timeline-event-header">
+                <h4 class="timeline-event-title">{{.Repository}}</h4>
+                <span class="timeline-event-time">{{.ActivityTime | FormatTime}}</span>
+            </div>
+            <div class="timeline-event-details">
+                {{.ActivityDescription}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+</div>
+{{end}} 
