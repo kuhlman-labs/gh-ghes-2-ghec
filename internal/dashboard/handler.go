@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -409,6 +410,10 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 	// Get recent activity events
 	recentActivity := getRecentActivity(migrationsSlice, 10)
 
+	// Check for success and error messages from query parameters
+	successMsg := r.URL.Query().Get("success")
+	errorMsg := r.URL.Query().Get("error")
+
 	data := TemplateData{
 		Title:           "Dashboard",
 		Active:          "dashboard",
@@ -425,6 +430,8 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		SortDir:         sortDir,
 		RecentActivity:  recentActivity,
 		LastUpdate:      time.Now(),
+		Success:         successMsg,
+		Error:           errorMsg,
 	}
 
 	err := h.templates.ExecuteTemplate(w, "base", data)
@@ -1012,11 +1019,17 @@ func (h *Handler) handleMigrationWizard(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Check for error and success messages from query parameters
+	errorMsg := r.URL.Query().Get("error")
+	successMsg := r.URL.Query().Get("success")
+
 	data := TemplateData{
 		Title:       "New Migration Wizard",
 		Active:      "wizard",
 		PageName:    "migration_wizard",
 		CurrentYear: time.Now().Year(),
+		Error:       errorMsg,
+		Success:     successMsg,
 	}
 
 	if err := h.templates.ExecuteTemplate(w, "migration_wizard", data); err != nil {
@@ -1124,6 +1137,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 	ghCloudToken := r.FormValue("gh_cloud_token")
 	maxDuration := sanitizeInput(r.FormValue("max_duration"))
 	useGHOS := r.FormValue("use_ghos") == "true"
+	deleteIfExists := r.FormValue("delete_if_exists") == "true"
 
 	// Parse repositories (one per line)
 	repoText := r.FormValue("repositories")
@@ -1169,6 +1183,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 		Repositories:       repositories,
 		MaxDuration:        maxDuration,
 		UseGHOS:            useGHOS,
+		DeleteIfExists:     deleteIfExists,
 		ScheduledTime:      scheduledTime,
 		ScheduledTimeZone:  scheduledTimeZone,
 		ScheduledDaysOnly:  scheduledDaysOnly,
@@ -1178,15 +1193,8 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 
 	// Validate the request
 	if err := migrationReq.Validate(); err != nil {
-		data := TemplateData{
-			Title:       "New Migration",
-			Active:      "new",
-			CurrentYear: time.Now().Year(),
-			Error:       "Validation error: " + html.EscapeString(err.Error()),
-		}
-		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
-			http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		}
+		// Redirect back to wizard with error message
+		http.Redirect(w, r, "/dashboard/wizard?error="+url.QueryEscape("Validation error: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -1197,20 +1205,13 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 	// Start the migration
 	err := h.migrator.StartMigration(ctx, migrationReq, cancel)
 	if err != nil {
-		data := TemplateData{
-			Title:       "New Migration",
-			Active:      "new",
-			CurrentYear: time.Now().Year(),
-			Error:       "Failed to start migration: " + html.EscapeString(err.Error()),
-		}
-		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
-			http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		}
+		// Redirect back to wizard with error message
+		http.Redirect(w, r, "/dashboard/wizard?error="+url.QueryEscape("Failed to start migration: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	// Redirect to dashboard with success message
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard?success="+url.QueryEscape("Migration started successfully!"), http.StatusSeeOther)
 }
 
 // parseRepositories splits a multi-line string into a slice of repository names

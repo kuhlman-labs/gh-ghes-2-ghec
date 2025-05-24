@@ -54,6 +54,7 @@ class MigrationWizard {
                 pattern: /^\d+[hmd]$/,
                 message: 'Please enter a valid duration (e.g., 24h, 7d, 30m)'
             }
+
         };
     }
 
@@ -147,31 +148,27 @@ class MigrationWizard {
         const templates = {
             'quick-start': {
                 use_ghos: true,
-                parallelism: '1',
-                schedule_type: 'immediate',
-                continue_on_error: false,
-                retry_attempts: '1'
+                delete_if_exists: false,
+                max_duration: '',
+                schedule_type: 'immediate'
             },
             'scheduled': {
                 use_ghos: true,
-                parallelism: '2',
-                schedule_type: 'scheduled',
-                continue_on_error: true,
-                retry_attempts: '2'
+                delete_if_exists: false,
+                max_duration: '24h',
+                schedule_type: 'scheduled'
             },
             'bulk': {
                 use_ghos: true,
-                parallelism: '3',
-                schedule_type: 'immediate',
-                continue_on_error: true,
-                retry_attempts: '2'
+                delete_if_exists: true,
+                max_duration: '48h',
+                schedule_type: 'immediate'
             },
             'custom': {
                 use_ghos: true,
-                parallelism: '2',
-                schedule_type: 'immediate',
-                continue_on_error: false,
-                retry_attempts: '2'
+                delete_if_exists: false,
+                max_duration: '',
+                schedule_type: 'immediate'
             }
         };
 
@@ -1101,8 +1098,8 @@ class MigrationWizard {
             document.getElementById('use_ghos')?.checked ? 'Enabled' : 'Disabled';
         document.getElementById('review-duration').textContent = 
             document.getElementById('max_duration')?.value || 'No limit';
-        document.getElementById('review-parallelism').textContent = 
-            document.getElementById('parallelism')?.value || '1';
+        document.getElementById('review-delete-existing').textContent = 
+            document.getElementById('delete_if_exists')?.checked ? 'Enabled' : 'Disabled';
         
         // Scheduling
         const scheduleType = document.querySelector('input[name="schedule_type"]:checked')?.value;

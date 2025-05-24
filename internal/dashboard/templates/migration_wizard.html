@@ -351,54 +351,36 @@
                     <p class="text-muted">Configure migration settings and preferences</p>
                 </div>
                 
-                <div class="options-grid">
-                    <div class="option-group">
+                <div class="migration-options-container">
+                    <div class="options-section">
                         <h4>Storage Options</h4>
                         <div class="form-group form-group-checkbox">
                             <input type="checkbox" id="use_ghos" name="use_ghos" value="true" checked>
-                            <label for="use_ghos">Use GitHub Owned Storage (GHOS)</label>
-                            <div class="form-hint">Recommended for migrations with large repositories (>5GB)</div>
+                            <label for="use_ghos">
+                                <span class="checkbox-title">Use GitHub Owned Storage (GHOS)</span>
+                                <span class="checkbox-description">Recommended for migrations with large repositories (>5GB)</span>
+                            </label>
                         </div>
                     </div>
                     
-                    <div class="option-group">
-                        <h4>Performance</h4>
+                    <div class="options-section">
+                        <h4>Migration Settings</h4>
                         <div class="form-group">
                             <label for="max_duration">Maximum Duration</label>
                             <input type="text" id="max_duration" name="max_duration" placeholder="24h" data-validation="duration">
-                            <div class="form-hint">Maximum allowed duration for the migration (e.g., "24h", "36h")</div>
+                            <div class="form-hint">Maximum allowed duration for the migration (e.g., "24h", "36h"). Leave empty for no limit.</div>
                             <div class="validation-message" id="max_duration-error"></div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="parallelism">Parallel Migrations</label>
-                            <select id="parallelism" name="parallelism">
-                                <option value="1">1 (Sequential)</option>
-                                <option value="2" selected>2 (Recommended)</option>
-                                <option value="3">3</option>
-                                <option value="5">5 (Maximum)</option>
-                            </select>
-                            <div class="form-hint">Number of repositories to migrate simultaneously</div>
                         </div>
                     </div>
                     
-                    <div class="option-group">
-                        <h4>Error Handling</h4>
+                    <div class="options-section">
+                        <h4>Repository Handling</h4>
                         <div class="form-group form-group-checkbox">
-                            <input type="checkbox" id="continue_on_error" name="continue_on_error" value="true">
-                            <label for="continue_on_error">Continue on errors</label>
-                            <div class="form-hint">Continue migrating other repositories if one fails</div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="retry_attempts">Retry Attempts</label>
-                            <select id="retry_attempts" name="retry_attempts">
-                                <option value="0">No retries</option>
-                                <option value="1">1 retry</option>
-                                <option value="2" selected>2 retries</option>
-                                <option value="3">3 retries</option>
-                            </select>
-                            <div class="form-hint">Number of automatic retry attempts on failure</div>
+                            <input type="checkbox" id="delete_if_exists" name="delete_if_exists" value="true">
+                            <label for="delete_if_exists">
+                                <span class="checkbox-title">Delete existing repositories in target organization</span>
+                                <span class="checkbox-description">If a repository with the same name already exists in the target organization, delete it before migration</span>
+                            </label>
                         </div>
                     </div>
                 </div>
@@ -579,8 +561,8 @@
                             <span class="value" id="review-duration">No limit</span>
                         </div>
                         <div class="review-item">
-                            <span class="label">Parallelism:</span>
-                            <span class="value" id="review-parallelism">2</span>
+                            <span class="label">Delete Existing:</span>
+                            <span class="value" id="review-delete-existing">Disabled</span>
                         </div>
                     </div>
                     
