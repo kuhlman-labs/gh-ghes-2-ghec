@@ -75,6 +75,13 @@ func (n *NoopAPI) ValidateGHCloudOrganization(ctx context.Context, org string) e
 	return fmt.Errorf("ValidateGHCloudOrganization not implemented in NoopAPI")
 }
 
+// ListOrganizationRepositories is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ListOrganizationRepositories(ctx context.Context, org string) ([]Repository, error) {
+	n.logger.Warn("NoopAPI: ListOrganizationRepositories called but not implemented",
+		"org", org)
+	return nil, fmt.Errorf("ListOrganizationRepositories not implemented in NoopAPI")
+}
+
 // CreateMigrationSource is a no-op implementation that logs the call and returns an error.
 func (n *NoopAPI) CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error) {
 	n.logger.Warn("NoopAPI: CreateMigrationSource called but not implemented",

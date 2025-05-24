@@ -2155,8 +2155,21 @@ func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Load repositories (simplified implementation)
-	repositories := h.loadRepositoriesFromGitHub(baseURL, token, org, searchQuery)
+	// Load repositories using real GitHub API
+	repositories, err := h.loadRepositoriesFromGitHub(baseURL, token, org, searchQuery)
+	if err != nil {
+		h.logger.Error("Failed to load repositories from GitHub",
+			"org", org,
+			"baseURL", baseURL,
+			"error", err)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to load repositories: %v", err),
+		})
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2165,44 +2178,68 @@ func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// Repository represents a GitHub repository for the wizard
-type Repository struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Size        int64  `json:"size"`
-	Private     bool   `json:"private"`
-}
+// loadRepositoriesFromGitHub loads repositories from GitHub using the actual API
+func (h *Handler) loadRepositoriesFromGitHub(baseURL, token, org, searchQuery string) ([]github.Repository, error) {
+	// Create a temporary GitHub API client with the provided credentials
+	githubAPI, err := h.createTemporaryGitHubAPI(baseURL, token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub API client: %w", err)
+	}
 
-// loadRepositoriesFromGitHub loads repositories from GitHub (simplified implementation)
-func (h *Handler) loadRepositoriesFromGitHub(baseURL, token, org, searchQuery string) []Repository {
-	// This is a simplified implementation that returns mock data
-	// In a real implementation, you would make actual GitHub API calls
+	// Get all repositories from the organization
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	mockRepos := []Repository{
-		{Name: "webapp", Description: "Main web application", Size: 15728640, Private: false},
-		{Name: "api-server", Description: "REST API backend service", Size: 8388608, Private: true},
-		{Name: "mobile-app", Description: "React Native mobile application", Size: 25165824, Private: false},
-		{Name: "documentation", Description: "Project documentation and guides", Size: 2097152, Private: false},
-		{Name: "scripts", Description: "Utility scripts and automation tools", Size: 1048576, Private: true},
-		{Name: "config", Description: "Configuration files and templates", Size: 524288, Private: true},
-		{Name: "tests", Description: "Test suites and testing utilities", Size: 5242880, Private: false},
-		{Name: "deployment", Description: "Deployment scripts and infrastructure", Size: 3145728, Private: true},
+	repositories, err := githubAPI.ListOrganizationRepositories(ctx, org)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list repositories: %w", err)
 	}
 
 	// Filter by search query if provided
 	if searchQuery != "" {
-		var filtered []Repository
+		var filtered []github.Repository
 		searchLower := strings.ToLower(searchQuery)
-		for _, repo := range mockRepos {
+		for _, repo := range repositories {
 			if strings.Contains(strings.ToLower(repo.Name), searchLower) ||
 				strings.Contains(strings.ToLower(repo.Description), searchLower) {
 				filtered = append(filtered, repo)
 			}
 		}
-		return filtered
+		return filtered, nil
 	}
 
-	return mockRepos
+	return repositories, nil
+}
+
+// createTemporaryGitHubAPI creates a temporary GitHub API client with the provided credentials
+func (h *Handler) createTemporaryGitHubAPI(baseURL, token string) (github.API, error) {
+	// Create configuration for GHES client only
+	clientsConfig := &config.ClientsConfig{
+		GHESToken: token,
+		Proxy: config.ProxyConfig{
+			Enabled: false, // No proxy for wizard repository loading
+		},
+	}
+
+	// Create clients using the config package
+	clients, err := config.NewClients(clientsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clients: %w", err)
+	}
+
+	// Set the GHES base URL
+	if baseURL != "" {
+		// For GHES, we need to construct the API URL properly (add /api/v3/ to the base URL)
+		baseURLTrimmed := strings.TrimSuffix(baseURL, "/")
+		apiURL := baseURLTrimmed + "/api/v3/"
+
+		if err := clients.UpdateGHESBaseURL(apiURL); err != nil {
+			return nil, fmt.Errorf("failed to update GHES base URL: %w", err)
+		}
+	}
+
+	// Create and return the GitHub API
+	return github.New(clients, h.logger), nil
 }
 
 // handleSaveDraft saves wizard draft data

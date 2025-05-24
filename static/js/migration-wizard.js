@@ -16,6 +16,8 @@ class MigrationWizard {
             source: false,
             target: false
         };
+        this.allRepositories = []; // Store all loaded repositories for client-side filtering
+        this.repositorySearchHandler = null; // Store the search handler for cleanup
         
         this.init();
     }
@@ -910,7 +912,6 @@ class MigrationWizard {
         const token = document.getElementById('ghes_token')?.value;
         const org = document.getElementById('source_org')?.value;
         const baseURL = document.getElementById('ghes_base_url')?.value;
-        const searchQuery = searchInput?.value || '';
 
         if (!token || !org || !baseURL) {
             repoList.innerHTML = '<div class="error-state"><p>Please complete source configuration first</p></div>';
@@ -919,12 +920,12 @@ class MigrationWizard {
 
         button.classList.add('loading');
         
-        // Make actual API call to load repositories
+        // Make actual API call to load repositories (load all repositories, no server-side filtering)
         const formData = new FormData();
         formData.append('token', token);
         formData.append('org', org);
         formData.append('base_url', baseURL);
-        formData.append('search', searchQuery);
+        formData.append('search', ''); // Always load all repositories
 
         fetch('/dashboard/wizard/load-repositories', {
             method: 'POST',
@@ -938,23 +939,20 @@ class MigrationWizard {
                 const repos = data.repositories;
                 
                 if (repos.length === 0) {
-                    repoList.innerHTML = '<div class="empty-state"><p>No repositories found</p></div>';
+                    repoList.innerHTML = '<div class="empty-state"><p>No repositories found in organization</p></div>';
                     return;
                 }
                 
-                repoList.innerHTML = repos.map(repo => `
-                    <div class="repo-item">
-                        <input type="checkbox" id="repo-${repo.name}" value="${repo.name}" onchange="window.migrationWizard.updateSelectedRepos()">
-                        <div class="repo-item-info">
-                            <div class="repo-item-name">
-                                ${repo.name}
-                                ${repo.private ? '<span class="repo-private">Private</span>' : ''}
-                            </div>
-                            <div class="repo-item-desc">${repo.description || 'No description'}</div>
-                            <div class="repo-item-size">${this.formatSize(repo.size)}</div>
-                        </div>
-                    </div>
-                `).join('');
+                // Store all repositories for client-side filtering
+                this.allRepositories = repos;
+                
+                // Render repositories
+                this.renderRepositories(repos);
+                
+                // Enable search and set up real-time filtering
+                this.enableRepositorySearch();
+                this.setupRepositorySearch();
+                
             } else {
                 repoList.innerHTML = `<div class="error-state"><p>${data.message || 'Failed to load repositories'}</p></div>`;
             }
@@ -964,6 +962,103 @@ class MigrationWizard {
             repoList.innerHTML = '<div class="error-state"><p>Failed to load repositories</p></div>';
             console.error('Load repositories error:', error);
         });
+    }
+
+    renderRepositories(repos) {
+        const repoList = document.getElementById('repo-list');
+        if (!repoList) return;
+
+        if (repos.length === 0) {
+            repoList.innerHTML = '<div class="empty-state"><p>No repositories match your search</p></div>';
+            return;
+        }
+
+        // Get currently selected repositories to preserve checked state
+        const currentlySelected = this.getSelectedRepositories();
+
+        repoList.innerHTML = repos.map(repo => {
+            const isSelected = currentlySelected.includes(repo.name);
+            return `
+                <div class="repo-item">
+                    <input type="checkbox" id="repo-${repo.name}" value="${repo.name}" 
+                           ${isSelected ? 'checked' : ''} 
+                           onchange="window.migrationWizard.updateSelectedRepos()">
+                    <div class="repo-item-info">
+                        <div class="repo-item-name">
+                            ${repo.name}
+                            ${repo.private ? '<span class="repo-private">Private</span>' : ''}
+                        </div>
+                        <div class="repo-item-desc">${repo.description || 'No description'}</div>
+                        <div class="repo-item-size">${this.formatSize(repo.size)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    enableRepositorySearch() {
+        const searchInput = document.getElementById('repo-search');
+        if (searchInput) {
+            searchInput.disabled = false;
+            searchInput.placeholder = 'Search repositories by name or description...';
+        }
+    }
+
+    setupRepositorySearch() {
+        const searchInput = document.getElementById('repo-search');
+        const clearBtn = document.querySelector('.search-clear-btn');
+        if (!searchInput) return;
+
+        // Remove any existing event listeners
+        if (this.repositorySearchHandler) {
+            searchInput.removeEventListener('input', this.repositorySearchHandler);
+        }
+        
+        // Create a debounced search handler
+        this.repositorySearchHandler = this.debounce((event) => {
+            const searchQuery = event.target.value.toLowerCase().trim();
+            this.filterRepositories(searchQuery);
+            
+            // Show/hide clear button
+            if (clearBtn) {
+                clearBtn.style.display = searchQuery ? 'flex' : 'none';
+            }
+        }, 300);
+
+        // Add the event listener
+        searchInput.addEventListener('input', this.repositorySearchHandler);
+        
+        // Handle clear button clicks
+        if (clearBtn) {
+            clearBtn.style.display = 'none'; // Initially hidden
+        }
+    }
+
+    filterRepositories(searchQuery) {
+        if (!this.allRepositories) return;
+
+        let filteredRepos = this.allRepositories;
+
+        if (searchQuery) {
+            filteredRepos = this.allRepositories.filter(repo => {
+                return repo.name.toLowerCase().includes(searchQuery) ||
+                       (repo.description && repo.description.toLowerCase().includes(searchQuery));
+            });
+        }
+
+        this.renderRepositories(filteredRepos);
+    }
+
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
     }
 
     formatSize(bytes) {
