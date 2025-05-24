@@ -31,12 +31,11 @@ func (m *Migrator) migrateRepository(
 ) error {
 	var githubAPI github.API
 
-	// Use existing GitHub API client if available (for testing), otherwise create new clients
-	// Skip test implementations as they can't perform real operations
+	// Use existing GitHub API client if available (typically injected for testing)
+	// In production, no client should be injected, so we'll always create real clients
 	if m.githubAPI != nil {
-		// Always use the existing GitHub API client if available, including test implementations
 		githubAPI = m.githubAPI
-		m.logger.Debug("Using existing GitHub API client",
+		m.logger.Debug("Using injected GitHub API client",
 			"repository", repoFullName,
 			"is_test", m.githubAPI.IsTestImplementation())
 	}

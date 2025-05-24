@@ -77,7 +77,8 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 		"priority", priority,
 		"delete_if_exists", req.DeleteIfExists)
 
-	// Initialize API clients for validation
+	// Always create real GitHub clients for validation - never use test implementations
+	// This ensures that pre-enqueue validation works correctly in production
 	clients, err := config.NewClients(&config.ClientsConfig{
 		GHESToken:    req.GHESToken,
 		GHCloudToken: req.GHCloudToken,
@@ -451,12 +452,11 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 
 	var githubAPI github.API
 
-	// Use existing GitHub API client if available (for testing), otherwise create new clients
-	// Skip test implementations as they can't perform real operations
+	// Use existing GitHub API client if available (typically injected for testing)
+	// In production, no client should be injected, so we'll always create real clients
 	if qmi.migrator.githubAPI != nil {
-		// Always use the existing GitHub API client if available, including test implementations
 		githubAPI = qmi.migrator.githubAPI
-		qmi.logger.Debug("Using existing GitHub API client",
+		qmi.logger.Debug("Using injected GitHub API client",
 			"repository", sourceRepoFullName,
 			"is_test", qmi.migrator.githubAPI.IsTestImplementation())
 	}
