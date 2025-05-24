@@ -452,19 +452,13 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 	var githubAPI github.API
 
 	// Use existing GitHub API client if available (for testing), otherwise create new clients
-	// Skip NoopAPI as it can't perform real operations
+	// Skip test implementations as they can't perform real operations
 	if qmi.migrator.githubAPI != nil {
-		// Check if it's a NoopAPI by attempting a type assertion
-		if _, isNoopAPI := qmi.migrator.githubAPI.(*github.NoopAPI); !isNoopAPI {
-			githubAPI = qmi.migrator.githubAPI
-			qmi.logger.Debug("Using existing GitHub API client (likely for testing)",
-				"repository", sourceRepoFullName)
-		} else {
-			// It's a NoopAPI, so we need to create real clients
-			qmi.logger.Debug("Detected NoopAPI, creating real GitHub API clients",
-				"repository", sourceRepoFullName)
-			githubAPI = nil // Force creation of real clients below
-		}
+		// Always use the existing GitHub API client if available, including test implementations
+		githubAPI = qmi.migrator.githubAPI
+		qmi.logger.Debug("Using existing GitHub API client",
+			"repository", sourceRepoFullName,
+			"is_test", qmi.migrator.githubAPI.IsTestImplementation())
 	}
 
 	if githubAPI == nil {

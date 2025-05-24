@@ -166,3 +166,8 @@ func (n *NoopAPI) GetRepositorySize(ctx context.Context, org, repo string) (int6
 	// Return a medium-sized repository (50MB) for testing purposes
 	return 50 * 1024 * 1024, nil
 }
+
+// IsTestImplementation returns true since NoopAPI is a test implementation
+func (n *NoopAPI) IsTestImplementation() bool {
+	return true
+}

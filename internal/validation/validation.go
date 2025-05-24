@@ -80,10 +80,10 @@ func ValidateGitHubToken(token string) error {
 		return fmt.Errorf("token is too short, must be at least %d characters", MinTokenLength)
 	}
 
-	// Optional: strictly validate token format - uncomment if needed
-	// if !TokenPattern.MatchString(token) {
-	//    return fmt.Errorf("token has invalid format")
-	// }
+	// Strictly validate token format to match API endpoint validation
+	if !TokenPattern.MatchString(token) {
+		return fmt.Errorf("token has invalid format")
+	}
 
 	return nil
 }

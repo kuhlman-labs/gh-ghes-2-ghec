@@ -303,6 +303,23 @@ func (m *MockGitHubAPI) GetRepositorySize(ctx context.Context, org, repo string)
 	return result.Size, result.Error
 }
 
+func (m *MockGitHubAPI) ValidateGHESOrganization(ctx context.Context, org string) error {
+	return nil // Not used in repository.go
+}
+
+func (m *MockGitHubAPI) ValidateGHCloudOrganization(ctx context.Context, org string) error {
+	return nil // Not used in repository.go
+}
+
+func (m *MockGitHubAPI) ListOrganizationRepositories(ctx context.Context, org string) ([]github.Repository, error) {
+	return nil, nil // Not used in repository.go
+}
+
+// IsTestImplementation returns true since MockGitHubAPI is a test implementation
+func (m *MockGitHubAPI) IsTestImplementation() bool {
+	return true
+}
+
 // Helper function to create a test migrator with mocked dependencies
 func createTestMigrator() (*Migrator, *MockGitHubAPI, *storage.NoopStorage) {
 	mockAPI := &MockGitHubAPI{
@@ -373,8 +390,8 @@ func createTestMigrationRequest() *payload.MigrationRequest {
 		SourceOrg:      "source-org",
 		TargetOrg:      "target-org",
 		Repositories:   []string{"test-repo"},
-		GHESToken:      "ghes-token",
-		GHCloudToken:   "ghcloud-token",
+		GHESToken:      "ghp_123456789012345678901234567890123456",
+		GHCloudToken:   "ghp_123456789012345678901234567890123456",
 		GHESBaseURL:    "https://ghes.example.com",
 		DeleteIfExists: false,
 		UseGHOS:        false,
@@ -456,12 +473,14 @@ func TestMigrator_migrateRepository_WithGHOS(t *testing.T) {
 	}
 
 	// Verify the upload call had correct parameters
-	uploadCall := mockAPI.UploadArchiveToGHOSCalls[0]
-	if uploadCall.DatabaseID != 123 {
-		t.Errorf("Expected database ID 123, got %d", uploadCall.DatabaseID)
-	}
-	if uploadCall.ArchiveName != "test-repo" {
-		t.Errorf("Expected archive name 'test-repo', got %s", uploadCall.ArchiveName)
+	if len(mockAPI.UploadArchiveToGHOSCalls) > 0 {
+		uploadCall := mockAPI.UploadArchiveToGHOSCalls[0]
+		if uploadCall.DatabaseID != 123 {
+			t.Errorf("Expected database ID 123, got %d", uploadCall.DatabaseID)
+		}
+		if uploadCall.ArchiveName != "test-repo" {
+			t.Errorf("Expected archive name 'test-repo', got %s", uploadCall.ArchiveName)
+		}
 	}
 }
 

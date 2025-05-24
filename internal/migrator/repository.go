@@ -32,19 +32,13 @@ func (m *Migrator) migrateRepository(
 	var githubAPI github.API
 
 	// Use existing GitHub API client if available (for testing), otherwise create new clients
-	// Skip NoopAPI as it can't perform real operations
+	// Skip test implementations as they can't perform real operations
 	if m.githubAPI != nil {
-		// Check if it's a NoopAPI by attempting a type assertion
-		if _, isNoopAPI := m.githubAPI.(*github.NoopAPI); !isNoopAPI {
-			githubAPI = m.githubAPI
-			m.logger.Debug("Using existing GitHub API client (likely for testing)",
-				"repository", repoFullName)
-		} else {
-			// It's a NoopAPI, so we need to create real clients
-			m.logger.Debug("Detected NoopAPI, creating real GitHub API clients",
-				"repository", repoFullName)
-			githubAPI = nil // Force creation of real clients below
-		}
+		// Always use the existing GitHub API client if available, including test implementations
+		githubAPI = m.githubAPI
+		m.logger.Debug("Using existing GitHub API client",
+			"repository", repoFullName,
+			"is_test", m.githubAPI.IsTestImplementation())
 	}
 
 	if githubAPI == nil {

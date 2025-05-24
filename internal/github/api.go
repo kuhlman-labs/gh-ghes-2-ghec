@@ -41,6 +41,10 @@ type API interface {
 	GetGHESRateLimit(ctx context.Context) (*RateLimitInfo, error)
 	GetGHCloudRateLimit(ctx context.Context) (*RateLimitInfo, error)
 	GetRepositorySize(ctx context.Context, org, repo string) (int64, error)
+
+	// IsTestImplementation returns true if this is a test implementation
+	// that shouldn't be used for real operations
+	IsTestImplementation() bool
 }
 
 // GitHubAPI handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.
@@ -102,4 +106,9 @@ func New(clients *config.Clients, logger *slog.Logger) API {
 		ghesCircuitBreaker:    ghesCircuitBreaker,
 		ghCloudCircuitBreaker: ghCloudCircuitBreaker,
 	}
+}
+
+// IsTestImplementation returns false for the real GitHubAPI implementation
+func (a *GitHubAPI) IsTestImplementation() bool {
+	return false
 }
