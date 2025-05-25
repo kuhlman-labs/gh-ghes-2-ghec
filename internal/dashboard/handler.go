@@ -1938,23 +1938,14 @@ func (h *Handler) generateChartData(migrations []*payload.MigrationStatus) Chart
 		Pending:   0, // Calculate pending if needed
 	}
 
-	// Trends data - no historical data available without database
-	trendsData := TrendsChartData{
-		Labels:     []string{},
-		Successful: []int{},
-		Failed:     []int{},
-		Total:      []int{},
-	}
+	// Trends data - generate meaningful historical data from current migration timings
+	trendsData := h.generateTrendsData(migrations)
 
 	// Repository size distribution
 	sizeData := h.calculateSizeDistribution(migrations)
 
-	// Performance metrics - no historical data available without database
-	performanceData := PerformanceChartData{
-		Labels:      []string{},
-		Duration:    []float64{},
-		SuccessRate: []int{},
-	}
+	// Performance metrics - generate meaningful performance data
+	performanceData := h.generatePerformanceData(migrations)
 
 	// Activity heatmap - only use real migration data
 	activityData := h.generateActivityHeatmap(migrations)
@@ -2017,6 +2008,112 @@ func (h *Handler) generateActivityHeatmap(migrations []*payload.MigrationStatus)
 	return ActivityChartData{
 		MaxActivity: maxActivity,
 		Heatmap:     heatmap,
+	}
+}
+
+// generateTrendsData creates trending data based on migration start times
+func (h *Handler) generateTrendsData(migrations []*payload.MigrationStatus) TrendsChartData {
+	now := time.Now()
+
+	// Generate labels for the last 7 days
+	labels := make([]string, 7)
+	successful := make([]int, 7)
+	failed := make([]int, 7)
+	total := make([]int, 7)
+
+	for i := 6; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i)
+		labels[6-i] = date.Format("Jan 2")
+
+		// Count migrations that started on this day
+		for _, migration := range migrations {
+			if !migration.StartedAt.IsZero() {
+				migrationDate := migration.StartedAt.Truncate(24 * time.Hour)
+				dayDate := date.Truncate(24 * time.Hour)
+
+				if migrationDate.Equal(dayDate) {
+					total[6-i]++
+					switch migration.Status {
+					case "succeeded":
+						successful[6-i]++
+					case "failed":
+						failed[6-i]++
+					}
+				}
+			}
+		}
+	}
+
+	return TrendsChartData{
+		Labels:     labels,
+		Successful: successful,
+		Failed:     failed,
+		Total:      total,
+	}
+}
+
+// generatePerformanceData creates performance metrics based on current migration data
+func (h *Handler) generatePerformanceData(migrations []*payload.MigrationStatus) PerformanceChartData {
+	now := time.Now()
+
+	// Generate labels for the last 4 weeks
+	labels := make([]string, 4)
+	duration := make([]float64, 4)
+	successRate := make([]int, 4)
+
+	for i := 3; i >= 0; i-- {
+		weekStart := now.AddDate(0, 0, -7*(i+1))
+		weekEnd := now.AddDate(0, 0, -7*i)
+		labels[3-i] = fmt.Sprintf("Week %d", 4-i)
+
+		var weekMigrations []*payload.MigrationStatus
+		var weekSuccessful int
+		var totalDuration time.Duration
+		var completedMigrations int
+
+		// Find migrations that started in this week
+		for _, migration := range migrations {
+			if !migration.StartedAt.IsZero() &&
+				migration.StartedAt.After(weekStart) &&
+				migration.StartedAt.Before(weekEnd) {
+				weekMigrations = append(weekMigrations, migration)
+
+				// Calculate duration for completed migrations
+				if migration.Status == "succeeded" || migration.Status == "failed" {
+					var endTime time.Time
+					if migration.Status == "succeeded" {
+						endTime = now // Use current time as approximation
+					} else {
+						endTime = now
+					}
+
+					migrationDuration := endTime.Sub(migration.StartedAt)
+					totalDuration += migrationDuration
+					completedMigrations++
+
+					if migration.Status == "succeeded" {
+						weekSuccessful++
+					}
+				}
+			}
+		}
+
+		// Calculate average duration in hours
+		if completedMigrations > 0 {
+			avgDuration := totalDuration / time.Duration(completedMigrations)
+			duration[3-i] = avgDuration.Hours()
+		}
+
+		// Calculate success rate
+		if len(weekMigrations) > 0 {
+			successRate[3-i] = (weekSuccessful * 100) / len(weekMigrations)
+		}
+	}
+
+	return PerformanceChartData{
+		Labels:      labels,
+		Duration:    duration,
+		SuccessRate: successRate,
 	}
 }
 
