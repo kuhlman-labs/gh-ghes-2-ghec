@@ -204,6 +204,23 @@
     
     // Main initialization function
     document.addEventListener('DOMContentLoaded', function() {
+        // Initialize dashboard charts immediately
+        if (typeof DashboardCharts !== 'undefined' && DashboardCharts.initializeDashboardCharts) {
+            console.log('Initializing dashboard charts...');
+            DashboardCharts.initializeDashboardCharts();
+        } else {
+            console.warn('DashboardCharts not available, retrying in 100ms...');
+            // Retry after a short delay in case the script is still loading
+            setTimeout(function() {
+                if (typeof DashboardCharts !== 'undefined' && DashboardCharts.initializeDashboardCharts) {
+                    console.log('Initializing dashboard charts (retry)...');
+                    DashboardCharts.initializeDashboardCharts();
+                } else {
+                    console.error('DashboardCharts still not available after retry');
+                }
+            }, 100);
+        }
+        
         // Enhanced dropdown handling with modern interaction patterns
         const dropdowns = document.querySelectorAll('.dropdown');
         
