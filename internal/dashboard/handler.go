@@ -397,6 +397,9 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Calculate real-time duration for active migrations
+	calculateRealTimeDuration(migrationsSlice)
+
 	// Apply filters
 	var filteredMigrations []*payload.MigrationStatus
 	if statusFilter != "" {
@@ -541,6 +544,9 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// Calculate real-time duration for active migrations
+	calculateRealTimeDuration(migrationsSlice)
 
 	// Apply filters
 	var filteredMigrations []*payload.MigrationStatus
@@ -1302,6 +1308,20 @@ func calculateStats(migrations []*payload.MigrationStatus) MigrationStats {
 	return stats
 }
 
+// calculateRealTimeDuration calculates the real-time duration for active migrations
+func calculateRealTimeDuration(migrations []*payload.MigrationStatus) {
+	now := time.Now()
+	for _, m := range migrations {
+		// Only calculate real-time duration for active migrations that have started
+		if m.Status == payload.StatusInProgress && !m.StartedAt.IsZero() {
+			// If Duration is not already set (completed migrations), calculate real-time duration
+			if m.Duration == 0 {
+				m.Duration = now.Sub(m.StartedAt)
+			}
+		}
+	}
+}
+
 // getStagesInfo creates information about migration stages based on the overall migration status.
 func getStagesInfo(status *payload.MigrationStatus) []StageInfo {
 	var newStages []StageInfo
@@ -1536,6 +1556,9 @@ func (h *Handler) handleTimeline(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// Calculate real-time duration for active migrations
+	calculateRealTimeDuration(migrationsSlice)
 
 	// Get recent activity events
 	recentActivity := getRecentActivity(migrationsSlice, 10)
