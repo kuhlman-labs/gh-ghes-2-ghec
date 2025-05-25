@@ -1,0 +1,725 @@
+/**
+ * Component Styles
+ * 
+ * Reusable UI components following BEM methodology
+ * Using semantic tokens for consistency and maintainability
+ */
+
+/* ========================================
+   BUTTON COMPONENT
+======================================== */
+
+/**
+ * Button Component
+ * 
+ * Base button styles with variants for different contexts.
+ * Supports primary, secondary variants and small, medium sizes.
+ * 
+ * @example
+ * <button class="btn btn--primary btn--small">Click me</button>
+ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-2);
+  padding: var(--button-padding-y) var(--button-padding-x);
+  border: var(--button-secondary-border);
+  border-radius: var(--button-border-radius);
+  font-size: var(--font-size-sm);
+  font-weight: var(--button-font-weight);
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--button-secondary-bg);
+  color: var(--button-secondary-text);
+  transition: var(--button-transition);
+  cursor: pointer;
+  user-select: none;
+}
+
+.btn:hover {
+  background: var(--button-secondary-bg-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.btn:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  transform: none;
+  cursor: not-allowed;
+}
+
+/* Button Variants */
+.btn--primary {
+  border-color: var(--button-primary-border);
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+}
+
+.btn--primary:hover {
+  background: var(--button-primary-bg-hover);
+}
+
+.btn--danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger);
+  color: var(--color-text-inverse);
+}
+
+.btn--danger:hover {
+  background: var(--color-danger-dark);
+}
+
+.btn--danger:focus-visible {
+  box-shadow: var(--focus-ring-danger);
+}
+
+/* Button Sizes */
+.btn--small {
+  padding: var(--button-sm-padding-y) var(--button-sm-padding-x);
+  font-size: var(--button-sm-font-size);
+}
+
+.btn--large {
+  padding: var(--size-3) var(--size-6);
+  font-size: var(--font-size-base);
+}
+
+/* Button States */
+.btn--loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn--loading::after {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid currentcolor;
+  border-radius: var(--radius-full);
+  animation: btn-spin 1s linear infinite;
+  content: '';
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========================================
+   CARD COMPONENT
+======================================== */
+
+/**
+ * Card Component
+ * 
+ * Flexible container for content with consistent styling
+ * Supports hover states and different padding variants
+ */
+.card {
+  padding: var(--card-padding);
+  border: var(--card-border);
+  border-radius: var(--card-border-radius);
+  background: var(--card-background);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow var(--duration-normal);
+}
+
+.card:hover {
+  box-shadow: var(--card-shadow-hover);
+}
+
+.card--interactive {
+  transition: all var(--duration-normal);
+  cursor: pointer;
+}
+
+.card--interactive:hover {
+  transform: translateY(-2px);
+}
+
+.card--compact {
+  padding: var(--size-4);
+}
+
+.card--spacious {
+  padding: var(--size-8);
+}
+
+/* ========================================
+   STATUS INDICATOR COMPONENT
+======================================== */
+
+/**
+ * Status Indicator Component
+ * 
+ * Visual status indicators with semantic colors
+ * Used for migration status, health checks, etc.
+ */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  padding: var(--size-1) var(--size-3);
+  border: 1px solid;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status--success {
+  border-color: var(--color-success);
+  background: var(--color-success-light);
+  color: var(--color-success-dark);
+}
+
+.status--warning {
+  border-color: var(--color-warning);
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+}
+
+.status--danger {
+  border-color: var(--color-danger);
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+}
+
+.status--info {
+  border-color: var(--color-info);
+  background: var(--color-info-light);
+  color: var(--color-info-dark);
+}
+
+.status--pending {
+  border-color: var(--color-gray-300);
+  background: var(--color-gray-100);
+  color: var(--color-gray-600);
+}
+
+.status--running {
+  border-color: var(--color-warning);
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+  animation: status-pulse 2s infinite;
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ========================================
+   PROGRESS COMPONENT
+======================================== */
+
+/**
+ * Progress Component
+ * 
+ * Progress bars with semantic colors and animations
+ */
+.progress {
+  position: relative;
+  width: 100%;
+  height: var(--progress-height);
+  border-radius: var(--progress-border-radius);
+  background: var(--progress-background);
+  overflow: hidden;
+}
+
+.progress__bar {
+  position: relative;
+  min-width: 2px;
+  height: 100%;
+  border-radius: var(--progress-border-radius);
+  background: var(--progress-fill);
+  transition: width var(--duration-slow) ease-out;
+}
+
+.progress__bar--success {
+  background: var(--color-success);
+}
+
+.progress__bar--warning {
+  background: var(--color-warning);
+}
+
+.progress__bar--danger {
+  background: var(--color-danger);
+}
+
+.progress__bar--animated {
+  background-image: linear-gradient(
+    45deg,
+    rgb(255 255 255 / 15%) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgb(255 255 255 / 15%) 50%,
+    rgb(255 255 255 / 15%) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 1rem 1rem;
+  animation: progress-stripes 1s linear infinite;
+}
+
+@keyframes progress-stripes {
+  0% { background-position: 0 0; }
+  100% { background-position: 1rem 0; }
+}
+
+.progress__text {
+  margin-top: var(--size-1);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+/* ========================================
+   SIZE BADGE COMPONENT
+======================================== */
+
+/**
+ * Size Badge Component
+ * 
+ * Repository size indicators with semantic colors
+ */
+.size-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--size-1) var(--size-2);
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.size-badge--small {
+  border-color: var(--color-success);
+  background: var(--color-success-light);
+  color: var(--color-success-dark);
+}
+
+.size-badge--medium {
+  border-color: var(--color-info);
+  background: var(--color-info-light);
+  color: var(--color-info-dark);
+}
+
+.size-badge--large {
+  border-color: var(--color-warning);
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+}
+
+.size-badge--extra-large {
+  border-color: var(--color-danger);
+  background: var(--color-danger-light);
+  color: var(--color-danger-dark);
+}
+
+/* ========================================
+   FORM COMPONENTS
+======================================== */
+
+/**
+ * Form Components
+ * 
+ * Consistent form styling with focus states and validation
+ */
+.form-group {
+  margin-bottom: var(--size-4);
+}
+
+.form-label {
+  display: block;
+  margin-bottom: var(--size-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.form-label--required::after {
+  color: var(--color-danger);
+  content: ' *';
+}
+
+.form-input {
+  width: 100%;
+  padding: var(--input-padding-y) var(--input-padding-x);
+  border: var(--input-border);
+  border-radius: var(--input-border-radius);
+  font-size: var(--font-size-sm);
+  background: var(--input-background);
+  color: var(--input-text);
+  transition: border-color var(--duration-normal), box-shadow var(--duration-normal);
+}
+
+.form-input:focus {
+  border: var(--input-border-focus);
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+.form-input:invalid {
+  border-color: var(--color-danger);
+}
+
+.form-input:invalid:focus {
+  box-shadow: var(--focus-ring-danger);
+}
+
+.form-hint {
+  margin-top: var(--size-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.form-error {
+  margin-top: var(--size-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+/* Checkbox Component */
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox__input {
+  position: relative;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  appearance: none;
+  cursor: pointer;
+}
+
+.checkbox__input:checked {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.checkbox__input:checked::after {
+  position: absolute;
+  top: -2px;
+  left: 1px;
+  font-size: 12px;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-inverse);
+  content: '✓';
+}
+
+.checkbox__input:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.checkbox__label {
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.checkbox__description {
+  margin-top: var(--size-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ========================================
+   TABLE COMPONENT
+======================================== */
+
+/**
+ * Table Component
+ * 
+ * Data tables with sorting, hover states, and responsive design
+ */
+.table-container {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--font-size-sm);
+}
+
+.table__header {
+  background: var(--table-header-background);
+}
+
+.table__header-cell {
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  border-bottom: var(--table-border);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  user-select: none;
+}
+
+.table__header-cell--sortable {
+  position: relative;
+  transition: background-color var(--duration-normal);
+  cursor: pointer;
+}
+
+.table__header-cell--sortable:hover {
+  background: var(--color-gray-100);
+}
+
+.table__header-cell--sortable::after {
+  position: absolute;
+  right: var(--size-2);
+  opacity: 0.5;
+  transition: opacity var(--duration-normal);
+  content: '↕';
+}
+
+.table__header-cell--sort-asc::after {
+  color: var(--color-primary);
+  opacity: 1;
+  content: '↑';
+}
+
+.table__header-cell--sort-desc::after {
+  color: var(--color-primary);
+  opacity: 1;
+  content: '↓';
+}
+
+.table__cell {
+  padding: var(--table-cell-padding-y) var(--table-cell-padding-x);
+  border-bottom: var(--table-border);
+  vertical-align: middle;
+}
+
+.table__row {
+  transition: background-color var(--duration-normal);
+}
+
+.table__row:hover {
+  background: var(--table-row-hover);
+}
+
+.table__row:last-child .table__cell {
+  border-bottom: none;
+}
+
+/* ========================================
+   DROPDOWN COMPONENT
+======================================== */
+
+/**
+ * Dropdown Component
+ * 
+ * Contextual menus and dropdowns with smooth animations
+ */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown__content {
+  position: absolute;
+  top: calc(100% + var(--size-1));
+  right: 0;
+  z-index: 1000;
+  min-width: 200px;
+  padding: var(--size-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: var(--shadow-xl);
+  transform: translateY(-8px) scale(0.95);
+  transition: all var(--duration-normal) ease-out;
+}
+
+.dropdown:hover .dropdown__content,
+.dropdown__content--show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-3);
+  border-radius: var(--radius-base);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
+  color: var(--color-text);
+  transition: all var(--duration-normal);
+}
+
+.dropdown__item:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  transform: translateX(4px);
+}
+
+.dropdown__item svg {
+  width: var(--icon-size-sm);
+  height: var(--icon-size-sm);
+  opacity: 0.7;
+}
+
+/* ========================================
+   LOADING STATES
+======================================== */
+
+/**
+ * Loading Components
+ * 
+ * Skeleton loaders and loading indicators
+ */
+.loading {
+  position: relative;
+  overflow: hidden;
+}
+
+.loading::before {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(255 255 255 / 40%),
+    transparent
+  );
+  animation: loading-shimmer 1.5s infinite;
+  content: '';
+}
+
+@keyframes loading-shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.skeleton {
+  border-radius: var(--radius-base);
+  background: linear-gradient(
+    90deg,
+    var(--color-gray-200) 0%,
+    var(--color-gray-100) 50%,
+    var(--color-gray-200) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-gray-200);
+  border-top: 2px solid var(--color-primary);
+  border-radius: var(--radius-full);
+  animation: spinner-spin 1s linear infinite;
+}
+
+@keyframes spinner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ========================================
+   EMPTY STATE COMPONENT
+======================================== */
+
+/**
+ * Empty State Component
+ * 
+ * Placeholder content for empty data states
+ */
+.empty-state {
+  margin: var(--size-6) 0;
+  padding: var(--size-12) var(--size-4);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  background: linear-gradient(
+    135deg,
+    var(--color-gray-50) 0%,
+    var(--color-surface) 100%
+  );
+  color: var(--color-text-muted);
+}
+
+.empty-state__icon {
+  width: var(--size-16);
+  height: var(--size-16);
+  margin: 0 auto var(--size-4);
+  opacity: 0.5;
+}
+
+.empty-state__title {
+  margin-bottom: var(--size-2);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+}
+
+.empty-state__description {
+  margin-bottom: var(--size-4);
+  font-size: var(--font-size-base);
+}
+
+.empty-state__action {
+  padding: var(--size-1) var(--size-2);
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  color: var(--color-text-link);
+  transition: all var(--duration-normal);
+}
+
+.empty-state__action:hover {
+  background: var(--color-primary-light);
+  transform: translateY(-1px);
+} 

@@ -33,3 +33,7 @@ config.yaml
 
 # Local scripts and data
 scripts/local/
+
+# Node modules and CSS build artifacts
+node_modules/
+static/css/dist/

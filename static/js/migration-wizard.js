@@ -85,8 +85,14 @@ class MigrationWizard {
         });
 
         // Tab switching
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.switchTab(btn));
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        console.log('Found tab buttons:', tabButtons.length);
+        tabButtons.forEach((btn, index) => {
+            console.log(`Tab button ${index}:`, btn, 'data-tab:', btn.dataset.tab);
+            btn.addEventListener('click', () => {
+                console.log('Tab button clicked:', btn.dataset.tab);
+                this.switchTab(btn);
+            });
         });
 
         // Form field changes for auto-save
@@ -101,7 +107,7 @@ class MigrationWizard {
         });
 
         // Step indicator clicks
-        document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
+        document.querySelectorAll('.wizard__step[data-step]').forEach((indicator, index) => {
             indicator.addEventListener('click', () => {
                 const stepNum = index + 1;
                 if (stepNum <= this.currentStep || this.canNavigateToStep(stepNum)) {
@@ -115,7 +121,7 @@ class MigrationWizard {
         window.togglePassword = (fieldId) => this.togglePassword(fieldId);
         window.startWizard = () => this.startWizard();
         window.saveDraft = () => this.saveDraft();
-        window.loadRepositories = () => this.loadRepositories();
+        window.loadRepositories = (event) => this.loadRepositories(event);
         window.handleFileUpload = (event) => this.handleFileUpload(event);
         window.nextStep = () => this.nextStep();
         window.previousStep = () => this.previousStep();
@@ -125,14 +131,29 @@ class MigrationWizard {
     }
 
     initializeTemplateSelection() {
-        // Set default template selection
-        const defaultTemplate = document.querySelector('.template-card[data-template="quick-start"]');
-        if (defaultTemplate) {
-            this.selectTemplate(defaultTemplate);
+        console.log('initializeTemplateSelection called');
+        // Only set default template if none is already selected (e.g., from draft)
+        if (!this.selectedTemplate) {
+            const defaultTemplate = document.querySelector('.template-card[data-template="quick-start"]');
+            console.log('Default template element found:', defaultTemplate);
+            if (defaultTemplate) {
+                console.log('Selecting default template');
+                this.selectTemplate(defaultTemplate);
+            } else {
+                console.error('Default template not found!');
+            }
+        } else {
+            console.log('Template already selected:', this.selectedTemplate);
+            // Ensure the UI reflects the selected template
+            const templateCard = document.querySelector(`[data-template="${this.selectedTemplate}"]`);
+            if (templateCard) {
+                templateCard.classList.add('selected');
+            }
         }
     }
 
     selectTemplate(templateCard) {
+        console.log('selectTemplate called with:', templateCard);
         // Remove previous selection
         document.querySelectorAll('.template-card').forEach(card => {
             card.classList.remove('selected');
@@ -143,6 +164,7 @@ class MigrationWizard {
         
         // Store selected template
         this.selectedTemplate = templateCard.dataset.template;
+        console.log('Selected template set to:', this.selectedTemplate);
         
         // Apply template defaults
         this.applyTemplateDefaults(this.selectedTemplate);
@@ -182,28 +204,61 @@ class MigrationWizard {
     }
 
     startWizard() {
+        console.log('startWizard called');
+        console.log('selectedTemplate:', this.selectedTemplate);
+        
         if (!this.selectedTemplate) {
             this.showError('Please select a migration template');
             return;
         }
 
         // Hide template selection, show wizard form
-        document.getElementById('template-selection').style.display = 'none';
-        document.getElementById('migration-wizard-form').style.display = 'block';
+        const templateSelection = document.getElementById('template-selection');
+        const wizardForm = document.getElementById('migration-wizard-form');
+        
+        console.log('Template selection element:', templateSelection);
+        console.log('Wizard form element:', wizardForm);
+        
+        if (templateSelection) {
+            templateSelection.style.display = 'none';
+            console.log('Template selection hidden');
+        }
+        
+        if (wizardForm) {
+            wizardForm.style.display = 'block';
+            console.log('Wizard form shown');
+        }
+
+        // Show navigation
+        const navigation = document.querySelector('.wizard__navigation');
+        console.log('Navigation element:', navigation);
+        if (navigation) {
+            navigation.style.display = 'flex';
+            console.log('Navigation shown');
+        }
 
         // Set template type
-        document.getElementById('template-type').value = this.selectedTemplate;
+        const templateTypeInput = document.getElementById('template-type');
+        if (templateTypeInput) {
+            templateTypeInput.value = this.selectedTemplate;
+            console.log('Template type set to:', this.selectedTemplate);
+        }
 
         // If we have draft data, restore it, otherwise apply defaults
         if (this.hasDraft && this.wizardData) {
+            console.log('Restoring draft data');
             this.restoreFormData();
             this.goToStep(this.currentStep);
         } else {
+            console.log('Applying defaults and going to step 1');
             this.applyDefaultsToForm();
+            // Force step 1 activation by resetting currentStep first
+            this.currentStep = 0;
             this.goToStep(1);
         }
         
         this.updateProgress();
+        console.log('startWizard completed');
     }
 
     applyDefaultsToForm() {
@@ -227,7 +282,10 @@ class MigrationWizard {
 
         // Trigger schedule type change if needed
         if (defaults.schedule_type) {
-            this.toggleScheduleOptions();
+            // Use setTimeout to ensure the radio button change is processed first
+            setTimeout(() => {
+                this.toggleScheduleOptions();
+            }, 100);
         }
     }
 
@@ -309,10 +367,6 @@ class MigrationWizard {
         console.log('Hiding all steps...');
         document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
             step.classList.remove('active');
-            step.style.display = 'none';
-            step.style.visibility = 'hidden';
-            step.style.height = '0';
-            step.style.overflow = 'hidden';
             console.log(`Step ${index + 1} hidden:`, step.id);
         });
         
@@ -323,20 +377,18 @@ class MigrationWizard {
     debugVisibleSteps() {
         const visibleSteps = [];
         document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
-            const isVisible = step.style.display !== 'none' && 
-                             step.style.visibility !== 'hidden' && 
-                             step.classList.contains('active');
-            if (isVisible) {
+            const isActive = step.classList.contains('active');
+            if (isActive) {
                 visibleSteps.push(`Step ${index + 1} (${step.id})`);
             }
         });
         
         if (visibleSteps.length > 1) {
-            console.warn('Multiple steps visible:', visibleSteps);
+            console.warn('Multiple steps active:', visibleSteps);
         } else if (visibleSteps.length === 1) {
-            console.log('Currently visible:', visibleSteps[0]);
+            console.log('Currently active:', visibleSteps[0]);
         } else {
-            console.log('No steps visible');
+            console.log('No steps active');
         }
     }
 
@@ -381,8 +433,8 @@ class MigrationWizard {
 
         console.log(`Going to step ${stepNumber} from step ${this.currentStep}`);
         
-        // Prevent multiple rapid calls to the same step
-        if (this.currentStep === stepNumber) {
+        // For initialization, always allow going to step 1 even if currentStep is already 1
+        if (this.currentStep === stepNumber && stepNumber !== 1) {
             console.log(`Already on step ${stepNumber}, skipping`);
             return;
         }
@@ -391,38 +443,35 @@ class MigrationWizard {
         const previousStep = this.currentStep;
         this.currentStep = stepNumber;
 
-        // Force immediate style reset for all steps
+        // Remove active class from all steps
         document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
             const stepNum = index + 1;
-            const isTargetStep = stepNum === stepNumber;
-            
-            // Remove all classes first
             step.classList.remove('active');
-            
-            // Force hide all steps immediately
-            step.style.display = 'none';
-            step.style.visibility = 'hidden';
-            step.style.height = '0';
-            step.style.overflow = 'hidden';
-            step.style.opacity = '0';
-            
-            console.log(`Step ${stepNum} (${step.id}) hidden`);
+            console.log(`Step ${stepNum} (${step.id}) deactivated`);
         });
 
-        // Force a reflow to ensure styles are applied
-        document.getElementById('migration-wizard-form').offsetHeight;
-
-        // Now show only the target step
+        // Add active class to target step
         const targetStepEl = document.getElementById(`step-${stepNumber}`);
         if (targetStepEl) {
-            targetStepEl.style.display = 'block';
-            targetStepEl.style.visibility = 'visible';
-            targetStepEl.style.height = 'auto';
-            targetStepEl.style.overflow = 'visible';
-            targetStepEl.style.opacity = '1';
             targetStepEl.classList.add('active');
+            console.log(`Step ${stepNumber} (${targetStepEl.id}) activated`);
+            console.log(`Step ${stepNumber} classes after activation:`, targetStepEl.className);
             
-            console.log(`Step ${stepNumber} (${targetStepEl.id}) activated and shown`);
+            // Debug: Check if the step is actually visible
+            const computedStyle = window.getComputedStyle(targetStepEl);
+            console.log(`Step ${stepNumber} computed styles:`, {
+                display: computedStyle.display,
+                visibility: computedStyle.visibility,
+                opacity: computedStyle.opacity,
+                height: computedStyle.height,
+                overflow: computedStyle.overflow
+            });
+            
+            // Force visibility if needed
+            if (computedStyle.display === 'none') {
+                console.warn(`Step ${stepNumber} is still hidden after activation, forcing display`);
+                targetStepEl.style.display = 'block';
+            }
         } else {
             console.error(`Step element not found: step-${stepNumber}`);
         }
@@ -439,6 +488,11 @@ class MigrationWizard {
         // Update review section if on final step
         if (stepNumber === this.maxSteps) {
             this.updateReviewSection();
+        }
+
+        // Initialize schedule options if on schedule step
+        if (stepNumber === 5) {
+            this.toggleScheduleOptions();
         }
 
         // Show connection test if credentials are filled
@@ -469,14 +523,14 @@ class MigrationWizard {
 
     updateProgress() {
         // Update step indicators
-        document.querySelectorAll('.step-indicator').forEach((indicator, index) => {
+        document.querySelectorAll('.wizard__step[data-step]').forEach((indicator, index) => {
             const stepNum = index + 1;
-            indicator.classList.remove('active', 'completed');
+            indicator.classList.remove('wizard__step--active', 'wizard__step--completed');
             
             if (stepNum === this.currentStep) {
-                indicator.classList.add('active');
+                indicator.classList.add('wizard__step--active');
             } else if (stepNum < this.currentStep) {
-                indicator.classList.add('completed');
+                indicator.classList.add('wizard__step--completed');
             }
         });
 
@@ -894,16 +948,18 @@ class MigrationWizard {
     }
 
     toggleScheduleOptions() {
-        const scheduledRadio = document.getElementById('scheduled');
+        const scheduledRadio = document.querySelector('input[name="schedule_type"][value="scheduled"]');
         const scheduledOptions = document.getElementById('scheduled-options');
         
         if (scheduledOptions) {
-            scheduledOptions.style.display = scheduledRadio?.checked ? 'block' : 'none';
+            const shouldShow = scheduledRadio?.checked;
+            scheduledOptions.style.display = shouldShow ? 'block' : 'none';
         }
     }
 
     switchTab(tabBtn) {
         const tabName = tabBtn.dataset.tab;
+        console.log('switchTab called with tab:', tabName);
         
         // Update tab buttons
         document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -915,7 +971,14 @@ class MigrationWizard {
         document.querySelectorAll('.tab-content').forEach(content => {
             content.classList.remove('active');
         });
-        document.getElementById(`${tabName}-tab`)?.classList.add('active');
+        const targetTab = document.getElementById(`${tabName}-tab`);
+        console.log('Target tab element:', targetTab);
+        if (targetTab) {
+            targetTab.classList.add('active');
+            console.log('Tab switched to:', tabName);
+        } else {
+            console.error('Tab element not found:', `${tabName}-tab`);
+        }
     }
 
     testConnection(type) {
@@ -1059,8 +1122,8 @@ class MigrationWizard {
         }
     }
 
-    loadRepositories() {
-        const button = event.target;
+    loadRepositories(event) {
+        const button = event?.target || document.querySelector('.btn[onclick*="loadRepositories"]');
         const repoList = document.getElementById('repo-list');
         const searchInput = document.getElementById('repo-search');
         
@@ -1362,35 +1425,59 @@ class MigrationWizard {
         
         // Repositories
         const selectedRepos = this.getSelectedRepositories();
-        document.getElementById('review-repo-count').textContent = selectedRepos.length;
-        
-        const reviewRepos = document.getElementById('review-repos');
-        if (reviewRepos) {
-            reviewRepos.innerHTML = selectedRepos.map(repo => 
-                `<div class="review-repo-item">${repo}</div>`
-            ).join('');
+        const reviewRepositories = document.getElementById('review-repositories');
+        if (reviewRepositories) {
+            if (selectedRepos.length > 0) {
+                reviewRepositories.innerHTML = selectedRepos.map(repo => 
+                    `<div class="review-repo-item">${repo}</div>`
+                ).join('');
+            } else {
+                reviewRepositories.innerHTML = '<p class="text-muted">No repositories selected</p>';
+            }
         }
         
         // Options
         document.getElementById('review-ghos').textContent = 
             document.getElementById('use_ghos')?.checked ? 'Enabled' : 'Disabled';
-        document.getElementById('review-duration').textContent = 
+        document.getElementById('review-max-duration').textContent = 
             document.getElementById('max_duration')?.value || 'No limit';
-        document.getElementById('review-delete-existing').textContent = 
+        document.getElementById('review-delete-exists').textContent = 
             document.getElementById('delete_if_exists')?.checked ? 'Enabled' : 'Disabled';
         
         // Scheduling
         const scheduleType = document.querySelector('input[name="schedule_type"]:checked')?.value;
+        
         let scheduleText = 'Immediate';
+        const reviewScheduleDetails = document.getElementById('review-schedule-details');
+        
         if (scheduleType === 'scheduled') {
-            const scheduledTime = document.getElementById('scheduled_time')?.value;
-            const timeZone = document.getElementById('scheduled_time_zone')?.value;
-            if (scheduledTime) {
-                scheduleText = `Scheduled for ${scheduledTime}`;
-                if (timeZone) scheduleText += ` (${timeZone})`;
+            const scheduleDate = document.getElementById('schedule_date')?.value;
+            const scheduleTime = document.getElementById('schedule_time')?.value;
+            const timeZone = document.getElementById('timezone')?.value;
+            
+            if (scheduleDate && scheduleTime) {
+                scheduleText = `Scheduled for ${scheduleDate} at ${scheduleTime}`;
+                if (timeZone && timeZone !== 'UTC') scheduleText += ` (${timeZone})`;
+                
+                // Show schedule details row
+                if (reviewScheduleDetails) {
+                    reviewScheduleDetails.style.display = 'flex';
+                    document.getElementById('review-schedule-time').textContent = `${scheduleDate} at ${scheduleTime} ${timeZone || 'UTC'}`;
+                }
+            } else {
+                scheduleText = 'Schedule for Later (date/time not set)';
+                if (reviewScheduleDetails) {
+                    reviewScheduleDetails.style.display = 'none';
+                }
+            }
+        } else {
+            // Hide schedule details row for immediate execution
+            if (reviewScheduleDetails) {
+                reviewScheduleDetails.style.display = 'none';
             }
         }
-        document.getElementById('review-schedule').textContent = scheduleText;
+        
+        document.getElementById('review-schedule-type').textContent = scheduleText;
     }
 
     handleSubmit(event) {
@@ -1498,14 +1585,11 @@ class MigrationWizard {
 
 // Initialize wizard when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    // Ensure proper initial state - hide all wizard steps immediately
+    console.log('DOM loaded, initializing wizard...');
+    
+    // Ensure proper initial state - remove active class from all steps
     document.querySelectorAll('#migration-wizard-form .wizard-step').forEach((step, index) => {
         step.classList.remove('active');
-        step.style.display = 'none';
-        step.style.visibility = 'hidden';
-        step.style.height = '0';
-        step.style.overflow = 'hidden';
-        console.log(`Initial hide of step ${index + 1}:`, step.id);
     });
     
     window.migrationWizard = new MigrationWizard();

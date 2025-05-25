@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSS Best Practices - Component Test</title>
+  <link rel="stylesheet" href="dist/styles.min.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="header__brand">
+        <h1>GitHub Enterprise Migration</h1>
+      </div>
+      <nav class="header__nav">
+        <ul>
+          <li><a href="#" class="active">Dashboard</a></li>
+          <li><a href="#">Wizard</a></li>
+          <li><a href="#">Analytics</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main class="main-content">
+      <section class="section">
+        <h2 class="heading heading--large">Component Showcase</h2>
+        <p class="text text--muted">Testing our modernized CSS architecture with BEM methodology and design tokens.</p>
+      </section>
+
+      <section class="section">
+        <h3 class="heading heading--medium">Buttons</h3>
+        <div class="button-group">
+          <button class="btn btn--primary">Primary Button</button>
+          <button class="btn btn--secondary">Secondary Button</button>
+          <button class="btn btn--danger">Danger Button</button>
+          <button class="btn btn--small">Small Button</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h3 class="heading heading--medium">Cards</h3>
+        <div class="grid grid--2-col">
+          <div class="card">
+            <div class="card__header">
+              <h4 class="card__title">Repository Migration</h4>
+            </div>
+            <div class="card__body">
+              <p>Migrate your repositories from GitHub Enterprise Server to GitHub Enterprise Cloud.</p>
+              <div class="status status--success">
+                <span class="status__indicator"></span>
+                <span class="status__text">Ready</span>
+              </div>
+            </div>
+            <div class="card__footer">
+              <button class="btn btn--primary btn--small">Start Migration</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card__header">
+              <h4 class="card__title">Analytics Dashboard</h4>
+            </div>
+            <div class="card__body">
+              <p>Monitor migration progress and view detailed analytics.</p>
+              <div class="status status--warning">
+                <span class="status__indicator"></span>
+                <span class="status__text">In Progress</span>
+              </div>
+            </div>
+            <div class="card__footer">
+              <button class="btn btn--secondary btn--small">View Details</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h3 class="heading heading--medium">Form Components</h3>
+        <form class="form">
+          <div class="form-group">
+            <label class="form-label" for="repo-name">Repository Name</label>
+            <input class="form-input" type="text" id="repo-name" placeholder="Enter repository name">
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="migration-type">Migration Type</label>
+            <select class="form-select" id="migration-type">
+              <option>Full Migration</option>
+              <option>Partial Migration</option>
+              <option>Dry Run</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-checkbox">
+              <input type="checkbox">
+              <span class="form-checkbox__checkmark"></span>
+              Include issue history
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn--primary">Start Migration</button>
+            <button type="button" class="btn btn--secondary">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section">
+        <h3 class="heading heading--medium">Progress & Loading</h3>
+        <div class="progress-bar">
+          <div class="progress-bar__fill" style="width: 65%"></div>
+        </div>
+        <p class="text text--small text--muted">Migration progress: 65% complete</p>
+        
+        <div class="loading-spinner"></div>
+        <p class="text text--small text--muted">Processing...</p>
+      </section>
+
+      <section class="section">
+        <h3 class="heading heading--medium">Utility Classes</h3>
+        <div class="flex items-center gap-4 mb-4">
+          <div class="bg-primary text-white p-3 rounded">Primary Background</div>
+          <div class="bg-success text-white p-3 rounded">Success Background</div>
+          <div class="bg-warning text-white p-3 rounded">Warning Background</div>
+          <div class="bg-danger text-white p-3 rounded">Danger Background</div>
+        </div>
+        
+        <div class="text-center">
+          <p class="text text--large font-bold">Large Bold Text</p>
+          <p class="text text--medium">Medium Text</p>
+          <p class="text text--small text--muted">Small Muted Text</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__content">
+        <p class="text text--small text--muted">
+          © 2024 GitHub Enterprise Migration Tool - Modern CSS Architecture
+        </p>
+      </div>
+    </footer>
+  </div>
+</body>
+</html> 

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tab Test</title>
+    <link rel="stylesheet" href="dist/styles.css">
+</head>
+<body>
+    <div class="container" style="padding: 2rem;">
+        <h1>Repository Selection Tab Test</h1>
+        
+        <div class="space-y-6">
+            <div class="flex border-b border-gray-200">
+                <button type="button" class="tab-btn px-4 py-2 border-b-2 border-primary text-primary font-medium active" data-tab="manual">Manual Entry</button>
+                <button type="button" class="tab-btn px-4 py-2 border-b-2 border-transparent text-muted hover:text-primary" data-tab="browse">Browse Repositories</button>
+                <button type="button" class="tab-btn px-4 py-2 border-b-2 border-transparent text-muted hover:text-primary" data-tab="bulk">Bulk Import</button>
+            </div>
+            
+            <div class="tab-content active" id="manual-tab">
+                <div class="form-group">
+                    <label for="repositories" class="form-label form-label--required">Repositories</label>
+                    <textarea id="repositories" name="repositories" 
+                              class="form-input"
+                              rows="6" 
+                              placeholder="repo1&#10;repo2&#10;repo3" 
+                              required></textarea>
+                    <div class="form-hint">Enter each repository name on a new line</div>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="browse-tab">
+                <div class="space-y-4">
+                    <p>Browse repositories tab content</p>
+                    <button type="button" class="btn btn--secondary">Load Repositories</button>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="bulk-tab">
+                <div class="form-group">
+                    <label for="repo-file" class="form-label">Upload Repository List</label>
+                    <input type="file" id="repo-file" class="form-input" accept=".txt,.csv">
+                    <div class="form-hint">Upload a text or CSV file with repository names</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple tab switching test
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                console.log('Tab clicked:', btn.dataset.tab);
+                
+                // Update tab buttons
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('active');
+                });
+                btn.classList.add('active');
+
+                // Update tab content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(`${btn.dataset.tab}-tab`)?.classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html> 

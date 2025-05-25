@@ -1,16 +1,16 @@
 .queue-stats-section {
     margin: 2rem 0;
     padding: 1.5rem;
-    background: var(--surface-color);
     border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: var(--surface-color);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 10%);
 }
 
 .queue-stats-section .section-title {
     margin-bottom: 1.5rem;
-    color: var(--text-color);
     font-size: 1.25rem;
     font-weight: 600;
+    color: var(--text-color);
 }
 
 .queue-stats {
@@ -22,16 +22,16 @@
 }
 
 .queue-stats .stat-card {
-    background: var(--background-color);
-    padding: 1.25rem;
-    border-radius: 6px;
-    text-align: center;
-    transition: transform 0.2s ease;
-    min-width: 150px;
-    min-height: 90px;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    min-width: 150px;
+    min-height: 90px;
+    padding: 1.25rem;
+    border-radius: 6px;
+    text-align: center;
+    background: var(--background-color);
+    transition: transform 0.2s ease;
 }
 
 .queue-stats .stat-card:hover {
@@ -39,18 +39,18 @@
 }
 
 .queue-stats .stat-card h3 {
-    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
     font-size: 0.875rem;
     font-weight: 500;
-    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
 }
 
 .queue-stats .stat-value {
     display: block;
+    margin-bottom: 0.25rem;
     font-size: 1.5rem;
     font-weight: 600;
     color: var(--text-color);
-    margin-bottom: 0.25rem;
 }
 
 .queue-stats .stat-label {
@@ -69,38 +69,38 @@
 .checkbox-wrapper {
     display: flex;
     align-items: center;
-    cursor: pointer;
+    gap: 0.5rem;
     font-size: 0.875rem;
     color: var(--text-secondary, #6b7280);
+    cursor: pointer;
     user-select: none;
-    gap: 0.5rem;
 }
 
 .checkbox-wrapper input[type="checkbox"] {
-    appearance: none;
+    position: relative;
     width: 16px;
     height: 16px;
+    margin: 0;
     border: 2px solid var(--border-color, #d1d5db);
     border-radius: 3px;
-    background: var(--background-color, #ffffff);
+    background: var(--background-color, #fff);
+    appearance: none;
     cursor: pointer;
-    position: relative;
-    margin: 0;
 }
 
 .checkbox-wrapper input[type="checkbox"]:checked {
-    background: var(--primary-color, #0969da);
     border-color: var(--primary-color, #0969da);
+    background: var(--primary-color, #0969da);
 }
 
 .checkbox-wrapper input[type="checkbox"]:checked::after {
-    content: '✓';
     position: absolute;
     top: -2px;
     left: 1px;
-    color: white;
     font-size: 12px;
     font-weight: bold;
+    color: white;
+    content: '✓';
 }
 
 .checkbox-wrapper input[type="checkbox"]:focus {
@@ -126,13 +126,13 @@
 /* Dashboard controls layout improvements */
 .dashboard-controls {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
-    flex-wrap: wrap;
 }
 
 /* Responsive adjustments */
-@media (max-width: 768px) {
+@media (width <= 768px) {
     .dashboard-controls {
         flex-direction: column;
         align-items: stretch;

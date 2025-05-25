@@ -1,178 +1,296 @@
 {{define "migration_detail_content"}}
-<div id="migration-detail" class="active-migrations-section">
+<div id="migration-detail" class="dashboard__section">
     {{if .Migration }} {{/* Check if Migration data is available */}}
     
-    <!-- Migration Status Overview Card -->
-    <div class="dashboard-stats">
-        <div class="stat-card status-{{.Migration.Status | ToLower}}">
-            <div class="stat-header">
-                <h3>Status</h3>
-                <span class="status-indicator status-{{.Migration.Status | ToLower}}"></span>
+    <!-- Migration Header with Enhanced Status -->
+    <div class="migration-header">
+        <div class="migration-header__content">
+            <div class="migration-header__info">
+                <h2 class="migration-header__title">{{.Migration.Repository}}</h2>
+                <p class="migration-header__subtitle">Migration Details</p>
             </div>
-            <span class="stat-value">{{.Migration.Status | Title}}</span>
-        </div>
-        <div class="stat-card">
-            <h3>Progress</h3>
-            <div class="progress-bar">
-                <div class="progress-value status-{{.Migration.Status | ToLower}}" data-progress="{{.Migration.Progress}}"></div>
+            <div class="migration-header__status">
+                {{if eq (.Migration.Status | ToLower) "running"}}
+                    <span class="status status--running">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="status-icon">
+                            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                        </svg>
+                        {{.Migration.Status | Title}}
+                    </span>
+                {{else if eq (.Migration.Status | ToLower) "succeeded"}}
+                    <span class="status status--success">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="status-icon">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                        {{.Migration.Status | Title}}
+                    </span>
+                {{else if eq (.Migration.Status | ToLower) "failed"}}
+                    <span class="status status--danger">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="status-icon">
+                            <line x1="18" y1="6" x2="6" y2="18"/>
+                            <line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                        {{.Migration.Status | Title}}
+                    </span>
+                {{else if eq (.Migration.Status | ToLower) "pending"}}
+                    <span class="status status--pending">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="status-icon">
+                            <circle cx="12" cy="12" r="10"/>
+                        </svg>
+                        {{.Migration.Status | Title}}
+                    </span>
+                {{else}}
+                    <span class="status">{{.Migration.Status | Title}}</span>
+                {{end}}
             </div>
-            <span class="stat-value">{{.Migration.Progress}}%</span>
         </div>
-        <div class="stat-card">
-            <h3>Duration</h3>
-            <span class="stat-value">{{.Migration.Duration | FormatDuration}}</span>
-        </div>
-        {{if .Migration.RepositorySize}}
-        <div class="stat-card">
-            <h3>Repository Size</h3>
-            <div class="stat-value-with-badge">
-                <span class="size-badge size-{{.Migration.SizeCategory}}">{{.Migration.SizeCategory}}</span>
-                <span class="stat-value">{{printf "%.2f MB" (divFloat .Migration.RepositorySize 1048576)}}</span>
+    </div>
+
+    <!-- Enhanced Progress Section -->
+    <div class="enhanced-progress">
+        <div class="overall-progress">
+            <div class="progress-header">
+                <div class="progress-label">Overall Progress</div>
+                <div class="progress-percentage">{{.Migration.Progress}}%</div>
+                {{if .Migration.Duration}}
+                <div class="progress-eta">Duration: {{.Migration.Duration | FormatDuration}}</div>
+                {{end}}
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar-track">
+                    {{if eq (.Migration.Status | ToLower) "succeeded"}}
+                        <div class="progress-bar-fill" style="width: {{.Migration.Progress}}%; background: linear-gradient(135deg, var(--success-color) 0%, var(--info-color) 100%);">
+                            <div class="progress-bar-glow"></div>
+                        </div>
+                    {{else if eq (.Migration.Status | ToLower) "failed"}}
+                        <div class="progress-bar-fill" style="width: {{.Migration.Progress}}%; background: linear-gradient(135deg, var(--danger-color) 0%, var(--warning-color) 100%);">
+                            <div class="progress-bar-glow"></div>
+                        </div>
+                    {{else if eq (.Migration.Status | ToLower) "running"}}
+                        <div class="progress-bar-fill" style="width: {{.Migration.Progress}}%;">
+                            <div class="progress-bar-glow"></div>
+                        </div>
+                    {{else}}
+                        <div class="progress-bar-fill" style="width: {{.Migration.Progress}}%; background: var(--gray-400);">
+                            <div class="progress-bar-glow"></div>
+                        </div>
+                    {{end}}
+                </div>
+            </div>
+            <div class="progress-details">
+                <div class="current-stage">
+                    {{if eq (.Migration.Status | ToLower) "running"}}
+                        Current: {{.Migration.State | Title}}
+                    {{else if eq (.Migration.Status | ToLower) "succeeded"}}
+                        Migration completed successfully
+                    {{else if eq (.Migration.Status | ToLower) "failed"}}
+                        Migration failed
+                    {{else}}
+                        {{.Migration.Status | Title}}
+                    {{end}}
+                </div>
+                {{if .Migration.RepositorySize}}
+                <div class="progress-speed">
+                    Size: {{printf "%.2f MB" (divFloat .Migration.RepositorySize 1048576)}}
+                    {{if .Migration.SizeCategory}}
+                        ({{.Migration.SizeCategory}})
+                    {{end}}
+                </div>
+                {{end}}
             </div>
         </div>
-        {{end}}
+
+        <!-- Stage Progress Timeline -->
+        <div class="stage-progress">
+            <div class="stage-header">
+                <h4>Migration Stages</h4>
+                <div class="stage-indicator">{{len .Stages}} stages</div>
+            </div>
+            <div class="stages-timeline-horizontal">
+                {{range $i, $stage := .Stages}}
+                <div class="stage-item-horizontal {{$stage.Status}}" data-stage-index="{{$i}}">
+                    <div class="stage-marker-horizontal">
+                        {{if eq $stage.Status "completed"}}
+                        <div class="stage-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 6L9 17l-5-5"/>
+                            </svg>
+                        </div>
+                        {{else if eq $stage.Status "current"}}
+                        <div class="stage-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="current-stage-spinner">
+                                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                            </svg>
+                        </div>
+                        <div class="stage-pulse-horizontal active"></div>
+                        {{else if eq $stage.Status "failed"}}
+                        <div class="stage-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </div>
+                        {{else if eq $stage.Status "skipped"}}
+                        <div class="stage-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                        </div>
+                        {{else}}
+                        <div class="stage-number">•</div>
+                        {{end}}
+                    </div>
+                    <div class="stage-content-horizontal">
+                        <div class="stage-name-horizontal">{{$stage.Name | Title}}</div>
+                        <div class="stage-status-text-horizontal">
+                            {{if eq $stage.Status "current"}}In Progress{{else if eq $stage.Status "completed"}}Completed{{else if eq $stage.Status "failed"}}Failed{{else if eq $stage.Status "skipped"}}Skipped{{else}}Pending{{end}}
+                        </div>
+                        {{if eq $stage.Status "current"}}
+                        <div class="stage-progress-detail-horizontal">
+                            <div class="progress-bar-track-small">
+                                <div class="progress-bar-fill" style="width: {{$.Migration.StageProgress}}%;">
+                                    <div class="progress-bar-glow"></div>
+                                </div>
+                            </div>
+                            <div class="stage-progress-text-small">{{$.Migration.StageProgress}}%</div>
+                        </div>
+                        {{end}}
+                    </div>
+                    <div class="stage-connector-horizontal"></div>
+                </div>
+                {{end}}
+            </div>
+        </div>
     </div>
 
     <!-- Quick Actions -->
-    <div class="filter-controls-row">
-        <div class="filter-control">
-            <button class="btn btn-secondary" 
+    <div class="migration-actions">
+        <div class="migration-actions__content">
+            <button class="btn btn--secondary" 
                     hx-get="/dashboard/migration/{{.Migration.Repository}}/refresh" 
                     hx-target="#migration-detail" 
                     hx-swap="outerHTML">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                </svg>
                 Refresh Data
             </button>
             {{if eq .Migration.Status "failed"}}
-            <button class="btn btn-primary"
+            <button class="btn btn--primary"
                     hx-get="/dashboard/migration/{{.Migration.Repository}}/retry-form" 
                     hx-target="#retry-modal-content"
                     hx-swap="innerHTML"
                     onclick="document.getElementById('retry-modal').style.display='block'">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="17 1 21 5 17 9"/>
+                    <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                    <polyline points="7 23 3 19 7 15"/>
+                    <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                </svg>
                 Retry Migration
             </button>
             {{end}}
         </div>
     </div>
 
-    <!-- General Information Section -->
-    <div class="stats-section">
-        <div class="section-header">
-            <h3 class="section-title">General Information</h3>
+    <!-- Migration Details Grid -->
+    <div class="migration-details-grid">
+        <!-- General Information Card -->
+        <div class="detail-card">
+            <div class="detail-card__header">
+                <h3 class="detail-card__title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14,2 14,8 20,8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                        <polyline points="10,9 9,9 8,9"/>
+                    </svg>
+                    General Information
+                </h3>
+            </div>
+            <div class="detail-card__content">
+                <div class="detail-item">
+                    <div class="detail-label">Source Repository</div>
+                    <div class="detail-value">{{.Migration.Repository}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Target Organization</div>
+                    <div class="detail-value">{{if .Migration.TargetOrg}}{{.Migration.TargetOrg}}{{else}}-{{end}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Started At</div>
+                    <div class="detail-value">{{.Migration.StartedAt | FormatDateTime}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Last Updated</div>
+                    <div class="detail-value">{{.Migration.UpdatedAt | FormatDateTime}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Migration ID</div>
+                    <div class="detail-value">{{if .Migration.MigrationID}}{{.Migration.MigrationID}}{{else}}-{{end}}</div>
+                </div>
+                {{if .AttemptCount}}
+                <div class="detail-item">
+                    <div class="detail-label">Retry Attempts</div>
+                    <div class="detail-value">{{.AttemptCount}}</div>
+                </div>
+                {{end}}
+            </div>
         </div>
-        <div class="dashboard-table">
-            <table class="info-table">
-                <tbody>
-                    <tr>
-                        <th>Source Repository</th>
-                        <td>{{.Migration.Repository}}</td>
-                    </tr>
-                    <tr>
-                        <th>Target Organization</th>
-                        <td>{{if .Migration.TargetOrg}}{{.Migration.TargetOrg}}{{else}}-{{end}}</td>
-                    </tr>
-                    <tr>
-                        <th>Started At</th>
-                        <td>{{.Migration.StartedAt | FormatDateTime}}</td>
-                    </tr>
-                    <tr>
-                        <th>Last Updated</th>
-                        <td>{{.Migration.UpdatedAt | FormatDateTime}}</td>
-                    </tr>
-                    <tr>
-                        <th>Migration ID</th>
-                        <td>{{if .Migration.MigrationID}}{{.Migration.MigrationID}}{{else}}-{{end}}</td>
-                    </tr>
-                    {{if .AttemptCount}}
-                    <tr>
-                        <th>Retry Attempts</th>
-                        <td>{{.AttemptCount}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
-    </div>
 
-    <!-- Migration Progress Section -->
-    <div class="stats-section">
-        <div class="section-header">
-            <h3 class="section-title">Migration Progress</h3>
-        </div>
-        <div class="migration-timeline">
-            <div class="timeline-body">
-                <div class="timeline-events">
-                    {{range $i, $stage := .Stages}}
-                    <div class="timeline-event">
-                        <div class="timeline-event-marker status-{{$stage.Status}}">
-                            {{if eq $stage.Status "completed"}}
-                            <!-- Green checkmark for completed stages -->
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="timeline-icon">
-                                <path d="M20 6L9 17l-5-5"/>
-                            </svg>
-                            {{else if eq $stage.Status "current"}}
-                            <!-- Blue spinning indicator for current stage -->
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="timeline-icon current-stage-spinner">
-                                <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                            </svg>
-                            {{else if eq $stage.Status "failed"}}
-                            <!-- Red X for failed stages -->
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="timeline-icon">
-                                <line x1="18" y1="6" x2="6" y2="18"/>
-                                <line x1="6" y1="6" x2="18" y2="18"/>
-                            </svg>
-                            {{else if eq $stage.Status "skipped"}}
-                            <!-- Gray dash for skipped stages -->
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="timeline-icon">
-                                <line x1="5" y1="12" x2="19" y2="12"/>
-                            </svg>
-                            {{else}}
-                            <!-- Gray circle for pending stages -->
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="#d1d5db" stroke="none" class="timeline-icon">
-                                <circle cx="12" cy="12" r="12"/>
-                            </svg>
-                            {{end}}
-                        </div>
-                        <div class="timeline-event-content">
-                            <div class="timeline-event-header">
-                                <h4 class="timeline-event-title">{{$stage.Name | Title}}</h4>
-                                <span class="timeline-event-time status-{{$stage.Status}}">
-                                    {{if eq $stage.Status "current"}}In Progress{{else if eq $stage.Status "completed"}}Completed{{else if eq $stage.Status "failed"}}Failed{{else if eq $stage.Status "skipped"}}Skipped{{else}}Pending{{end}}
-                                </span>
-                            </div>
-                            <div class="timeline-event-details">
-                                {{$stage.Description}}
-                                {{if eq $stage.Status "current"}}
-                                <div class="stage-progress-container">
-                                    <div class="progress-bar">
-                                        <div class="progress-value status-running" data-progress="{{$.Migration.StageProgress}}"></div>
-                                    </div>
-                                    <span class="progress-text">{{$.Migration.StageProgress}}%</span>
-                                    <p class="text-muted">Current state: {{$.Migration.State | Title}}</p>
-                                </div>
-                                {{end}}
-                            </div>
-                        </div>
+        <!-- Repository Information Card -->
+        {{if .Migration.RepositorySize}}
+        <div class="detail-card">
+            <div class="detail-card__header">
+                <h3 class="detail-card__title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+                    </svg>
+                    Repository Details
+                </h3>
+            </div>
+            <div class="detail-card__content">
+                <div class="detail-item">
+                    <div class="detail-label">Repository Size</div>
+                    <div class="detail-value">{{printf "%.2f MB" (divFloat .Migration.RepositorySize 1048576)}}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-label">Size Category</div>
+                    <div class="detail-value">
+                        {{if eq .Migration.SizeCategory "Small"}}
+                            <span class="size-badge size-badge--small">{{.Migration.SizeCategory}}</span>
+                        {{else if eq .Migration.SizeCategory "Medium"}}
+                            <span class="size-badge size-badge--medium">{{.Migration.SizeCategory}}</span>
+                        {{else if eq .Migration.SizeCategory "Large"}}
+                            <span class="size-badge size-badge--large">{{.Migration.SizeCategory}}</span>
+                        {{else if eq .Migration.SizeCategory "ExtraLarge"}}
+                            <span class="size-badge size-badge--extra-large">XL</span>
+                        {{else}}
+                            <span class="size-badge">{{.Migration.SizeCategory}}</span>
+                        {{end}}
                     </div>
-                    {{end}}
                 </div>
             </div>
         </div>
+        {{end}}
     </div>
 
     {{if .Migration.Error}}
     <!-- Error Details Section -->
-    <div class="stats-section">
-        <div class="section-header">
-            <h3 class="section-title text-danger">Error Details</h3>
+    <div class="error-section">
+        <div class="error-section__header">
+            <h3 class="error-section__title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+                Error Details
+            </h3>
         </div>
-        <div class="dashboard-table">
-            <div class="error-message-container">
-                <div class="error-message">
-                    {{.Migration.Error}}
-                </div>
-            </div>
+        <div class="error-section__content">
+            <div class="error-message">{{.Migration.Error}}</div>
         </div>
     </div>
     {{end}}
@@ -191,38 +309,54 @@
 
     <!-- Archived Attempts Section -->
     {{if .ArchivedAttempts}}
-    <div class="stats-section">
-        <div class="section-header">
-            <h3 class="section-title">Archived Migration Attempts</h3>
+    <div class="archived-attempts">
+        <div class="archived-attempts__header">
+            <h3 class="archived-attempts__title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="21,8 21,21 3,21 3,8"/>
+                    <rect x="1" y="3" width="22" height="5"/>
+                    <line x1="10" y1="12" x2="14" y2="12"/>
+                </svg>
+                Archived Migration Attempts
+            </h3>
         </div>
-        <div class="dashboard-table">
-            <table class="info-table">
-                <thead>
-                    <tr>
-                        <th>Attempt Started</th>
-                        <th>Attempt Finished</th>
-                        <th>Duration</th>
-                        <th>Status</th>
-                        <th>Migration ID</th>
-                        <th>Error</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .ArchivedAttempts}}
-                    <tr class="status-{{.Status | ToLower}}">
-                        <td>{{.StartedAt | FormatDateTime}}</td>
-                        <td>{{.UpdatedAt | FormatDateTime}}</td>
-                        <td>{{.Duration | FormatDuration}}</td>
-                        <td>
-                            <span class="status-indicator status-{{.Status | ToLower}}"></span>
-                            {{.Status | Title}}
-                        </td>
-                        <td>{{if .MigrationID}}{{.MigrationID}}{{else}}-{{end}}</td>
-                        <td class="error-message-cell">{{if .Error}}{{.Error}}{{else}}-{{end}}</td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
+        <div class="archived-attempts__content">
+            <div class="table-container">
+                <table class="table">
+                    <thead class="table__header">
+                        <tr>
+                            <th class="table__header-cell">Started</th>
+                            <th class="table__header-cell">Finished</th>
+                            <th class="table__header-cell">Duration</th>
+                            <th class="table__header-cell">Status</th>
+                            <th class="table__header-cell">Migration ID</th>
+                            <th class="table__header-cell">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .ArchivedAttempts}}
+                        <tr class="table__row">
+                            <td class="table__cell">{{.StartedAt | FormatDateTime}}</td>
+                            <td class="table__cell">{{.UpdatedAt | FormatDateTime}}</td>
+                            <td class="table__cell">{{.Duration | FormatDuration}}</td>
+                            <td class="table__cell">
+                                {{if eq (.Status | ToLower) "succeeded"}}
+                                    <span class="status status--success">{{.Status | Title}}</span>
+                                {{else if eq (.Status | ToLower) "failed"}}
+                                    <span class="status status--danger">{{.Status | Title}}</span>
+                                {{else if eq (.Status | ToLower) "running"}}
+                                    <span class="status status--running">{{.Status | Title}}</span>
+                                {{else}}
+                                    <span class="status status--pending">{{.Status | Title}}</span>
+                                {{end}}
+                            </td>
+                            <td class="table__cell">{{if .MigrationID}}{{.MigrationID}}{{else}}-{{end}}</td>
+                            <td class="table__cell error-cell">{{if .Error}}{{.Error}}{{else}}-{{end}}</td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     {{end}}
@@ -243,81 +377,448 @@
 </div>
 
 <style>
-/* Additional styles specific to migration detail view */
-.stat-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-2);
+/* Enhanced Migration Detail Styles */
+.migration-header {
+    margin-bottom: var(--space-8);
+    padding: var(--space-8);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    background: linear-gradient(135deg, var(--surface-color) 0%, var(--gray-50) 100%);
+    box-shadow: var(--shadow-lg);
 }
 
-.stat-value-with-badge {
+/* Enhanced Horizontal Timeline Styles */
+.stages-timeline-horizontal {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    padding: var(--space-6) 0;
+    overflow-x: auto;
+    min-height: 120px;
+}
+
+.stage-item-horizontal {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--space-1);
+    flex: 1;
+    min-width: 140px;
+    transition: all var(--transition-base);
 }
 
-.stat-value-with-badge .stat-value {
+.stage-item-horizontal:hover {
+    transform: translateY(-2px);
+}
+
+.stage-marker-horizontal {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--surface-color);
+    border-radius: var(--radius-full);
+    background: var(--gray-200);
+    transition: all var(--transition-base);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-3);
+}
+
+/* Progressive color scheme for completed stages */
+.stage-item-horizontal:nth-child(1).completed .stage-marker-horizontal {
+    background: #22c55e; /* Green start */
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    box-shadow: var(--shadow-base);
+}
+
+.stage-item-horizontal:nth-child(2).completed .stage-marker-horizontal {
+    background: #16a34a; /* Slightly darker green */
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    box-shadow: var(--shadow-base);
+}
+
+.stage-item-horizontal:nth-child(3).completed .stage-marker-horizontal {
+    background: #059669; /* Teal green */
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    box-shadow: var(--shadow-base);
+}
+
+.stage-item-horizontal:nth-child(4).completed .stage-marker-horizontal {
+    background: #0891b2; /* Cyan */
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    box-shadow: var(--shadow-base);
+}
+
+.stage-item-horizontal:nth-child(5).completed .stage-marker-horizontal {
+    background: #0369a1; /* Blue end */
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    box-shadow: var(--shadow-base);
+}
+
+.stage-item-horizontal.failed .stage-marker-horizontal {
+    background: var(--danger-color);
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    box-shadow: var(--shadow-base);
+}
+
+.stage-item-horizontal.current .stage-marker-horizontal {
+    background: var(--primary-color);
+    border-color: var(--surface-color);
+    color: var(--text-inverse);
+    transform: scale(1.1);
+    box-shadow: var(--shadow-lg);
+}
+
+.stage-item-horizontal.pending .stage-marker-horizontal {
+    background: var(--gray-100);
+    border-color: var(--gray-300);
+    color: var(--text-muted);
+}
+
+.stage-item-horizontal:hover .stage-marker-horizontal {
+    transform: scale(1.05);
+    box-shadow: var(--shadow-lg);
+}
+
+.stage-item-horizontal.current:hover .stage-marker-horizontal {
+    transform: scale(1.15);
+}
+
+.stage-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.stage-number {
     font-size: var(--font-size-sm);
-    margin: 0;
+    font-weight: var(--font-weight-bold);
 }
 
-.stage-progress-container {
-    margin-top: var(--space-3);
-    padding: var(--space-3);
-    background-color: var(--gray-50);
-    border-radius: var(--radius-base);
-    border: 1px solid var(--border-color);
+.stage-pulse-horizontal {
+    position: absolute;
+    inset: -6px;
+    border: 2px solid var(--primary-color);
+    border-radius: var(--radius-full);
+    opacity: 0;
+    transform: scale(1);
+    animation: pulse-ring 2s infinite;
 }
 
-.stage-progress-container .progress-bar {
-    margin: var(--space-2) 0;
+.stage-pulse-horizontal.active {
+    opacity: 1;
 }
 
-.stage-progress-container .progress-text {
+@keyframes pulse-ring {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.4);
+    }
+}
+
+.stage-content-horizontal {
+    text-align: center;
+    flex: 1;
+    min-width: 0;
+}
+
+.stage-name-horizontal {
+    margin-bottom: var(--space-1);
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-color);
+    line-height: var(--line-height-tight);
+}
+
+.stage-status-text-horizontal {
+    font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
 }
 
-.current-stage-indicator,
-.pending-stage-indicator {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
+.stage-item-horizontal.completed .stage-status-text-horizontal {
+    color: var(--success-color);
 }
 
-.current-stage-indicator {
-    background-color: var(--primary-color);
-    animation: pulse 2s infinite;
+.stage-item-horizontal.failed .stage-status-text-horizontal {
+    color: var(--danger-color);
 }
 
-.pending-stage-indicator {
-    background-color: var(--gray-400);
+.stage-item-horizontal.current .stage-status-text-horizontal {
+    color: var(--primary-color);
 }
 
-.error-message-container {
+.stage-connector-horizontal {
+    position: absolute;
+    top: 24px;
+    left: calc(50% + 24px);
+    right: calc(-50% + 24px);
+    height: 3px;
+    background: var(--gray-200);
+    z-index: 1;
+}
+
+.stage-item-horizontal:last-child .stage-connector-horizontal {
+    display: none;
+}
+
+/* Progressive connector colors */
+.stage-item-horizontal:nth-child(1).completed .stage-connector-horizontal {
+    background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+}
+
+.stage-item-horizontal:nth-child(2).completed .stage-connector-horizontal {
+    background: linear-gradient(90deg, #16a34a 0%, #059669 100%);
+}
+
+.stage-item-horizontal:nth-child(3).completed .stage-connector-horizontal {
+    background: linear-gradient(90deg, #059669 0%, #0891b2 100%);
+}
+
+.stage-item-horizontal:nth-child(4).completed .stage-connector-horizontal {
+    background: linear-gradient(90deg, #0891b2 0%, #0369a1 100%);
+}
+
+.stage-progress-detail-horizontal {
+    margin-top: var(--space-2);
+    width: 100%;
+}
+
+.progress-bar-track-small {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    border-radius: var(--radius-full);
+    background: var(--gray-200);
+    overflow: hidden;
+    margin-bottom: var(--space-1);
+}
+
+.stage-progress-text-small {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
+}
+
+.migration-header__content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.migration-header__info {
+    flex: 1;
+}
+
+.migration-header__title {
+    margin: 0 0 var(--space-1);
+    font-size: var(--font-size-3xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-color);
+    line-height: var(--line-height-tight);
+}
+
+.migration-header__subtitle {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    color: var(--text-secondary);
+}
+
+.migration-header__status .status {
+    font-size: var(--font-size-sm);
+    padding: var(--space-2) var(--space-4);
+}
+
+.status-icon {
+    animation: none;
+}
+
+.status--running .status-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.migration-actions {
+    margin-bottom: var(--space-8);
+}
+
+.migration-actions__content {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
     padding: var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--surface-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.migration-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--space-6);
+    margin-bottom: var(--space-8);
+}
+
+.detail-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--surface-color);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-base);
+}
+
+.detail-card:hover {
+    box-shadow: var(--shadow-base);
+    transform: translateY(-2px);
+}
+
+.detail-card__header {
+    padding: var(--space-6) var(--space-6) var(--space-4);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.detail-card__title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-color);
+}
+
+.detail-card__content {
+    padding: var(--space-6);
+}
+
+.detail-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--gray-100);
+}
+
+.detail-item:last-child {
+    border-bottom: none;
+}
+
+.detail-label {
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
+}
+
+.detail-value {
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-color);
+    text-align: right;
+}
+
+.error-section {
+    margin-bottom: var(--space-8);
+    border: 1px solid var(--danger-color);
+    border-radius: var(--radius-lg);
+    background: var(--danger-light);
+    box-shadow: var(--shadow-sm);
+}
+
+.error-section__header {
+    padding: var(--space-6) var(--space-6) var(--space-4);
+    border-bottom: 1px solid var(--danger-color);
+}
+
+.error-section__title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--danger-dark);
+}
+
+.error-section__content {
+    padding: var(--space-6);
 }
 
 .error-message {
-    background-color: var(--danger-light);
-    border: 1px solid var(--danger-color);
-    border-radius: var(--radius-base);
     padding: var(--space-4);
-    color: var(--danger-dark);
+    border-radius: var(--radius-base);
     font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: var(--font-size-sm);
     line-height: var(--line-height-relaxed);
+    background: var(--surface-color);
+    color: var(--danger-dark);
     white-space: pre-wrap;
     word-break: break-word;
+    border: 1px solid var(--danger-color);
 }
 
-.error-message-cell {
+.archived-attempts {
+    margin-bottom: var(--space-8);
+}
+
+.archived-attempts__header {
+    margin-bottom: var(--space-4);
+}
+
+.archived-attempts__title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-color);
+}
+
+.archived-attempts__content {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background: var(--surface-color);
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+
+.error-cell {
     max-width: 300px;
     word-break: break-word;
     font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: var(--font-size-xs);
+}
+
+.stage-progress-detail {
+    margin-top: var(--space-3);
+}
+
+.stage-progress-text {
+    margin-top: var(--space-1);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
 }
 
 /* Modal styles using existing design system */
@@ -377,6 +878,94 @@
 .close:hover,
 .close:focus {
     color: var(--text-color);
+}
+
+/* Responsive Design */
+@media (width <= 1024px) {
+    .migration-details-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (width <= 768px) {
+    .migration-header {
+        padding: var(--space-6);
+    }
+    
+    .migration-header__content {
+        flex-direction: column;
+        gap: var(--space-4);
+        text-align: center;
+    }
+    
+    .migration-header__title {
+        font-size: var(--font-size-2xl);
+    }
+    
+    .migration-actions__content {
+        flex-direction: column;
+        gap: var(--space-3);
+    }
+    
+    .detail-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-1);
+    }
+    
+    .detail-value {
+        text-align: left;
+    }
+}
+
+@media (width <= 480px) {
+    .migration-header {
+        padding: var(--space-4);
+    }
+    
+    .migration-header__title {
+        font-size: var(--font-size-xl);
+    }
+    
+    .detail-card__header,
+    .detail-card__content {
+        padding: var(--space-4);
+    }
+    
+    .stages-timeline-horizontal {
+        flex-direction: column;
+        gap: var(--space-4);
+        min-height: auto;
+    }
+    
+    .stage-item-horizontal {
+        flex-direction: row;
+        align-items: center;
+        min-width: auto;
+        width: 100%;
+        text-align: left;
+    }
+    
+    .stage-marker-horizontal {
+        width: 36px;
+        height: 36px;
+        margin-bottom: 0;
+        margin-right: var(--space-3);
+        flex-shrink: 0;
+    }
+    
+    .stage-content-horizontal {
+        text-align: left;
+        flex: 1;
+    }
+    
+    .stage-connector-horizontal {
+        display: none;
+    }
+    
+    .stage-item-horizontal:hover {
+        transform: none;
+    }
 }
 </style>
 

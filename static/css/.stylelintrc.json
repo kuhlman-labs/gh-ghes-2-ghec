@@ -1,0 +1,52 @@
+{
+  "extends": [
+    "stylelint-config-standard"
+  ],
+  "plugins": [
+    "stylelint-order"
+  ],
+  "rules": {
+    "at-rule-no-unknown": [
+      true,
+      {
+        "ignoreAtRules": [
+          "extend"
+        ]
+      }
+    ],
+    "order/properties-alphabetical-order": null,
+    "order/properties-order": null,
+    "selector-class-pattern": null,
+    "selector-max-compound-selectors": null,
+    "selector-max-id": null,
+    "selector-max-specificity": null,
+    "no-descending-specificity": null,
+    "keyframes-name-pattern": null,
+    "time-min-milliseconds": null,
+    "declaration-block-single-line-max-declarations": null,
+    "number-max-precision": null,
+    "property-no-vendor-prefix": null,
+    "value-keyword-case": null,
+    "import-notation": null,
+    "media-feature-range-notation": null,
+    "color-function-notation": null,
+    "alpha-value-notation": null,
+    "declaration-block-no-redundant-longhand-properties": null,
+    "rule-empty-line-before": null,
+    "custom-property-empty-line-before": null,
+    "indentation": null,
+    "string-quotes": null,
+    "selector-list-comma-newline-after": null,
+    "block-opening-brace-space-before": null,
+    "block-closing-brace-newline-after": null,
+    "declaration-colon-space-after": null,
+    "declaration-colon-space-before": null,
+    "no-duplicate-selectors": null,
+    "declaration-block-no-duplicate-properties": null,
+    "color-hex-length": "short"
+  },
+  "ignoreFiles": [
+    "dist/**/*",
+    "node_modules/**/*"
+  ]
+} 

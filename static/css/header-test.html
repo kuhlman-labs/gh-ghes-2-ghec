@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Header Test - GitHub Migration Dashboard</title>
+    <link rel="stylesheet" href="dist/styles.css">
+</head>
+<body>
+    <header class="header">
+        <div class="container header__container">
+            <a href="/dashboard" class="header__logo">
+                <img src="/static/images/github-mark-white.png" alt="GitHub Mark" class="header__logo-icon">
+                <div class="header__logo-text">
+                    Migration Dashboard
+                </div>
+            </a>
+            <nav class="nav">
+                <ul class="nav__list">
+                    <li class="nav__item">
+                        <a href="/dashboard" class="nav__link nav__link--active">
+                            Overview
+                        </a>
+                    </li>
+                    <li class="nav__item">
+                        <a href="/dashboard/analytics" class="nav__link">
+                            Analytics
+                        </a>
+                    </li>
+                    <li class="nav__item">
+                        <a href="/dashboard/wizard" class="nav__link">
+                            New Migration
+                        </a>
+                    </li>
+                    <li class="nav__item">
+                        <a href="/dashboard/history" class="nav__link">
+                            History
+                        </a>
+                    </li>
+                    <li class="nav__item">
+                        <a href="/dashboard/errors" class="nav__link">
+                            Errors
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <main class="main container">
+        <div class="card">
+            <h1>Header Test</h1>
+            <p>This page tests the header rendering with the new CSS structure.</p>
+            <p>The header should display:</p>
+            <ul>
+                <li>A dark gradient background</li>
+                <li>GitHub logo icon and "Migration Dashboard" text on the left</li>
+                <li>Navigation links on the right with hover effects</li>
+                <li>Active state on the "Overview" link</li>
+                <li>Sticky positioning at the top</li>
+            </ul>
+        </div>
+    </main>
+</body>
+</html> 

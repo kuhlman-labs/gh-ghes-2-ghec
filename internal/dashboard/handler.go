@@ -1432,34 +1432,15 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	allMigrations := mapToSlice(migrationsMap)
 	stats := calculateStats(allMigrations)
 
-	// Create a template with just the stats HTML
-	statsTemplate := `
-		<div class="stat-card">
-			<h3>Active</h3>
-			<span class="stat-value">{{ .Active }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Succeeded</h3>
-			<span class="stat-value">{{ .Succeeded }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Failed</h3>
-			<span class="stat-value">{{ .Failed }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Total</h3>
-			<span class="stat-value">{{ .Total }}</span>
-		</div>
-	`
-
-	// Parse and execute the template using html/template which auto-escapes
-	tmpl, err := template.New("stats").Parse(statsTemplate)
-	if err != nil {
-		http.Error(w, "Failed to parse stats template", http.StatusInternalServerError)
-		return
+	// Create template data
+	data := TemplateData{
+		Stats: stats,
 	}
 
-	if err := tmpl.Execute(w, stats); err != nil {
+	// Use the stats_section template
+	err := h.templates.ExecuteTemplate(w, "stats_section", data)
+	if err != nil {
+		h.logger.Error("failed to execute stats template", "error", err)
 		http.Error(w, "Failed to render stats", http.StatusInternalServerError)
 	}
 }
@@ -1499,33 +1480,15 @@ func (h *Handler) handleQueueStats(w http.ResponseWriter, r *http.Request) {
 		"active_migrations", queueStats["active_migrations"],
 		"max_migration_threads", queueStats["max_migration_threads"])
 
-	// Create a template with just the queue stats HTML
-	queueStatsTemplate := `
-		<div class="stat-card">
-			<h3>Queue Size</h3>
-			<span class="stat-value">{{ .queue_size }}</span>
-			<span class="stat-label">/ {{ .max_queue_size }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Active Archives</h3>
-			<span class="stat-value">{{ .active_archive_generations }}</span>
-			<span class="stat-label">/ {{ .max_archive_generations }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Active Migrations</h3>
-			<span class="stat-value">{{ .active_migrations }}</span>
-			<span class="stat-label">/ {{ .max_migration_threads }}</span>
-		</div>
-	`
-
-	// Parse and execute the template using html/template which auto-escapes
-	tmpl, err := template.New("queue_stats").Parse(queueStatsTemplate)
-	if err != nil {
-		http.Error(w, "Failed to parse queue stats template", http.StatusInternalServerError)
-		return
+	// Create template data
+	data := TemplateData{
+		QueueStats: queueStats,
 	}
 
-	if err := tmpl.Execute(w, queueStats); err != nil {
+	// Use the queue_stats_section template
+	err := h.templates.ExecuteTemplate(w, "queue_stats_section", data)
+	if err != nil {
+		h.logger.Error("failed to execute queue stats template", "error", err)
 		http.Error(w, "Failed to render queue stats", http.StatusInternalServerError)
 	}
 }

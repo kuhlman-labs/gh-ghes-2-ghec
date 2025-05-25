@@ -3,6 +3,12 @@
  * Provides interactive data visualizations for the GitHub migration dashboard
  */
 
+// Global chart instances storage for proper cleanup
+const chartInstances = {};
+
+// Flag to prevent multiple initializations
+let isInitialized = false;
+
 // Chart color schemes based on our design system
 const CHART_COLORS = {
     primary: '#0366d6',
@@ -78,6 +84,12 @@ function createStatusDistributionChart(canvasId, data) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
 
+    // Destroy existing chart instance if it exists
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+        delete chartInstances[canvasId];
+    }
+
     const chartData = {
         labels: ['Succeeded', 'Running', 'Failed', 'Pending'],
         datasets: [{
@@ -104,7 +116,7 @@ function createStatusDistributionChart(canvasId, data) {
         }]
     };
 
-    return new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type: 'doughnut',
         data: chartData,
         options: {
@@ -118,6 +130,10 @@ function createStatusDistributionChart(canvasId, data) {
             cutout: '60%'
         }
     });
+
+    // Store the chart instance for future cleanup
+    chartInstances[canvasId] = chart;
+    return chart;
 }
 
 /**
@@ -126,6 +142,12 @@ function createStatusDistributionChart(canvasId, data) {
 function createMigrationTrendsChart(canvasId, data) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
+
+    // Destroy existing chart instance if it exists
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+        delete chartInstances[canvasId];
+    }
 
     const chartData = {
         labels: data.labels || [],
@@ -160,7 +182,7 @@ function createMigrationTrendsChart(canvasId, data) {
         ]
     };
 
-    return new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type: 'line',
         data: chartData,
         options: {
@@ -174,6 +196,10 @@ function createMigrationTrendsChart(canvasId, data) {
             }
         }
     });
+
+    // Store the chart instance for future cleanup
+    chartInstances[canvasId] = chart;
+    return chart;
 }
 
 /**
@@ -182,6 +208,12 @@ function createMigrationTrendsChart(canvasId, data) {
 function createSizeDistributionChart(canvasId, data) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
+
+    // Destroy existing chart instance if it exists
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+        delete chartInstances[canvasId];
+    }
 
     const chartData = {
         labels: ['Small', 'Medium', 'Large', 'Extra Large'],
@@ -211,7 +243,7 @@ function createSizeDistributionChart(canvasId, data) {
         }]
     };
 
-    return new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type: 'bar',
         data: chartData,
         options: {
@@ -225,6 +257,10 @@ function createSizeDistributionChart(canvasId, data) {
             }
         }
     });
+
+    // Store the chart instance for future cleanup
+    chartInstances[canvasId] = chart;
+    return chart;
 }
 
 /**
@@ -233,6 +269,12 @@ function createSizeDistributionChart(canvasId, data) {
 function createPerformanceChart(canvasId, data) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return null;
+
+    // Destroy existing chart instance if it exists
+    if (chartInstances[canvasId]) {
+        chartInstances[canvasId].destroy();
+        delete chartInstances[canvasId];
+    }
 
     const chartData = {
         labels: data.labels || [],
@@ -261,7 +303,7 @@ function createPerformanceChart(canvasId, data) {
         ]
     };
 
-    return new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type: 'bar',
         data: chartData,
         options: {
@@ -297,6 +339,10 @@ function createPerformanceChart(canvasId, data) {
             }
         }
     });
+
+    // Store the chart instance for future cleanup
+    chartInstances[canvasId] = chart;
+    return chart;
 }
 
 /**
@@ -310,51 +356,82 @@ function createActivityHeatmap(containerId, data) {
     const hours = Array.from({length: 24}, (_, i) => i);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     
-    let html = '<div class="heatmap-container">';
-    html += '<div class="heatmap-grid">';
+    // Clear container but preserve existing classes
+    container.innerHTML = '';
     
-    // Time labels
-    html += '<div class="time-labels">';
+    // Create a wrapper for the heatmap
+    const heatmapWrapper = document.createElement('div');
+    heatmapWrapper.className = 'heatmap-wrapper';
+    
+    // Create the grid container
+    const gridContainer = document.createElement('div');
+    gridContainer.className = 'heatmap-grid';
+    
+    // Empty cell for top-left corner
+    const cornerCell = document.createElement('div');
+    cornerCell.className = 'time-label';
+    gridContainer.appendChild(cornerCell);
+    
+    // Time labels (hours) - header row
     hours.forEach(hour => {
-        html += `<div class="time-label">${hour.toString().padStart(2, '0')}:00</div>`;
+        const timeLabel = document.createElement('div');
+        timeLabel.className = 'time-label';
+        timeLabel.textContent = `${hour.toString().padStart(2, '0')}:00`;
+        gridContainer.appendChild(timeLabel);
     });
-    html += '</div>';
     
-    // Day rows
+    // Day rows with cells
     days.forEach((day, dayIndex) => {
-        html += `<div class="day-row">`;
-        html += `<div class="day-label">${day}</div>`;
+        // Day label (first column)
+        const dayLabel = document.createElement('div');
+        dayLabel.className = 'day-label';
+        dayLabel.textContent = day;
+        gridContainer.appendChild(dayLabel);
         
+        // Hour cells for this day (24 columns)
         hours.forEach(hour => {
             const activity = (data.heatmap && data.heatmap[dayIndex] && data.heatmap[dayIndex][hour]) || 0;
             const intensity = Math.min(activity / (data.maxActivity || 1), 1);
-            const opacity = Math.max(intensity, 0.1);
             
-            html += `<div class="heatmap-cell" 
-                style="background-color: rgba(3, 102, 214, ${opacity})" 
-                data-activity="${activity}" 
-                data-day="${day}" 
-                data-hour="${hour}">
-            </div>`;
+            const cell = document.createElement('div');
+            cell.className = 'heatmap-cell';
+            cell.dataset.activity = activity;
+            cell.dataset.day = day;
+            cell.dataset.hour = hour;
+            
+            // Only apply background color if there's activity
+            if (activity > 0) {
+                const opacity = Math.max(intensity, 0.2); // Minimum opacity for visible cells
+                cell.style.backgroundColor = `rgba(3, 102, 214, ${opacity})`;
+            }
+            
+            // Add tooltip on hover
+            cell.addEventListener('mouseenter', (e) => {
+                const activityCount = parseInt(e.target.dataset.activity);
+                const dayName = e.target.dataset.day;
+                const hourValue = e.target.dataset.hour;
+                
+                // Create more detailed tooltip
+                let tooltip = `${dayName} ${hourValue}:00`;
+                if (activityCount === 0) {
+                    tooltip += ' - No migrations';
+                } else if (activityCount === 1) {
+                    tooltip += ' - 1 migration';
+                } else {
+                    tooltip += ` - ${activityCount} migrations`;
+                }
+                
+                e.target.title = tooltip;
+            });
+            
+            gridContainer.appendChild(cell);
         });
-        
-        html += '</div>';
     });
     
-    html += '</div></div>';
-    container.innerHTML = html;
+    heatmapWrapper.appendChild(gridContainer);
+    container.appendChild(heatmapWrapper);
     
-    // Add tooltips
-    container.querySelectorAll('.heatmap-cell').forEach(cell => {
-        cell.addEventListener('mouseenter', (e) => {
-            const activity = e.target.dataset.activity;
-            const day = e.target.dataset.day;
-            const hour = e.target.dataset.hour;
-            
-            // Create tooltip (you can enhance this further)
-            e.target.title = `${day} ${hour}:00 - ${activity} migrations`;
-        });
-    });
+    // Heatmap created successfully
 }
 
 /**
@@ -366,6 +443,15 @@ function initializeDashboardCharts() {
         document.addEventListener('DOMContentLoaded', initializeDashboardCharts);
         return;
     }
+
+    // Prevent multiple initializations
+    if (isInitialized) {
+        console.log('Charts already initialized, skipping...');
+        return;
+    }
+
+    console.log('Initializing dashboard charts...');
+    isInitialized = true;
 
     // Fetch chart data and initialize charts
     fetchChartData().then(data => {
@@ -436,11 +522,50 @@ async function fetchChartData() {
                 successRate: []
             },
             activity: {
-                maxActivity: 0,
-                heatmap: Array.from({length: 7}, () => Array(24).fill(0))
+                maxActivity: 10,
+                heatmap: Array.from({length: 7}, (_, dayIndex) => 
+                    Array.from({length: 24}, (_, hour) => {
+                        // Generate some sample data for demonstration
+                        // Higher activity during business hours (9-17) and weekdays
+                        const isWeekday = dayIndex >= 1 && dayIndex <= 5;
+                        const isBusinessHour = hour >= 9 && hour <= 17;
+                        
+                        if (isWeekday && isBusinessHour) {
+                            return Math.floor(Math.random() * 8) + 2; // 2-10 activity
+                        } else if (isWeekday) {
+                            return Math.floor(Math.random() * 3); // 0-3 activity
+                        } else {
+                            return Math.floor(Math.random() * 2); // 0-2 activity
+                        }
+                    })
+                )
             }
         };
     }
+}
+
+/**
+ * Destroy all chart instances
+ */
+function destroyAllCharts() {
+    Object.values(chartInstances).forEach(chart => {
+        if (chart && typeof chart.destroy === 'function') {
+            chart.destroy();
+        }
+    });
+    // Clear the instances object
+    Object.keys(chartInstances).forEach(key => delete chartInstances[key]);
+    // Reset initialization flag
+    isInitialized = false;
+    console.log('All charts destroyed and initialization flag reset');
+}
+
+/**
+ * Reinitialize all charts (destroy existing and create new ones)
+ */
+function reinitializeCharts() {
+    destroyAllCharts();
+    initializeDashboardCharts();
 }
 
 /**
@@ -449,9 +574,9 @@ async function fetchChartData() {
 function refreshCharts() {
     // This function can be called to update charts with new data
     fetchChartData().then(data => {
-        // Update existing charts
-        Object.values(Chart.instances).forEach(chart => {
-            if (chart.canvas.id === 'statusChart') {
+        // Update existing charts using our tracked instances
+        Object.entries(chartInstances).forEach(([canvasId, chart]) => {
+            if (canvasId === 'statusChart' && data.status) {
                 chart.data.datasets[0].data = [
                     data.status.succeeded,
                     data.status.running,
@@ -459,14 +584,44 @@ function refreshCharts() {
                     data.status.pending
                 ];
                 chart.update('none');
+            } else if (canvasId === 'trendsChart' && data.trends) {
+                chart.data.labels = data.trends.labels;
+                chart.data.datasets[0].data = data.trends.successful;
+                chart.data.datasets[1].data = data.trends.failed;
+                chart.data.datasets[2].data = data.trends.total;
+                chart.update('none');
+            } else if (canvasId === 'sizeChart' && data.sizes) {
+                chart.data.datasets[0].data = [
+                    data.sizes.small,
+                    data.sizes.medium,
+                    data.sizes.large,
+                    data.sizes.extraLarge
+                ];
+                chart.update('none');
+            } else if (canvasId === 'performanceChart' && data.performance) {
+                chart.data.labels = data.performance.labels;
+                chart.data.datasets[0].data = data.performance.duration;
+                chart.data.datasets[1].data = data.performance.successRate;
+                chart.update('none');
             }
-            // Add more chart updates as needed
         });
+
+        // Update activity heatmap
+        if (data.activity && document.getElementById('activityHeatmap')) {
+            createActivityHeatmap('activityHeatmap', data.activity);
+        }
+    }).catch(error => {
+        console.error('Failed to refresh charts:', error);
     });
 }
 
 // Auto-initialize charts when the script loads
 initializeDashboardCharts();
+
+// Clean up charts when page is being unloaded
+window.addEventListener('beforeunload', () => {
+    destroyAllCharts();
+});
 
 // Export functions for external use
 window.DashboardCharts = {
@@ -476,5 +631,8 @@ window.DashboardCharts = {
     createPerformanceChart,
     createActivityHeatmap,
     refreshCharts,
-    initializeDashboardCharts
+    initializeDashboardCharts,
+    destroyAllCharts,
+    reinitializeCharts,
+    chartInstances // Expose for debugging
 }; 
