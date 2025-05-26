@@ -1,6 +1,6 @@
 /**
  * Base Styles
- * 
+ *
  * Foundational styles including reset, typography, and base element styles
  * Following modern CSS best practices with accessibility considerations
  */
@@ -66,8 +66,16 @@ h6 {
 ======================================== */
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', 
-               Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Noto Sans",
+    Helvetica,
+    Arial,
+    sans-serif,
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-normal);
   line-height: 1.6;
@@ -273,4 +281,4 @@ small {
   h3 {
     page-break-after: avoid;
   }
-} 
+}

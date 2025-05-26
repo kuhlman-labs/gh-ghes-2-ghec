@@ -1,9 +1,9 @@
 /**
  * Main CSS Entry Point
- * 
+ *
  * Imports all CSS modules in the correct cascade order
  * Following ITCSS (Inverted Triangle CSS) methodology
- * 
+ *
  * Order of imports:
  * 1. Variables - Design tokens and CSS custom properties
  * 2. Base - Reset, typography, and foundational styles
@@ -15,31 +15,31 @@
 /* ========================================
    DESIGN TOKENS & VARIABLES
 ======================================== */
-@import url('_variables.css');
+@import url("_variables.css");
 
 /* ========================================
    BASE STYLES
 ======================================== */
-@import url('_base.css');
+@import url("_base.css");
 
 /* ========================================
    LAYOUT COMPONENTS
 ======================================== */
-@import url('_layout.css');
+@import url("_layout.css");
 
 /* ========================================
    UI COMPONENTS
 ======================================== */
-@import url('_components.css');
+@import url("_components.css");
 
 /* ========================================
    UTILITY CLASSES
 ======================================== */
-@import url('_utilities.css');
+@import url("_utilities.css");
 
 /* ========================================
    LEGACY COMPATIBILITY
-   
+
    Temporary compatibility layer for existing HTML
    TODO: Remove these once HTML is updated to use new classes
 ======================================== */
@@ -318,8 +318,8 @@ main {
 
 /* Optimize font loading */
 @font-face {
-  font-family: 'System UI';
-  src: local('system-ui'), local('-apple-system'), local('BlinkMacSystemFont');
+  font-family: "System UI";
+  src: local("system-ui"), local("-apple-system"), local("BlinkMacSystemFont");
   font-display: swap;
 }
 
@@ -341,7 +341,7 @@ main {
   .dashboard__controls {
     display: none !important;
   }
-  
+
   /* Optimize for print */
   .card,
   .table-container,
@@ -350,17 +350,17 @@ main {
     box-shadow: none !important;
     break-inside: avoid;
   }
-  
+
   /* Ensure good contrast */
   body {
     background: white !important;
     color: black !important;
   }
-  
+
   /* Show URLs for links */
   a[href]::after {
     font-size: 0.8em;
     color: #666;
     content: " (" attr(href) ")";
   }
-} 
+}

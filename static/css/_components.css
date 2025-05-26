@@ -1,6 +1,6 @@
 /**
  * Component Styles
- * 
+ *
  * Reusable UI components following BEM methodology
  * Using semantic tokens for consistency and maintainability
  */
@@ -11,10 +11,10 @@
 
 /**
  * Button Component
- * 
+ *
  * Base button styles with variants for different contexts.
  * Supports primary, secondary variants and small, medium sizes.
- * 
+ *
  * @example
  * <button class="btn btn--primary btn--small">Click me</button>
  */
@@ -108,7 +108,7 @@
   border-top: 2px solid currentcolor;
   border-radius: var(--radius-full);
   animation: btn-spin 1s linear infinite;
-  content: '';
+  content: "";
 }
 
 @keyframes btn-spin {
@@ -123,7 +123,7 @@
 
 /**
  * Card Component
- * 
+ *
  * Flexible container for content with consistent styling
  * Supports hover states and different padding variants
  */
@@ -163,7 +163,7 @@
 
 /**
  * Status Indicator Component
- * 
+ *
  * Visual status indicators with semantic colors
  * Used for migration status, health checks, etc.
  */
@@ -218,7 +218,8 @@
 }
 
 @keyframes status-pulse {
-  0%, 100% { opacity: 1; }
+  0%,
+  100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
 
@@ -228,7 +229,7 @@
 
 /**
  * Progress Component
- * 
+ *
  * Progress bars with semantic colors and animations
  */
 .progress {
@@ -262,16 +263,17 @@
 }
 
 .progress__bar--animated {
-  background-image: linear-gradient(
-    45deg,
-    rgb(255 255 255 / 15%) 25%,
-    transparent 25%,
-    transparent 50%,
-    rgb(255 255 255 / 15%) 50%,
-    rgb(255 255 255 / 15%) 75%,
-    transparent 75%,
-    transparent
-  );
+  background-image:
+    linear-gradient(
+      45deg,
+      rgb(255 255 255 / 15%) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgb(255 255 255 / 15%) 50%,
+      rgb(255 255 255 / 15%) 75%,
+      transparent 75%,
+      transparent
+    );
   background-size: 1rem 1rem;
   animation: progress-stripes 1s linear infinite;
 }
@@ -295,7 +297,7 @@
 
 /**
  * Size Badge Component
- * 
+ *
  * Repository size indicators with semantic colors
  */
 .size-badge {
@@ -340,7 +342,7 @@
 
 /**
  * Form Components
- * 
+ *
  * Consistent form styling with focus states and validation
  */
 .form-group {
@@ -357,7 +359,7 @@
 
 .form-label--required::after {
   color: var(--color-danger);
-  content: ' *';
+  content: " *";
 }
 
 .form-input {
@@ -431,7 +433,7 @@
   font-size: 12px;
   font-weight: var(--font-weight-bold);
   color: var(--color-text-inverse);
-  content: '✓';
+  content: "✓";
 }
 
 .checkbox__input:focus-visible {
@@ -456,7 +458,7 @@
 
 /**
  * Table Component
- * 
+ *
  * Data tables with sorting, hover states, and responsive design
  */
 .table-container {
@@ -505,19 +507,19 @@
   right: var(--size-2);
   opacity: 0.5;
   transition: opacity var(--duration-normal);
-  content: '↕';
+  content: "↕";
 }
 
 .table__header-cell--sort-asc::after {
   color: var(--color-primary);
   opacity: 1;
-  content: '↑';
+  content: "↑";
 }
 
 .table__header-cell--sort-desc::after {
   color: var(--color-primary);
   opacity: 1;
-  content: '↓';
+  content: "↓";
 }
 
 .table__cell {
@@ -544,7 +546,7 @@
 
 /**
  * Dropdown Component
- * 
+ *
  * Contextual menus and dropdowns with smooth animations
  */
 .dropdown {
@@ -607,7 +609,7 @@
 
 /**
  * Loading Components
- * 
+ *
  * Skeleton loaders and loading indicators
  */
 .loading {
@@ -621,14 +623,15 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(255 255 255 / 40%),
-    transparent
-  );
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 40%),
+      transparent
+    );
   animation: loading-shimmer 1.5s infinite;
-  content: '';
+  content: "";
 }
 
 @keyframes loading-shimmer {
@@ -638,12 +641,13 @@
 
 .skeleton {
   border-radius: var(--radius-base);
-  background: linear-gradient(
-    90deg,
-    var(--color-gray-200) 0%,
-    var(--color-gray-100) 50%,
-    var(--color-gray-200) 100%
-  );
+  background:
+    linear-gradient(
+      90deg,
+      var(--color-gray-200) 0%,
+      var(--color-gray-100) 50%,
+      var(--color-gray-200) 100%
+    );
   background-size: 200% 100%;
   animation: skeleton-pulse 1.5s ease-in-out infinite;
 }
@@ -674,7 +678,7 @@
 
 /**
  * Empty State Component
- * 
+ *
  * Placeholder content for empty data states
  */
 .empty-state {
@@ -683,11 +687,12 @@
   border: 2px dashed var(--color-border);
   border-radius: var(--radius-lg);
   text-align: center;
-  background: linear-gradient(
-    135deg,
-    var(--color-gray-50) 0%,
-    var(--color-surface) 100%
-  );
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-gray-50) 0%,
+      var(--color-surface) 100%
+    );
   color: var(--color-text-muted);
 }
 
@@ -722,4 +727,4 @@
 .empty-state__action:hover {
   background: var(--color-primary-light);
   transform: translateY(-1px);
-} 
+}

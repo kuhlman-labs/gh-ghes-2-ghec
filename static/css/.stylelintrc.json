@@ -1,6 +1,7 @@
 {
   "extends": [
-    "stylelint-config-standard"
+    "stylelint-config-standard",
+    "@stylistic/stylelint-config"
   ],
   "plugins": [
     "stylelint-order"
@@ -34,16 +35,11 @@
     "declaration-block-no-redundant-longhand-properties": null,
     "rule-empty-line-before": null,
     "custom-property-empty-line-before": null,
-    "indentation": null,
-    "string-quotes": null,
-    "selector-list-comma-newline-after": null,
-    "block-opening-brace-space-before": null,
-    "block-closing-brace-newline-after": null,
-    "declaration-colon-space-after": null,
-    "declaration-colon-space-before": null,
     "no-duplicate-selectors": null,
     "declaration-block-no-duplicate-properties": null,
-    "color-hex-length": "short"
+    "color-hex-length": "short",
+    "@stylistic/max-line-length": null,
+    "media-feature-name-value-no-unknown": null
   },
   "ignoreFiles": [
     "dist/**/*",

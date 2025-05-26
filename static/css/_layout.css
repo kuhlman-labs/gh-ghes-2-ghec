@@ -1,6 +1,6 @@
 /**
  * Layout Components
- * 
+ *
  * Page structure and layout components including header, footer, and main content areas
  * Using semantic tokens and modern CSS layout techniques
  */
@@ -11,7 +11,7 @@
 
 /**
  * Header Component
- * 
+ *
  * Main site header with navigation and branding
  * Sticky positioning with backdrop blur effect
  */
@@ -21,11 +21,12 @@
   z-index: 1000;
   height: var(--header-height);
   border-bottom: 1px solid rgb(255 255 255 / 10%);
-  background: linear-gradient(
-    135deg,
-    var(--color-gray-800) 0%,
-    var(--color-gray-900) 100%
-  );
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-gray-800) 0%,
+      var(--color-gray-900) 100%
+    );
   color: var(--color-text-inverse);
   box-shadow: var(--shadow-sm);
   backdrop-filter: blur(8px);
@@ -65,7 +66,7 @@
 
 /**
  * Navigation Component
- * 
+ *
  * Main site navigation with active states and hover effects
  */
 .nav {
@@ -111,14 +112,15 @@
   width: 0;
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(
-    90deg,
-    var(--color-primary),
-    var(--color-info)
-  );
+  background:
+    linear-gradient(
+      90deg,
+      var(--color-primary),
+      var(--color-info)
+    );
   transform: translateX(-50%);
   transition: all var(--duration-normal);
-  content: '';
+  content: "";
 }
 
 .nav__link--active::before,
@@ -163,7 +165,7 @@
   .nav__toggle {
     display: block;
   }
-  
+
   .nav__list {
     position: absolute;
     top: 100%;
@@ -180,25 +182,25 @@
     transform: translateY(-100%);
     transition: all var(--duration-normal);
   }
-  
+
   .nav__list--open {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
   }
-  
+
   .nav__item {
     width: 100%;
     height: auto;
   }
-  
+
   .nav__link {
     width: 100%;
     height: auto;
     padding: var(--size-3) var(--size-4);
     border-radius: var(--radius-base);
   }
-  
+
   .nav__link::before {
     display: none;
   }
@@ -210,7 +212,7 @@
 
 /**
  * Main Content Component
- * 
+ *
  * Primary content area with flexible layout
  */
 .main {
@@ -237,7 +239,7 @@
 
 /**
  * Footer Component
- * 
+ *
  * Site footer with consistent styling
  */
 .footer {
@@ -245,11 +247,12 @@
   margin-top: var(--size-12);
   padding: var(--size-6) 0;
   border-top: 1px solid rgb(255 255 255 / 10%);
-  background: linear-gradient(
-    135deg,
-    var(--color-gray-800) 0%,
-    var(--color-gray-900) 100%
-  );
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-gray-800) 0%,
+      var(--color-gray-900) 100%
+    );
   color: var(--color-text-inverse);
 }
 
@@ -291,7 +294,7 @@
 
 /**
  * Dashboard Layout Components
- * 
+ *
  * Main dashboard container and section layouts
  */
 .dashboard {
@@ -313,11 +316,12 @@
   font-size: var(--font-size-3xl);
   font-weight: var(--font-weight-bold);
   letter-spacing: -0.025em;
-  background: linear-gradient(
-    135deg,
-    var(--color-text) 0%,
-    var(--color-gray-600) 100%
-  );
+  background:
+    linear-gradient(
+      135deg,
+      var(--color-text) 0%,
+      var(--color-gray-600) 100%
+    );
   background-clip: text;
   background-clip: text;
   color: var(--color-text);
@@ -406,7 +410,7 @@
 
 /**
  * Wizard Layout Components
- * 
+ *
  * Multi-step form layouts with progress indicators
  */
 .wizard {
@@ -471,14 +475,14 @@
     grid-template-columns: repeat(2, 1fr);
     gap: var(--size-4);
   }
-  
+
   .dashboard__header {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--size-4);
     min-height: auto;
   }
-  
+
   .dashboard__controls {
     justify-content: flex-start;
     width: 100%;
@@ -489,47 +493,47 @@
   .main {
     padding: var(--size-6) 0;
   }
-  
+
   .dashboard__stats {
     grid-template-columns: 1fr;
     gap: var(--size-3);
   }
-  
+
   .dashboard__section {
     padding: var(--size-4);
   }
-  
+
   .dashboard__section-header {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--size-3);
   }
-  
+
   .wizard {
     padding: var(--size-4);
   }
-  
+
   .wizard__content {
     padding: var(--size-6);
   }
-  
+
   .wizard__header {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--size-4);
   }
-  
+
   .wizard__navigation {
     flex-direction: column;
     align-items: stretch;
     gap: var(--size-4);
   }
-  
+
   .wizard__actions {
     justify-content: space-between;
     width: 100%;
   }
-  
+
   .footer__links {
     flex-direction: column;
     gap: var(--size-3);
@@ -542,9 +546,9 @@
     align-items: stretch;
     gap: var(--size-2);
   }
-  
+
   .wizard__actions {
     flex-direction: column;
     gap: var(--size-2);
   }
-} 
+}

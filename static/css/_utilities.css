@@ -1,6 +1,6 @@
 /**
  * Utility Classes
- * 
+ *
  * Atomic utility classes for common styling needs
  * Following functional CSS principles for rapid development
  */
@@ -520,19 +520,19 @@
   .md\:block { display: block; }
   .md\:flex { display: flex; }
   .md\:grid { display: grid; }
-  
+
   .md\:flex-col { flex-direction: column; }
   .md\:items-start { align-items: flex-start; }
   .md\:justify-start { justify-content: flex-start; }
-  
+
   .md\:w-full { width: 100%; }
   .md\:text-sm { font-size: var(--font-size-sm); }
   .md\:text-center { text-align: center; }
-  
+
   .md\:p-4 { padding: var(--size-4); }
   .md\:px-4 { padding-right: var(--size-4); padding-left: var(--size-4); }
   .md\:py-2 { padding-top: var(--size-2); padding-bottom: var(--size-2); }
-  
+
   .md\:m-0 { margin: 0; }
   .md\:mt-4 { margin-top: var(--size-4); }
   .md\:mb-4 { margin-bottom: var(--size-4); }
@@ -542,12 +542,12 @@
   .sm\:hidden { display: none; }
   .sm\:block { display: block; }
   .sm\:flex { display: flex; }
-  
+
   .sm\:flex-col { flex-direction: column; }
   .sm\:w-full { width: 100%; }
   .sm\:text-xs { font-size: var(--font-size-xs); }
   .sm\:text-center { text-align: center; }
-  
+
   .sm\:p-2 { padding: var(--size-2); }
   .sm\:px-3 { padding-right: var(--size-3); padding-left: var(--size-3); }
-} 
+}

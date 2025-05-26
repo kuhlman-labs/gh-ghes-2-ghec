@@ -1,6 +1,6 @@
 /**
  * Design System Variables
- * 
+ *
  * Semantic token system with primitive, semantic, and component tokens
  * Following the three-tier token architecture for maintainability
  */
@@ -9,7 +9,7 @@
   /* ========================================
      PRIMITIVE TOKENS (Base Values)
   ======================================== */
-  
+
   /* Color Primitives */
   --color-blue-50: #eff6ff;
   --color-blue-100: #dbeafe;
@@ -46,7 +46,7 @@
   --color-yellow-500: #eab308;
   --color-yellow-600: #ca8a04;
   --color-yellow-700: #a16207;
-  
+
   /* Size Primitives */
   --size-1: 0.25rem;   /* 4px */
   --size-2: 0.5rem;    /* 8px */
@@ -59,7 +59,7 @@
   --size-12: 3rem;     /* 48px */
   --size-16: 4rem;     /* 64px */
   --size-20: 5rem;     /* 80px */
-  
+
   /* Space Primitives (for spacing/layout) */
   --space-1: 0.25rem;   /* 4px */
   --space-2: 0.5rem;    /* 8px */
@@ -69,7 +69,7 @@
   --space-6: 1.5rem;    /* 24px */
   --space-8: 2rem;      /* 32px */
   --space-10: 2.5rem;   /* 40px */
-  
+
   /* Font Size Primitives */
   --font-size-xs: 0.75rem;    /* 12px */
   --font-size-sm: 0.875rem;   /* 14px */
@@ -79,52 +79,52 @@
   --font-size-2xl: 1.5rem;    /* 24px */
   --font-size-3xl: 1.875rem;  /* 30px */
   --font-size-4xl: 2.25rem;   /* 36px */
-  
+
   /* Font Weight Primitives */
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
   --font-weight-bold: 700;
-  
+
   /* Border Radius Primitives */
   --radius-sm: 0.375rem;  /* 6px */
   --radius-base: 0.5rem;  /* 8px */
   --radius-lg: 0.75rem;   /* 12px */
   --radius-xl: 1rem;      /* 16px */
   --radius-full: 9999px;
-  
+
   /* Duration Primitives */
   --duration-fast: 150ms;
   --duration-normal: 200ms;
   --duration-slow: 300ms;
-  
+
   /* Transition Aliases */
   --transition-fast: var(--duration-fast);
   --transition-base: var(--duration-normal);
   --transition-slow: var(--duration-slow);
-  
+
   /* Shadow Primitives */
   --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 5%);
   --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 10%), 0 1px 2px 0 rgb(0 0 0 / 6%);
   --shadow-base: 0 4px 6px -1px rgb(0 0 0 / 10%), 0 2px 4px -1px rgb(0 0 0 / 6%);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -2px rgb(0 0 0 / 5%);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 10%), 0 10px 10px -5px rgb(0 0 0 / 4%);
-  
+
   /* ========================================
      SEMANTIC TOKENS (Contextual Meaning)
   ======================================== */
-  
+
   /* Brand Colors */
   --color-primary: var(--color-blue-600);
   --color-primary-hover: var(--color-blue-700);
   --color-primary-light: var(--color-blue-100);
   --color-primary-dark: var(--color-blue-800);
-  
+
   /* Primary Color Aliases (for backward compatibility) */
   --primary-color: var(--color-primary);
   --primary-light: var(--color-primary-light);
   --primary-dark: var(--color-primary-dark);
-  
+
   /* Status Colors */
   --color-success: var(--color-green-600);
   --color-success-light: var(--color-green-100);
@@ -138,7 +138,7 @@
   --color-info: var(--color-blue-500);
   --color-info-light: var(--color-blue-50);
   --color-info-dark: var(--color-blue-700);
-  
+
   /* Status Color Aliases (for backward compatibility) */
   --success-color: var(--color-success);
   --success-light: var(--color-success-light);
@@ -155,18 +155,18 @@
   --error-color: var(--color-danger);
   --error-light: var(--color-danger-light);
   --error-dark: var(--color-danger-dark);
-  
+
   /* Surface Colors */
   --color-background: var(--color-gray-50);
   --color-surface: #fff;
   --color-surface-elevated: #fff;
   --color-border: var(--color-gray-200);
   --color-border-focus: var(--color-primary);
-  
+
   /* Surface Color Aliases (for backward compatibility) */
   --surface-color: var(--color-surface);
   --border-color: var(--color-border);
-  
+
   /* Gray Color Aliases (for backward compatibility) */
   --gray-50: var(--color-gray-50);
   --gray-100: var(--color-gray-100);
@@ -178,29 +178,29 @@
   --gray-700: var(--color-gray-700);
   --gray-800: var(--color-gray-800);
   --gray-900: var(--color-gray-900);
-  
+
   /* Text Colors */
   --color-text: var(--color-gray-900);
   --color-text-secondary: var(--color-gray-600);
   --color-text-muted: var(--color-gray-500);
   --color-text-inverse: #fff;
   --color-text-link: var(--color-primary);
-  
+
   /* Text Color Aliases (for backward compatibility) */
   --text-color: var(--color-text);
   --text-secondary: var(--color-text-secondary);
   --text-muted: var(--color-text-muted);
   --text-inverse: var(--color-text-inverse);
-  
+
   /* Focus Colors */
   --color-focus: var(--color-primary);
   --color-focus-danger: var(--color-danger);
   --color-focus-success: var(--color-success);
-  
+
   /* ========================================
      COMPONENT TOKENS (Specific Usage)
   ======================================== */
-  
+
   /* Button Tokens */
   --button-padding-x: var(--size-4);
   --button-padding-y: var(--size-2);
@@ -218,7 +218,7 @@
   --button-secondary-bg-hover: var(--color-gray-50);
   --button-secondary-text: var(--color-text);
   --button-secondary-border: var(--color-border);
-  
+
   /* Card Tokens */
   --card-padding: var(--size-6);
   --card-border-radius: var(--radius-lg);
@@ -226,7 +226,7 @@
   --card-border: 1px solid var(--color-border);
   --card-shadow: var(--shadow-sm);
   --card-shadow-hover: var(--shadow-base);
-  
+
   /* Input Tokens */
   --input-padding-x: var(--size-3);
   --input-padding-y: var(--size-2);
@@ -235,47 +235,47 @@
   --input-border-focus: 1px solid var(--color-border-focus);
   --input-background: var(--color-surface);
   --input-text: var(--color-text);
-  
+
   /* Table Tokens */
   --table-cell-padding-x: var(--size-3);
   --table-cell-padding-y: var(--size-4);
   --table-header-background: var(--color-gray-50);
   --table-border: 1px solid var(--color-border);
   --table-row-hover: var(--color-gray-50);
-  
+
   /* Layout Tokens */
   --header-height: 64px;
   --sidebar-width: 280px;
   --content-max-width: 1440px;
   --container-padding: var(--size-4);
   --container-padding-lg: var(--size-8);
-  
+
   /* Icon Tokens */
   --icon-size-sm: 16px;
   --icon-size-base: 20px;
   --icon-size-lg: 24px;
   --icon-size-xl: 32px;
-  
+
   /* Timeline Tokens */
   --timeline-marker-size: 24px;
   --timeline-line-width: 2px;
   --timeline-spacing: var(--size-8);
-  
+
   /* Progress Tokens */
   --progress-height: 8px;
   --progress-border-radius: var(--radius-full);
   --progress-background: var(--color-gray-200);
   --progress-fill: var(--color-primary);
-  
+
   /* Focus Ring Tokens */
   --focus-ring: 0 0 0 3px rgb(59 130 246 / 30%);
   --focus-ring-danger: 0 0 0 3px rgb(239 68 68 / 30%);
   --focus-ring-success: 0 0 0 3px rgb(34 197 94 / 30%);
-  
+
   /* Breakpoint Tokens */
   --breakpoint-sm: 640px;
   --breakpoint-md: 768px;
   --breakpoint-lg: 1024px;
   --breakpoint-xl: 1280px;
   --breakpoint-2xl: 1536px;
-} 
+}
