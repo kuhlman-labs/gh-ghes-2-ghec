@@ -87,34 +87,52 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
       - name: Azure CLI Action - Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Terraform Init
-        run: |
-          cd terraform
-          terraform init
-        env:
-          TF_VAR_github_owner: ${{ github.repository_owner }}
-          TF_VAR_github_username: ${{ github.actor }}
-          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Terraform Apply
-        run: |
-          cd terraform
-          terraform apply -auto-approve
-        env:
-          TF_VAR_github_owner: ${{ github.repository_owner }}
-          TF_VAR_github_username: ${{ github.actor }}
-          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Azure CLI Action - Deploy Azure Resources
+        uses: Azure/cli@v2.1.0
+        with:
+          inlineScript: |
+            # Create resource group
+            az group create \
+              --name gh-ghes-2-ghec-rg \
+              --location "East US 2"
+            
+            # Create App Service Plan
+            az appservice plan create \
+              --name gh-ghes-2-ghec-plan \
+              --resource-group gh-ghes-2-ghec-rg \
+              --sku B1 \
+              --is-linux
+            
+            # Create Web App
+            az webapp create \
+              --name gh-ghes-2-ghec-app \
+              --resource-group gh-ghes-2-ghec-rg \
+              --plan gh-ghes-2-ghec-plan \
+              --deployment-container-image-name ghcr.io/${{ github.repository }}:latest
+            
+            # Configure container registry settings
+            az webapp config appsettings set \
+              --name gh-ghes-2-ghec-app \
+              --resource-group gh-ghes-2-ghec-rg \
+              --settings \
+                WEBSITES_ENABLE_APP_SERVICE_STORAGE=false \
+                DOCKER_REGISTRY_SERVER_URL=https://ghcr.io \
+                DOCKER_REGISTRY_SERVER_USERNAME=${{ github.actor }} \
+                DOCKER_REGISTRY_SERVER_PASSWORD=${{ secrets.GITHUB_TOKEN }}
+            
+            # Enable always on
+            az webapp config set \
+              --name gh-ghes-2-ghec-app \
+              --resource-group gh-ghes-2-ghec-rg \
+              --always-on true
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: gh-ghes-2-ghec-app
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} 
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

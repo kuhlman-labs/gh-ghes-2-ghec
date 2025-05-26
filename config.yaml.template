@@ -43,7 +43,7 @@ metrics:
 
 ### Storage Configuration ###
 storage:
-  enabled: true                       # Enable persistent storage of migration status
+  enabled: false                       # Enable persistent storage of migration status
   type: "sqlite"                      # Storage backend type: sqlite, mysql, or postgres
   connection_string: "./data/migrations.db"  # For sqlite: file path; for mysql/postgres: DSN connection string
   table_prefix: ""                    # Optional prefix for database table names (useful for shared databases)
