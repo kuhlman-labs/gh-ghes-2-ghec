@@ -61,8 +61,8 @@ func TestValidateCmd_ValidJSON(t *testing.T) {
 		TargetOrg:    "target-org",
 		Repositories: []string{"repo1"},
 		GHESBaseURL:  "https://ghes.example.com",
-		GHESToken:    "ghes-token-0123456789012345678901234567",
-		GHCloudToken: "ghcloud-token-0123456789012345678901234",
+		GHESToken:    "ghp_123456789012345678901234567890123456",
+		GHCloudToken: "ghp_123456789012345678901234567890123456",
 	}
 	enc := json.NewEncoder(tempFile)
 	if err := enc.Encode(validReq); err != nil {

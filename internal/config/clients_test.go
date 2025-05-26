@@ -17,8 +17,8 @@ func TestNewClients(t *testing.T) {
 	}{
 		{
 			name:         "valid tokens",
-			ghesToken:    "ghes-token",
-			ghCloudToken: "ghcloud-token",
+			ghesToken:    "ghp_123456789012345678901234567890123456",
+			ghCloudToken: "ghp_123456789012345678901234567890123456",
 			wantErr:      false,
 		},
 		{
@@ -85,8 +85,8 @@ func TestUpdateGHESBaseURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &ClientsConfig{
-				GHESToken:    "ghes-token",
-				GHCloudToken: "ghcloud-token",
+				GHESToken:    "ghp_123456789012345678901234567890123456",
+				GHCloudToken: "ghp_123456789012345678901234567890123456",
 				Proxy: ProxyConfig{
 					Enabled: false,
 				},
@@ -161,8 +161,8 @@ func TestClientWithProxy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &ClientsConfig{
-				GHESToken:    "ghes-token",
-				GHCloudToken: "ghcloud-token",
+				GHESToken:    "ghp_123456789012345678901234567890123456",
+				GHCloudToken: "ghp_123456789012345678901234567890123456",
 				Proxy: ProxyConfig{
 					Enabled:     tt.enabled,
 					URL:         tt.proxyURL,

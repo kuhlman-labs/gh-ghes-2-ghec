@@ -1,0 +1,36 @@
+{{define "timeline_section"}}
+<div class="timeline__events">
+    {{if eq (len .RecentActivity) 0}}
+    <div class="empty-state">
+        <div class="empty-state__icon">📅</div>
+        <h3 class="empty-state__title">No recent activity</h3>
+        <p class="empty-state__description">Migration activity will appear here as it happens</p>
+    </div>
+    {{else}}
+    {{range .RecentActivity}}
+    <div class="timeline__event">
+        <div class="timeline__event-marker">
+            {{if eq (.Status | ToLower) "running"}}
+                <div class="w-3 h-3 rounded-full bg-primary"></div>
+            {{else if eq (.Status | ToLower) "succeeded"}}
+                <div class="w-3 h-3 rounded-full bg-success"></div>
+            {{else if eq (.Status | ToLower) "failed"}}
+                <div class="w-3 h-3 rounded-full bg-danger"></div>
+            {{else}}
+                <div class="w-3 h-3 rounded-full bg-muted"></div>
+            {{end}}
+        </div>
+        <div class="timeline__event-content">
+            <div class="timeline__event-header">
+                <h4 class="timeline__event-title">{{.Repository}}</h4>
+                <span class="timeline__event-time text-sm text-muted">{{.ActivityTime | FormatTime}}</span>
+            </div>
+            <div class="timeline__event-details text-sm">
+                {{.ActivityDescription}}
+            </div>
+        </div>
+    </div>
+    {{end}}
+    {{end}}
+</div>
+{{end}} 

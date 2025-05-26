@@ -309,3 +309,95 @@ func TestGetQueuedRepositories(t *testing.T) {
 		t.Errorf("Expected fewer than %d queued repositories after processing, got %d", len(repos), len(queuedAfter))
 	}
 }
+
+func TestQueueManager_AggressiveSlotFilling(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	// Mock job handlers that just record what jobs were executed
+	var archiveJobs, migrationJobs []string
+	var jobsMutex sync.Mutex
+
+	archiveHandler := func(job *MigrationJob) error {
+		jobsMutex.Lock()
+		defer jobsMutex.Unlock()
+		archiveJobs = append(archiveJobs, job.Repository)
+		return nil
+	}
+
+	migrationHandler := func(job *MigrationJob) error {
+		jobsMutex.Lock()
+		defer jobsMutex.Unlock()
+		migrationJobs = append(migrationJobs, job.Repository)
+		return nil
+	}
+
+	// Create a queue manager with 2 workers each for testing
+	qm := NewQueueManager(
+		logger,
+		100, // maxQueueSize
+		2,   // maxArchiveThreads (using 2 for faster testing)
+		2,   // maxMigrationThreads (using 2 for faster testing)
+		archiveHandler,
+		migrationHandler,
+	)
+
+	// Start the queue manager
+	qm.Start()
+	defer qm.Stop()
+
+	// Add some jobs with different priorities
+	repoNames := []string{
+		"org/repo1", // High priority
+		"org/repo2", // Medium priority
+		"org/repo3", // Low priority
+		"org/repo4", // Medium priority
+		"org/repo5", // High priority
+	}
+
+	priorities := []int{
+		PriorityHigh,
+		PriorityMedium,
+		PriorityLow,
+		PriorityMedium,
+		PriorityHigh,
+	}
+
+	// Enqueue archive jobs
+	for i, repo := range repoNames {
+		err := qm.EnqueueArchiveJob(repo, repo, priorities[i])
+		if err != nil {
+			t.Fatalf("Failed to enqueue job for %s: %v", repo, err)
+		}
+	}
+
+	// Give some time for jobs to be processed
+	time.Sleep(500 * time.Millisecond)
+
+	// Check queue stats
+	stats := qm.GetQueueStats()
+	t.Logf("Queue stats: %+v", stats)
+
+	// Wait a bit longer to ensure all jobs are processed
+	time.Sleep(1 * time.Second)
+
+	// Verify that all jobs were processed
+	jobsMutex.Lock()
+	defer jobsMutex.Unlock()
+
+	if len(archiveJobs) != len(repoNames) {
+		t.Errorf("Expected %d archive jobs to be processed, got %d", len(repoNames), len(archiveJobs))
+	}
+
+	// Expect high priority jobs first, then medium, then low
+	// This is an approximate test since concurrency can affect the exact order
+	highPriorityFirst := false
+	for i, repo := range archiveJobs {
+		if i == 0 && (repo == "org/repo1" || repo == "org/repo5") {
+			highPriorityFirst = true
+		}
+	}
+
+	if !highPriorityFirst {
+		t.Errorf("Expected high priority jobs to be processed first, got order: %v", archiveJobs)
+	}
+}

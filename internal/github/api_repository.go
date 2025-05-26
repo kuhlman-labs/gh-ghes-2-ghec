@@ -418,3 +418,193 @@ func (a *GitHubAPI) GetRepositorySize(ctx context.Context, org, repo string) (in
 	)
 	return sizeInBytes, nil
 }
+
+// ValidateGHESOrganization checks if an organization exists and is accessible on GitHub Enterprise Server.
+// It makes a REST API call to the GHES instance and verifies the organization's existence and accessibility.
+// Returns an error if the organization doesn't exist, can't be accessed, or if there are API issues.
+func (a *GitHubAPI) ValidateGHESOrganization(ctx context.Context, org string) error {
+	startTime := time.Now()
+	a.logger.Debug("Validating GHES organization",
+		"api", "GHES_REST",
+		"method", "Organizations.Get",
+		"org", org,
+	)
+
+	var respStatus int
+	err := a.circuitProtectedGhesOperation(ctx, "validate_ghes_organization", func() error {
+		_, resp, err := a.clients.GHESClient.Organizations.Get(ctx, org)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("GHES organization validation failed",
+			"api", "GHES_REST",
+			"method", "Organizations.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"error", err,
+		)
+		return a.classifyGitHubError(err)
+	}
+
+	a.logger.Debug("GHES organization validation successful",
+		"api", "GHES_REST",
+		"method", "Organizations.Get",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+	)
+	return nil
+}
+
+// ValidateGHCloudOrganization checks if an organization exists and is accessible on GitHub Enterprise Cloud.
+// It makes a REST API call to the GHEC instance and verifies the organization's existence and accessibility.
+// Returns an error if the organization doesn't exist, can't be accessed, or if there are API issues.
+func (a *GitHubAPI) ValidateGHCloudOrganization(ctx context.Context, org string) error {
+	startTime := time.Now()
+	a.logger.Debug("Validating GitHub Cloud organization",
+		"api", "GHEC_REST",
+		"method", "Organizations.Get",
+		"org", org,
+	)
+
+	var respStatus int
+	err := a.circuitProtectedGhCloudOperation(ctx, "validate_ghcloud_organization", func() error {
+		_, resp, err := a.clients.GHCloudClient.Organizations.Get(ctx, org)
+		if resp != nil {
+			respStatus = resp.StatusCode
+		}
+		return err
+	})
+
+	duration := time.Since(startTime)
+
+	if err != nil {
+		a.logger.Error("GitHub Cloud organization validation failed",
+			"api", "GHEC_REST",
+			"method", "Organizations.Get",
+			"duration_ms", duration.Milliseconds(),
+			"status_code", respStatus,
+			"org", org,
+			"error", err,
+		)
+		return a.classifyGitHubError(err)
+	}
+
+	a.logger.Debug("GitHub Cloud organization validation successful",
+		"api", "GHEC_REST",
+		"method", "Organizations.Get",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+	)
+	return nil
+}
+
+// ListOrganizationRepositories retrieves all repositories from a GitHub Enterprise Server organization.
+// It uses pagination to fetch all repositories and returns them as a slice of Repository structs.
+// This method makes multiple API calls if needed to get all repositories.
+func (a *GitHubAPI) ListOrganizationRepositories(ctx context.Context, org string) ([]Repository, error) {
+	startTime := time.Now()
+	a.logger.Debug("Listing organization repositories",
+		"api", "GHES_REST",
+		"method", "Repositories.ListByOrg",
+		"org", org,
+	)
+
+	var allRepos []Repository
+	var respStatus int
+
+	// GitHub API pagination starts at page 1
+	page := 1
+	perPage := 100 // Maximum allowed by GitHub API
+
+	for {
+		var repos []*github.Repository
+
+		err := a.circuitProtectedGhesOperation(ctx, "list_organization_repositories", func() error {
+			opt := &github.RepositoryListByOrgOptions{
+				ListOptions: github.ListOptions{
+					Page:    page,
+					PerPage: perPage,
+				},
+			}
+
+			var resp *github.Response
+			var err error
+			repos, resp, err = a.clients.GHESClient.Repositories.ListByOrg(ctx, org, opt)
+			if resp != nil {
+				respStatus = resp.StatusCode
+			}
+			return err
+		})
+
+		if err != nil {
+			duration := time.Since(startTime)
+			a.logger.Error("Failed to list organization repositories",
+				"api", "GHES_REST",
+				"method", "Repositories.ListByOrg",
+				"duration_ms", duration.Milliseconds(),
+				"status_code", respStatus,
+				"org", org,
+				"page", page,
+				"error", err,
+			)
+			return nil, a.classifyGitHubError(err)
+		}
+
+		// Convert GitHub repositories to our Repository struct
+		for _, repo := range repos {
+			description := ""
+			if repo.Description != nil {
+				description = *repo.Description
+			}
+
+			// GitHub API returns size in KB, convert to bytes
+			sizeInBytes := int64(repo.GetSize()) * 1024
+
+			allRepos = append(allRepos, Repository{
+				Name:        repo.GetName(),
+				Description: description,
+				Size:        sizeInBytes,
+				Private:     repo.GetPrivate(),
+			})
+		}
+
+		// If we got fewer results than requested, we've reached the last page
+		if len(repos) < perPage {
+			break
+		}
+
+		page++
+
+		// Safety check to prevent infinite loops (GitHub shouldn't have more than 10,000 repos per org)
+		if page > 100 {
+			a.logger.Warn("Reached maximum page limit while fetching repositories",
+				"org", org,
+				"page", page,
+				"repos_fetched", len(allRepos),
+			)
+			break
+		}
+	}
+
+	duration := time.Since(startTime)
+	a.logger.Debug("Organization repositories listed successfully",
+		"api", "GHES_REST",
+		"method", "Repositories.ListByOrg",
+		"duration_ms", duration.Milliseconds(),
+		"status_code", respStatus,
+		"org", org,
+		"total_repos", len(allRepos),
+		"pages_fetched", page,
+	)
+
+	return allRepos, nil
+}

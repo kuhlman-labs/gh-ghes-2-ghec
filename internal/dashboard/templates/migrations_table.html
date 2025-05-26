@@ -1,59 +1,98 @@
 {{define "migrations_table"}}
-<span id="last-updated-timestamp" class="last-refreshed" style="display: none;">Last updated: {{.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
-<table>
-    <thead>
-        <tr>
-            <th class="sortable" data-column="repository">Source Repository</th>
-            <th class="sortable" data-column="status">Status</th>
-            <th class="sortable" data-column="stage">Stage</th>
-            <th class="sortable" data-column="progress">Progress</th>
-            <th class="sortable" data-column="size">Size</th>
-            <th class="sortable" data-column="started_at">Started</th>
-            <th class="sortable" data-column="duration">Duration</th>
-            <th class="actions-column">Actions</th>
+<table class="table">
+    <thead class="table__header">
+        <tr class="table__row">
+            <th class="table__header-cell table__header-cell--sortable" data-column="repository">Source Repository</th>
+            <th class="table__header-cell table__header-cell--sortable" data-column="status">Status</th>
+            <th class="table__header-cell table__header-cell--sortable" data-column="stage">Stage</th>
+            <th class="table__header-cell table__header-cell--sortable" data-column="progress">Progress</th>
+            <th class="table__header-cell table__header-cell--sortable" data-column="size">Size</th>
+            <th class="table__header-cell table__header-cell--sortable" data-column="started_at">Started</th>
+            <th class="table__header-cell table__header-cell--sortable" data-column="duration">Duration</th>
+            <th class="table__header-cell">Actions</th>
         </tr>
     </thead>
     <tbody>
         {{if eq (len .Migrations) 0}}
-        <tr>
-            <td colspan="8" class="empty-state">
-                <p>No active migrations found</p>
-                <p>Completed migrations can be viewed in the <a href="/dashboard/history">History</a> page</p>
+        <tr class="table__row">
+            <td colspan="8" class="table__cell">
+                <div class="empty-state">
+                    <div class="empty-state__icon">📋</div>
+                    <h3 class="empty-state__title">No Active Migrations</h3>
+                    <p class="empty-state__description">
+                        No active migrations found. Completed and failed migrations can be viewed in the 
+                        <a href="/dashboard/history" class="text-primary hover:underline">History</a> page.
+                    </p>
+                </div>
             </td>
         </tr>
         {{else}}
         {{range .Migrations}}
-        <tr class="status-{{.Status | ToLower}}">
-            <td>{{.Repository}}</td>
-            <td>
-                <span class="status-indicator status-{{.Status | ToLower}}"></span>
-                {{.Status | Title}}
+        <tr class="table__row">
+            <td class="table__cell font-medium">{{.Repository}}</td>
+            <td class="table__cell">
+                {{if eq (.Status | ToLower) "running"}}
+                    <span class="status status--running">{{.Status | Title}}</span>
+                {{else if eq (.Status | ToLower) "succeeded"}}
+                    <span class="status status--success">{{.Status | Title}}</span>
+                {{else if eq (.Status | ToLower) "failed"}}
+                    <span class="status status--danger">{{.Status | Title}}</span>
+                {{else if eq (.Status | ToLower) "pending"}}
+                    <span class="status status--pending">{{.Status | Title}}</span>
+                {{else}}
+                    <span class="status">{{.Status | Title}}</span>
+                {{end}}
             </td>
-            <td>
+            <td class="table__cell">
                 {{if .Stage}}
-                {{.Stage | Title}}: {{.State | Title}}
+                    <div class="text-sm">
+                        <div class="font-medium">{{.Stage | Title}}</div>
+                        <div class="text-muted">{{.State | Title}}</div>
+                    </div>
                 {{else}}
-                -
+                    <span class="text-muted">-</span>
                 {{end}}
             </td>
-            <td>
-                <div class="progress-bar">
-                    <div class="progress-value status-{{.Status | ToLower}}" data-progress="{{.Progress}}"></div>
+            <td class="table__cell">
+                <div class="flex items-center gap-3">
+                    <div class="progress flex-1">
+                        {{if eq (.Status | ToLower) "succeeded"}}
+                            <div class="progress__bar progress__bar--success" style="width: {{.Progress}}%"></div>
+                        {{else if eq (.Status | ToLower) "failed"}}
+                            <div class="progress__bar progress__bar--danger" style="width: {{.Progress}}%"></div>
+                        {{else if eq (.Status | ToLower) "running"}}
+                            <div class="progress__bar progress__bar--animated" style="width: {{.Progress}}%"></div>
+                        {{else}}
+                            <div class="progress__bar" style="width: {{.Progress}}%"></div>
+                        {{end}}
+                    </div>
+                    <span class="progress__text">{{.Progress}}%</span>
                 </div>
-                <span class="progress-text">{{.Progress}}%</span>
             </td>
-            <td>
+            <td class="table__cell">
                 {{if .RepositorySize}}
-                <span class="size-badge size-{{.SizeCategory}}">{{.SizeCategory}}</span>
-                {{printf "%.1f MB" (divFloat .RepositorySize 1048576)}}
+                    <div class="flex items-center gap-2">
+                        {{if eq .SizeCategory "Small"}}
+                            <span class="size-badge size-badge--small">{{.SizeCategory}}</span>
+                        {{else if eq .SizeCategory "Medium"}}
+                            <span class="size-badge size-badge--medium">{{.SizeCategory}}</span>
+                        {{else if eq .SizeCategory "Large"}}
+                            <span class="size-badge size-badge--large">{{.SizeCategory}}</span>
+                        {{else if eq .SizeCategory "ExtraLarge"}}
+                            <span class="size-badge size-badge--extra-large">XL</span>
+                        {{else}}
+                            <span class="size-badge">{{.SizeCategory}}</span>
+                        {{end}}
+                        <span class="text-sm text-muted">{{printf "%.1f MB" (divFloat .RepositorySize 1048576)}}</span>
+                    </div>
                 {{else}}
-                -
+                    <span class="text-muted">-</span>
                 {{end}}
             </td>
-            <td>{{.StartedAt | FormatTime}}</td>
-            <td>{{.Duration | FormatDuration}}</td>
-            <td class="actions-column">
-                <a href="/dashboard/migration/{{.Repository}}" class="btn btn-sm btn-secondary">
+            <td class="table__cell text-sm">{{.StartedAt | FormatTime}}</td>
+            <td class="table__cell text-sm">{{.Duration | FormatDuration}}</td>
+            <td class="table__cell">
+                <a href="/dashboard/migration/{{.Repository}}" class="btn btn--small btn--secondary">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                         <path d="M15 3h6v6"/>
@@ -71,7 +110,7 @@
 <script>
     // Function to set up sorting functionality
     function setupTableSorting() {
-        const sortableHeaders = document.querySelectorAll('th.sortable');
+        const sortableHeaders = document.querySelectorAll('.table__header-cell--sortable');
         const sortByInput = document.querySelector('input[name="sort-by"]');
         const sortDirInput = document.querySelector('input[name="sort-dir"]');
         
@@ -81,7 +120,8 @@
         if (sortByInput.value) {
             const header = document.querySelector(`th[data-column="${sortByInput.value}"]`);
             if (header) {
-                header.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+                header.classList.remove('table__header-cell--sort-asc', 'table__header-cell--sort-desc');
+                header.classList.add(sortDirInput.value === 'desc' ? 'table__header-cell--sort-desc' : 'table__header-cell--sort-asc');
             }
         }
         
@@ -104,10 +144,10 @@
                 }
                 
                 // Update UI immediately to show which column is being sorted
-                document.querySelectorAll('th.sortable').forEach(th => {
-                    th.classList.remove('sort-asc', 'sort-desc');
+                document.querySelectorAll('.table__header-cell--sortable').forEach(th => {
+                    th.classList.remove('table__header-cell--sort-asc', 'table__header-cell--sort-desc');
                 });
-                this.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+                this.classList.add(sortDirInput.value === 'desc' ? 'table__header-cell--sort-desc' : 'table__header-cell--sort-asc');
                 
                 // Trigger refresh
                 document.body.dispatchEvent(new Event('refreshTable'));
@@ -115,22 +155,12 @@
         });
     }
     
-    // Initialize progress bars
-    function initializeProgressBars() {
-        document.querySelectorAll('.progress-value').forEach(function(el) {
-            const progress = parseFloat(el.getAttribute('data-progress'));
-            el.style.width = progress + '%';
-        });
-    }
-    
     // Run initialization when DOM content is loaded
     document.addEventListener('DOMContentLoaded', function() {
         setupTableSorting();
-        initializeProgressBars();
     });
     
     // Also run initialization immediately for AJAX refreshes
     setupTableSorting();
-    initializeProgressBars();
 </script>
 {{end}} 

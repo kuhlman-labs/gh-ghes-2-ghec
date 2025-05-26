@@ -1,24 +1,21 @@
 # Git
 .git
 .gitignore
+.gitattributes
 
-# Build artifacts
-gh-ghes-2-ghec
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Documentation
+README.md
+*.md
+docs/
 
-# Test and coverage files
-*.test
-*.out
-coverage.html
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
-# Logs
-*.log
-
-# OS specific files
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -27,16 +24,34 @@ coverage.html
 ehthumbs.db
 Thumbs.db
 
-# Editor directories and files
-.idea/
-.vscode/
-*.swp
-*.swo
+# Build artifacts
+gh-ghes-2-ghec
+*.exe
+*.dll
+*.so
+*.dylib
 
-# Project specific
-Dockerfile
-.dockerignore
-Makefile
-CONTRIBUTING.md
-LICENSE
-README.md 
+# Test files
+*_test.go
+test/
+coverage.out
+
+# Node.js (we'll copy package files separately)
+static/css/node_modules/
+static/css/dist/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# IDE files
+.vscode/
+.idea/
+
+# CI/CD
+.github/
+
+# Docker
+Dockerfile*
+docker-compose* 

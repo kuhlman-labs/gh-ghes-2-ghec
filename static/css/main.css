@@ -1,0 +1,366 @@
+/**
+ * Main CSS Entry Point
+ *
+ * Imports all CSS modules in the correct cascade order
+ * Following ITCSS (Inverted Triangle CSS) methodology
+ *
+ * Order of imports:
+ * 1. Variables - Design tokens and CSS custom properties
+ * 2. Base - Reset, typography, and foundational styles
+ * 3. Layout - Page structure and layout components
+ * 4. Components - Reusable UI components
+ * 5. Utilities - Atomic helper classes
+ */
+
+/* ========================================
+   DESIGN TOKENS & VARIABLES
+======================================== */
+@import url("_variables.css");
+
+/* ========================================
+   BASE STYLES
+======================================== */
+@import url("_base.css");
+
+/* ========================================
+   LAYOUT COMPONENTS
+======================================== */
+@import url("_layout.css");
+
+/* ========================================
+   UI COMPONENTS
+======================================== */
+@import url("_components.css");
+
+/* ========================================
+   UTILITY CLASSES
+======================================== */
+@import url("_utilities.css");
+
+/* ========================================
+   LEGACY COMPATIBILITY
+
+   Temporary compatibility layer for existing HTML
+   TODO: Remove these once HTML is updated to use new classes
+======================================== */
+
+/* Legacy button compatibility */
+.btn-primary {
+  @extend .btn, .btn--primary;
+}
+
+.btn-secondary {
+  @extend .btn, .btn--secondary;
+}
+
+.btn-sm {
+  @extend .btn, .btn--small;
+}
+
+/* Legacy status compatibility */
+.status-indicator.status-running,
+.status-indicator.status-migrating {
+  @extend .status, .status--running;
+}
+
+.status-indicator.status-succeeded,
+.status-indicator.status-completed {
+  @extend .status, .status--success;
+}
+
+.status-indicator.status-failed,
+.status-indicator.status-error {
+  @extend .status, .status--danger;
+}
+
+.status-indicator.status-pending {
+  @extend .status, .status--pending;
+}
+
+/* Legacy size badge compatibility */
+.size-Small {
+  @extend .size-badge, .size-badge--small;
+}
+
+.size-Medium {
+  @extend .size-badge, .size-badge--medium;
+}
+
+.size-Large {
+  @extend .size-badge, .size-badge--large;
+}
+
+.size-ExtraLarge {
+  @extend .size-badge, .size-badge--extra-large;
+}
+
+/* Legacy layout compatibility */
+.dashboard-overview {
+  @extend .dashboard;
+}
+
+.dashboard-header {
+  @extend .dashboard__header;
+}
+
+.dashboard-controls {
+  @extend .dashboard__controls;
+}
+
+.dashboard-stats {
+  @extend .dashboard__stats;
+}
+
+.stats-section,
+.active-migrations-section,
+.queue-stats-section {
+  @extend .dashboard__section;
+}
+
+.section-header {
+  @extend .dashboard__section-header;
+}
+
+.section-title {
+  @extend .dashboard__section-title;
+}
+
+/* Legacy wizard compatibility */
+.wizard-container {
+  @extend .wizard;
+}
+
+.wizard-header {
+  @extend .wizard__header;
+}
+
+.wizard-progress {
+  @extend .wizard__progress;
+}
+
+.wizard-navigation {
+  @extend .wizard__navigation;
+}
+
+.wizard-actions {
+  @extend .wizard__actions;
+}
+
+/* Legacy table compatibility */
+.dashboard-table {
+  @extend .table-container;
+}
+
+table {
+  @extend .table;
+}
+
+table th {
+  @extend .table__header-cell;
+}
+
+table td {
+  @extend .table__cell;
+}
+
+table tr {
+  @extend .table__row;
+}
+
+table th.sortable {
+  @extend .table__header-cell--sortable;
+}
+
+table th.sort-asc {
+  @extend .table__header-cell--sort-asc;
+}
+
+table th.sort-desc {
+  @extend .table__header-cell--sort-desc;
+}
+
+/* Legacy form compatibility */
+.form-group {
+  @extend .form-group;
+}
+
+.filter-input {
+  @extend .form-input;
+}
+
+.checkbox-wrapper {
+  @extend .checkbox;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+  @extend .checkbox__input;
+}
+
+.checkbox-wrapper label {
+  @extend .checkbox__label;
+}
+
+/* Legacy progress compatibility */
+.progress-bar {
+  @extend .progress;
+}
+
+.progress-value {
+  @extend .progress__bar;
+}
+
+.progress-text {
+  @extend .progress__text;
+}
+
+.progress-value.status-succeeded {
+  @extend .progress__bar--success;
+}
+
+.progress-value.status-failed {
+  @extend .progress__bar--danger;
+}
+
+.progress-value.status-running {
+  @extend .progress__bar--warning;
+}
+
+/* Legacy card compatibility */
+.stat-card {
+  @extend .card, .card--interactive;
+}
+
+.chart-container {
+  @extend .card;
+}
+
+.migration-timeline {
+  @extend .card;
+}
+
+/* Legacy header/footer compatibility */
+header {
+  @extend .header;
+}
+
+header .container {
+  @extend .header__container;
+}
+
+header .logo {
+  @extend .header__logo;
+}
+
+header .logo h1 {
+  @extend .header__logo-text;
+}
+
+header nav {
+  @extend .nav;
+}
+
+header nav ul {
+  @extend .nav__list;
+}
+
+header nav ul li {
+  @extend .nav__item;
+}
+
+header nav ul li a {
+  @extend .nav__link;
+}
+
+header nav ul li a.active {
+  @extend .nav__link--active;
+}
+
+footer {
+  @extend .footer;
+}
+
+footer p {
+  @extend .footer__text;
+}
+
+main {
+  @extend .main;
+}
+
+/* Legacy dropdown compatibility */
+.dropdown {
+  @extend .dropdown;
+}
+
+.dropdown-content {
+  @extend .dropdown__content;
+}
+
+.dropdown-item {
+  @extend .dropdown__item;
+}
+
+/* ========================================
+   PERFORMANCE OPTIMIZATIONS
+======================================== */
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Optimize font loading */
+@font-face {
+  font-family: "System UI";
+  src: local("system-ui"), local("-apple-system"), local("BlinkMacSystemFont");
+  font-display: swap;
+}
+
+/* Critical CSS for above-the-fold content */
+.critical {
+  contain: layout style paint;
+}
+
+/* ========================================
+   PRINT STYLES
+======================================== */
+
+@media print {
+  /* Hide interactive elements */
+  .btn,
+  .dropdown,
+  .nav__toggle,
+  .wizard__navigation,
+  .dashboard__controls {
+    display: none !important;
+  }
+
+  /* Optimize for print */
+  .card,
+  .table-container,
+  .dashboard__section {
+    border: 1px solid #000 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  /* Ensure good contrast */
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Show URLs for links */
+  a[href]::after {
+    font-size: 0.8em;
+    color: #666;
+    content: " (" attr(href) ")";
+  }
+}

@@ -5,17 +5,39 @@ VERSION ?= $(shell git describe --tags --always --dirty)
 BUILD_TIME=$(shell date -u '+%Y-%m-%d_%H:%M:%S')
 LDFLAGS=-ldflags "-X github.com/kuhlman-labs/gh-ghes-2-ghec/internal/version.Version=${VERSION} -X github.com/kuhlman-labs/gh-ghes-2-ghec/internal/version.BuildTime=${BUILD_TIME}"
 GO_FILES=$(shell find . -name "*.go" -type f -not -path "./vendor/*")
+CSS_DIR=static/css
 
-.PHONY: all build clean test lint vet fmt docker docker-run help run
+.PHONY: all build clean test lint vet fmt docker docker-run help run css-deps css-build css-lint css-clean
 
-all: clean fmt lint test build
+all: clean fmt lint test css-build build
 
-# Build the application
-build:
+# CSS Dependencies - Install Node.js dependencies for CSS building
+css-deps:
+	@echo "Installing CSS dependencies..."
+	cd $(CSS_DIR) && npm install
+
+# CSS Build - Build and minify CSS files
+css-build: css-deps
+	@echo "Building CSS..."
+	cd $(CSS_DIR) && npm run build
+
+# CSS Lint - Lint CSS files
+css-lint: css-deps
+	@echo "Linting CSS..."
+	cd $(CSS_DIR) && npm run lint
+
+# CSS Clean - Clean CSS build artifacts
+css-clean:
+	@echo "Cleaning CSS build artifacts..."
+	rm -rf $(CSS_DIR)/dist/*
+	rm -rf $(CSS_DIR)/node_modules
+
+# Build the application (now includes CSS build)
+build: css-build
 	go build -o $(BINARY_NAME) $(LDFLAGS) $(MAIN_FILE)
 
-# Clean build files
-clean:
+# Clean build files (now includes CSS)
+clean: css-clean
 	rm -f $(BINARY_NAME)
 	go clean
 
@@ -23,7 +45,7 @@ clean:
 test:
 	go test -v ./...
 
-# Run linter
+# Run linter (Go)
 lint:
 	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 	golangci-lint run ./...
@@ -56,12 +78,16 @@ docker-run:
 install: build
 	mv $(BINARY_NAME) $(GOPATH)/bin/$(BINARY_NAME)
 
+# Development target - build CSS and run with file watching
+dev: css-build
+	./$(BINARY_NAME)
+
 # Show help
 help:
 	@echo "Available commands:"
-	@echo "  make              : Build the application after running format, lint, and test"
-	@echo "  make build        : Build the application"
-	@echo "  make clean        : Clean build files"
+	@echo "  make              : Build the application after running format, lint, test, and CSS build"
+	@echo "  make build        : Build the application (includes CSS build)"
+	@echo "  make clean        : Clean build files (includes CSS)"
 	@echo "  make test         : Run tests"
 	@echo "  make lint         : Run linter"
 	@echo "  make vet          : Run go vet"
@@ -69,4 +95,9 @@ help:
 	@echo "  make run          : Build and run the server with dashboard enabled"
 	@echo "  make docker       : Build docker image"
 	@echo "  make docker-run   : Run docker container"
-	@echo "  make install      : Install the application" 
+	@echo "  make install      : Install the application"
+	@echo "  make css-build    : Build CSS files"
+	@echo "  make css-lint     : Lint CSS files"
+	@echo "  make css-clean    : Clean CSS build artifacts"
+	@echo "  make css-deps     : Install CSS dependencies"
+	@echo "  make dev          : Build and run for development" 

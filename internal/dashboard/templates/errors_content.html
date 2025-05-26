@@ -1,20 +1,20 @@
 {{define "errors_content"}}
-<div class="dashboard-overview" 
+<div class="dashboard" 
      hx-get="/dashboard/errors" 
      hx-trigger="every 30s" 
      hx-swap="outerHTML">
-  <div class="stats-section">
-    <div class="dashboard-header">
-      <h2>Error Distribution</h2>
-      <div class="dashboard-controls">
-        <button class="btn btn-secondary" hx-get="/dashboard/errors" hx-target=".dashboard-overview" hx-swap="outerHTML">
+  <div class="dashboard__section">
+    <div class="dashboard__header">
+      <h2 class="dashboard__title">Error Distribution</h2>
+      <div class="dashboard__controls">
+        <button class="btn btn--secondary" hx-get="/dashboard/errors" hx-target=".dashboard" hx-swap="outerHTML">
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
           </svg>
           Refresh
         </button>
         <div class="dropdown">
-          <button class="btn btn-export">
+          <button class="btn btn--secondary">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="7 10 12 15 17 10"/>
@@ -22,15 +22,15 @@
             </svg>
             Export
           </button>
-          <div class="dropdown-content">
-            <a href="/dashboard/errors/export?format=csv" class="dropdown-item">
+          <div class="dropdown__content">
+            <a href="/dashboard/errors/export?format=csv" class="dropdown__item">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
                 <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
               </svg>
               Export as CSV
             </a>
-            <a href="/dashboard/errors/export?format=json" class="dropdown-item">
+            <a href="/dashboard/errors/export?format=json" class="dropdown__item">
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
                 <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
@@ -39,48 +39,69 @@
             </a>
           </div>
         </div>
+        <a href="/dashboard" class="btn btn--secondary">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+          Back to Overview
+        </a>
       </div>
     </div>
-    
-    <div class="section-header">
-      <h3 class="section-title">Error Statistics</h3>
-      <div class="refresh-indicator">
-        <span class="last-refreshed">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
-        <span class="refresh-spinner"></span>
+  </div>
+  
+  <div class="dashboard__section">
+    <div class="dashboard__section-header">
+      <h3 class="dashboard__section-title">Error Analysis</h3>
+      <div class="flex items-center gap-2 text-sm text-muted">
+        <span id="last-updated-timestamp">Last updated: {{.Stats.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
+        <div class="spinner w-4 h-4" id="error-refresh-spinner" style="display: none;"></div>
       </div>
     </div>
       
-    <div class="error-chart-container">
-      <div class="error-chart">
-        <canvas id="errorChart"></canvas>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="card">
+        <div class="card__header">
+          <h4 class="card__title">Error Distribution Chart</h4>
+        </div>
+        <div class="card__content">
+          <div class="h-64">
+            <canvas id="errorChart"></canvas>
+          </div>
+        </div>
       </div>
-      <div class="error-table">
-        <div class="dashboard-table">
-          <table class="info-table">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Count</th>
-                <th>Percentage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {{range $category, $count := .Stats.Categories}}
-              <tr>
-                <td>{{$category}}</td>
-                <td>{{$count}}</td>
-                <td>{{percentage $count $.Stats.TotalErrors}}%</td>
-              </tr>
-              {{end}}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th>Total</th>
-                <th>{{.Stats.TotalErrors}}</th>
-                <th>100%</th>
-              </tr>
-            </tfoot>
-          </table>
+      
+      <div class="card">
+        <div class="card__header">
+          <h4 class="card__title">Error Categories</h4>
+        </div>
+        <div class="card__content">
+          <div class="table-container">
+            <table class="table">
+              <thead class="table__header">
+                <tr class="table__row">
+                  <th class="table__header-cell">Category</th>
+                  <th class="table__header-cell text-right">Count</th>
+                  <th class="table__header-cell text-right">Percentage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range $category, $count := .Stats.Categories}}
+                <tr class="table__row">
+                  <td class="table__cell font-medium">{{$category}}</td>
+                  <td class="table__cell text-right">{{$count}}</td>
+                  <td class="table__cell text-right">{{percentage $count $.Stats.TotalErrors}}%</td>
+                </tr>
+                {{end}}
+              </tbody>
+              <tfoot>
+                <tr class="table__row">
+                  <th class="table__cell font-bold">Total</th>
+                  <th class="table__cell font-bold text-right">{{.Stats.TotalErrors}}</th>
+                  <th class="table__cell font-bold text-right">100%</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -120,40 +141,97 @@
     });
   });
 
+  // Function to update timestamp
+  function updateTimestamp() {
+    const timestampElement = document.getElementById('last-updated-timestamp');
+    if (timestampElement) {
+      const now = new Date();
+      const options = { 
+        month: 'short', 
+        day: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit',
+        hour12: false
+      };
+      timestampElement.textContent = `Last updated: ${now.toLocaleDateString('en-US', options)}`;
+    }
+  }
+
   // Show refresh indicator when refreshing
   document.body.addEventListener('htmx:beforeRequest', function(evt) {
-    if (evt.detail.target.classList.contains('dashboard-overview')) {
-      document.querySelector('.refresh-spinner').classList.add('active');
+    if (evt.detail.target.classList.contains('dashboard')) {
+      const spinner = document.getElementById('error-refresh-spinner');
+      if (spinner) spinner.style.display = 'block';
     }
   });
   
   document.body.addEventListener('htmx:afterRequest', function(evt) {
-    if (evt.detail.target.classList.contains('dashboard-overview')) {
-      document.querySelector('.refresh-spinner').classList.remove('active');
+    if (evt.detail.target.classList.contains('dashboard')) {
+      const spinner = document.getElementById('error-refresh-spinner');
+      if (spinner) spinner.style.display = 'none';
+      // Update timestamp after successful refresh
+      updateTimestamp();
     }
   });
   
-  // Handle dropdown menu on touch devices
+  // Enhanced dropdown handling with modern interaction patterns
   document.addEventListener('DOMContentLoaded', function() {
-    const dropdownBtn = document.querySelector('.btn-export');
-    if (dropdownBtn) {
-      dropdownBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        const dropdown = this.closest('.dropdown');
-        const content = dropdown.querySelector('.dropdown-content');
-        content.classList.toggle('show');
-      });
+    const dropdowns = document.querySelectorAll('.dropdown');
+    
+    dropdowns.forEach(dropdown => {
+      const btn = dropdown.querySelector('.btn');
+      const content = dropdown.querySelector('.dropdown__content');
       
-      // Close dropdown when clicking outside of it
-      document.addEventListener('click', function(event) {
-        const dropdowns = document.querySelectorAll('.dropdown-content');
-        dropdowns.forEach(function(dropdown) {
-          if (dropdown.classList.contains('show')) {
-            dropdown.classList.remove('show');
+      if (btn && content) {
+        // Handle click events
+        btn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          
+          // Close other dropdowns
+          dropdowns.forEach(otherDropdown => {
+            if (otherDropdown !== dropdown) {
+              const otherContent = otherDropdown.querySelector('.dropdown__content');
+              if (otherContent) otherContent.classList.remove('show');
+            }
+          });
+          
+          // Toggle current dropdown
+          content.classList.toggle('show');
+        });
+        
+        // Handle keyboard events
+        btn.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            content.classList.toggle('show');
           }
         });
+      }
+    });
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+      dropdowns.forEach(dropdown => {
+        const content = dropdown.querySelector('.dropdown__content');
+        if (content && content.classList.contains('show')) {
+          content.classList.remove('show');
+        }
       });
-    }
+    });
+    
+    // Close dropdowns on escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        dropdowns.forEach(dropdown => {
+          const content = dropdown.querySelector('.dropdown__content');
+          if (content && content.classList.contains('show')) {
+            content.classList.remove('show');
+          }
+        });
+      }
+    });
   });
 </script>
-{{end}} 
+{{end}}

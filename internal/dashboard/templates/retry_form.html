@@ -1,36 +1,51 @@
 {{define "retry_form"}}
-<form hx-post="/dashboard/migration/{{.Repository}}/retry" hx-target="#migration-detail" hx-swap="outerHTML">
+<form hx-post="/dashboard/migration/{{.Repository}}/retry" hx-target="#migration-detail" hx-swap="outerHTML" class="space-y-6">
     <div class="form-group">
-        <label for="target_org">Target Organization:</label>
-        <input type="text" id="target_org" name="target_org" class="form-control" required 
+        <label for="target_org" class="form-label">Target Organization:</label>
+        <input type="text" id="target_org" name="target_org" class="form-input" required 
                value="{{.TargetOrg}}" placeholder="Enter target organization name" />
-        <small class="form-text text-muted">Organization where the repository will be migrated to (different from source org)</small>
+        <p class="form-help">Organization where the repository will be migrated to (different from source org)</p>
     </div>
+    
     <div class="form-group">
-        <label for="ghes_base_url">GitHub Enterprise Server URL:</label>
-        <input type="text" id="ghes_base_url" name="ghes_base_url" class="form-control" required 
+        <label for="ghes_base_url" class="form-label">GitHub Enterprise Server URL:</label>
+        <input type="text" id="ghes_base_url" name="ghes_base_url" class="form-input" required 
                value="{{.GHESBaseURL}}" placeholder="https://github.example.com" />
-        <small class="form-text text-muted">The base URL of your GitHub Enterprise Server instance (https://github.example.com)</small>
+        <p class="form-help">The base URL of your GitHub Enterprise Server instance (https://github.example.com)</p>
     </div>
+    
     <div class="form-group">
-        <label for="ghes_token">GitHub Enterprise Server Token:</label>
-        <input type="password" id="ghes_token" name="ghes_token" class="form-control" required />
-        <small class="form-text text-muted">Personal access token with appropriate permissions</small>
+        <label for="ghes_token" class="form-label">GitHub Enterprise Server Token:</label>
+        <input type="password" id="ghes_token" name="ghes_token" class="form-input" required />
+        <p class="form-help">Personal access token with appropriate permissions</p>
     </div>
+    
     <div class="form-group">
-        <label for="gh_cloud_token">GitHub Cloud Token:</label>
-        <input type="password" id="gh_cloud_token" name="gh_cloud_token" class="form-control" required />
-        <small class="form-text text-muted">GitHub Cloud token with appropriate permissions</small>
+        <label for="gh_cloud_token" class="form-label">GitHub Cloud Token:</label>
+        <input type="password" id="gh_cloud_token" name="gh_cloud_token" class="form-input" required />
+        <p class="form-help">GitHub Cloud token with appropriate permissions</p>
     </div>
+    
     <div class="form-group">
-        <div class="form-check">
-            <input type="checkbox" id="use_ghos" name="use_ghos" class="form-check-input" value="true" {{if .UseGHOS}}checked{{end}} />
-            <label for="use_ghos" class="form-check-label">Use GitHub Owned Storage (GHOS)</label>
-        </div>
+        <label class="checkbox">
+            <input type="checkbox" id="use_ghos" name="use_ghos" class="checkbox__input" value="true" {{if .UseGHOS}}checked{{end}} />
+            <span class="checkbox__label">Use GitHub Owned Storage (GHOS)</span>
+        </label>
     </div>
-    <div class="form-actions">
-        <button type="button" class="btn btn-secondary" onclick="document.getElementById('retry-modal').style.display='none'">Cancel</button>
-        <button type="submit" class="btn btn-primary">Retry Migration</button>
+    
+    <div class="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
+        <button type="button" class="btn btn--secondary" onclick="document.getElementById('retry-modal').style.display='none'">
+            Cancel
+        </button>
+        <button type="submit" class="btn btn--primary">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="17 1 21 5 17 9"/>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                <polyline points="7 23 3 19 7 15"/>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+            </svg>
+            Retry Migration
+        </button>
     </div>
 </form>
 

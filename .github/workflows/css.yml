@@ -1,0 +1,87 @@
+---
+name: CSS Build and Lint
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'static/css/**'
+      - '.github/workflows/css.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'static/css/**'
+      - '.github/workflows/css.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  css-lint-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    # Cache Node.js dependencies
+    - name: Cache Node.js dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          static/css/node_modules
+          ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('static/css/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+    # Set up Node.js
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: 'static/css/package-lock.json'
+
+    # Install CSS dependencies
+    - name: Install CSS dependencies
+      run: |
+        cd static/css
+        npm ci
+
+    # Lint CSS files
+    - name: Lint CSS
+      run: |
+        cd static/css
+        npm run lint
+
+    # Build CSS
+    - name: Build CSS
+      run: |
+        cd static/css
+        npm run build
+
+    # Check that built files exist
+    - name: Verify CSS build output
+      run: |
+        if [ ! -f "static/css/dist/styles.css" ]; then
+          echo "Error: styles.css was not generated"
+          exit 1
+        fi
+        if [ ! -f "static/css/dist/styles.min.css" ]; then
+          echo "Error: styles.min.css was not generated"
+          exit 1
+        fi
+        echo "✅ CSS build completed successfully"
+        echo "📊 Build statistics:"
+        echo "styles.css: $(wc -c < static/css/dist/styles.css) bytes"
+        echo "styles.min.css: $(wc -c < static/css/dist/styles.min.css) bytes"
+
+    # Upload CSS build artifacts (optional, for debugging)
+    - name: Upload CSS build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: css-build-output
+        path: |
+          static/css/dist/
+        retention-days: 7 

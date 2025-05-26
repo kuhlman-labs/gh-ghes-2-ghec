@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
-	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/server"
@@ -176,9 +175,9 @@ func setupServer() (*server.Server, error) {
 		Timeout: 30 * time.Second, // Default timeout
 	}
 
-	// Create a no-op GitHub API implementation
-	// In real API calls, the migrator will create a proper API client using tokens from the request
-	githubAPI := github.NewNoopAPI(logger)
+	// Don't inject a GitHub API implementation in production
+	// The migrator will create real GitHub clients per migration using tokens from each request
+	// This ensures proper authentication and avoids using test implementations
 
 	// Setup storage provider based on configuration
 	var storageProvider storage.MigrationStorage
@@ -206,7 +205,7 @@ func setupServer() (*server.Server, error) {
 	// Create migrator with dependencies
 	m := migrator.NewMigrator(
 		logger,          // Logger
-		githubAPI,       // GitHub API client (no-op implementation)
+		nil,             // GitHub API client (nil - will create real clients per migration)
 		storageProvider, // Storage provider
 		cfg.Webhook.URL, // Webhook URL
 		cfg,             // Full config

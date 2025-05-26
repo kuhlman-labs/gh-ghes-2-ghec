@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/config"
+	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/github"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/logging"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/migrator"
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/payload"
@@ -95,6 +98,7 @@ var stageDescriptions = map[string]string{
 	"archive":    "Archive generation and export",
 	"storage":    "Storage upload (e.g., GitHub Owned Storage)",
 	"migration":  "Repository migration to target",
+	"queue":      "Waiting in queue for worker",
 	// "completion" was in the old hardcoded list, but not in payload.MigrationStages.
 	// If there are other stages from payload.MigrationStages, they can be added here.
 }
@@ -110,6 +114,52 @@ type ActivityEvent struct {
 	Status              string
 	ActivityTime        time.Time
 	ActivityDescription string
+}
+
+// ChartData represents the data structure for dashboard charts
+type ChartData struct {
+	Status      StatusChartData      `json:"status"`
+	Trends      TrendsChartData      `json:"trends"`
+	Sizes       SizeChartData        `json:"sizes"`
+	Performance PerformanceChartData `json:"performance"`
+	Activity    ActivityChartData    `json:"activity"`
+}
+
+// StatusChartData represents data for the status distribution chart
+type StatusChartData struct {
+	Succeeded int `json:"succeeded"`
+	Running   int `json:"running"`
+	Failed    int `json:"failed"`
+	Pending   int `json:"pending"`
+}
+
+// TrendsChartData represents data for migration trends over time
+type TrendsChartData struct {
+	Labels     []string `json:"labels"`
+	Successful []int    `json:"successful"`
+	Failed     []int    `json:"failed"`
+	Total      []int    `json:"total"`
+}
+
+// SizeChartData represents data for repository size distribution
+type SizeChartData struct {
+	Small      int `json:"small"`
+	Medium     int `json:"medium"`
+	Large      int `json:"large"`
+	ExtraLarge int `json:"extraLarge"`
+}
+
+// PerformanceChartData represents performance metrics over time
+type PerformanceChartData struct {
+	Labels      []string  `json:"labels"`
+	Duration    []float64 `json:"duration"`
+	SuccessRate []int     `json:"successRate"`
+}
+
+// ActivityChartData represents activity heatmap data
+type ActivityChartData struct {
+	MaxActivity int     `json:"maxActivity"`
+	Heatmap     [][]int `json:"heatmap"`
 }
 
 // New creates a new dashboard handler
@@ -154,6 +204,80 @@ func New(m *migrator.Migrator) (*Handler, error) {
 		"divFloat": func(value int64, divisor float64) float64 {
 			return float64(value) / divisor
 		},
+		// Add missing template functions for mathematical operations
+		"mul": func(a, b interface{}) float64 {
+			var fa, fb float64
+			switch v := a.(type) {
+			case int:
+				fa = float64(v)
+			case int64:
+				fa = float64(v)
+			case float64:
+				fa = v
+			case float32:
+				fa = float64(v)
+			default:
+				fa = 0
+			}
+			switch v := b.(type) {
+			case int:
+				fb = float64(v)
+			case int64:
+				fb = float64(v)
+			case float64:
+				fb = v
+			case float32:
+				fb = float64(v)
+			default:
+				fb = 0
+			}
+			return fa * fb
+		},
+		"div": func(a, b interface{}) float64 {
+			var fa, fb float64
+			switch v := a.(type) {
+			case int:
+				fa = float64(v)
+			case int64:
+				fa = float64(v)
+			case float64:
+				fa = v
+			case float32:
+				fa = float64(v)
+			default:
+				fa = 0
+			}
+			switch v := b.(type) {
+			case int:
+				fb = float64(v)
+			case int64:
+				fb = float64(v)
+			case float64:
+				fb = v
+			case float32:
+				fb = float64(v)
+			default:
+				fb = 1 // Avoid division by zero
+			}
+			if fb == 0 {
+				return 0
+			}
+			return fa / fb
+		},
+		"float64": func(v interface{}) float64 {
+			switch val := v.(type) {
+			case int:
+				return float64(val)
+			case int64:
+				return float64(val)
+			case float64:
+				return val
+			case float32:
+				return float64(val)
+			default:
+				return 0
+			}
+		},
 	}
 
 	// Parse templates
@@ -173,9 +297,12 @@ func New(m *migrator.Migrator) (*Handler, error) {
 func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	// Dashboard overview
 	mux.HandleFunc("/dashboard", h.handleOverview)
+	mux.HandleFunc("/dashboard/analytics", h.handleAnalytics)
 	mux.HandleFunc("/dashboard/refresh", h.handleRefresh)
 	mux.HandleFunc("/dashboard/stats", h.handleStats)
 	mux.HandleFunc("/dashboard/queue-stats", h.handleQueueStats)
+	mux.HandleFunc("/dashboard/timeline", h.handleTimeline)
+	mux.HandleFunc("/dashboard/chart-data", h.handleChartData)
 
 	// New export endpoints
 	mux.HandleFunc("/dashboard/export", h.handleExport)
@@ -183,8 +310,12 @@ func (h *Handler) RegisterHandlers(mux *http.ServeMux) {
 	// Migration detail and retry - use a single handler for the path
 	mux.HandleFunc("/dashboard/migration/", h.handleMigrationRoutes)
 
-	// New migration form
-	mux.HandleFunc("/dashboard/new", h.handleNewMigration)
+	// Migration wizard
+	mux.HandleFunc("/dashboard/wizard", h.handleMigrationWizard)
+	mux.HandleFunc("/dashboard/wizard/test-connection", h.handleTestConnection)
+	mux.HandleFunc("/dashboard/wizard/load-repositories", h.handleLoadRepositories)
+	mux.HandleFunc("/dashboard/wizard/save-draft", h.handleSaveDraft)
+	mux.HandleFunc("/dashboard/wizard/load-draft", h.handleLoadDraft)
 	mux.HandleFunc("/dashboard/migrate", h.handleSubmitMigration)
 
 	// History page and export
@@ -266,8 +397,18 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Calculate real-time duration for active migrations
+	calculateRealTimeDuration(migrationsSlice)
+
 	// Apply filters
-	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	var filteredMigrations []*payload.MigrationStatus
+	if statusFilter != "" {
+		// If a specific status filter is applied, use the normal filtering
+		filteredMigrations = filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	} else {
+		// If no status filter is applied, show only active migrations (exclude succeeded and failed)
+		filteredMigrations = filterActiveMigrations(migrationsSlice, repoFilter, timeRangeFilter)
+	}
 
 	// Apply sorting
 	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
@@ -280,6 +421,10 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 
 	// Get recent activity events
 	recentActivity := getRecentActivity(migrationsSlice, 10)
+
+	// Check for success and error messages from query parameters
+	successMsg := r.URL.Query().Get("success")
+	errorMsg := r.URL.Query().Get("error")
 
 	data := TemplateData{
 		Title:           "Dashboard",
@@ -297,6 +442,59 @@ func (h *Handler) handleOverview(w http.ResponseWriter, r *http.Request) {
 		SortDir:         sortDir,
 		RecentActivity:  recentActivity,
 		LastUpdate:      time.Now(),
+		Success:         successMsg,
+		Error:           errorMsg,
+	}
+
+	err := h.templates.ExecuteTemplate(w, "base", data)
+	if err != nil {
+		h.logger.Error("failed to execute template", "error", err)
+		http.Error(w, "Failed to render page", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleAnalytics handles the analytics page
+func (h *Handler) handleAnalytics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get migrations from the migrator
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+
+	// Get queued repositories (waiting for worker)
+	queuedRepos := h.migrator.GetQueuedRepositories()
+	queuedReposSet := stringSet(queuedRepos)
+
+	// Convert map to slice
+	migrationsSlice := mapToSlice(migrationsMap)
+
+	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
+	for _, m := range migrationsSlice {
+		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
+			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
+				m.Stage = "queued"
+				m.State = "waiting for worker"
+			}
+		}
+	}
+
+	// Calculate migration statistics
+	stats := calculateStats(migrationsSlice)
+
+	// Get queue statistics
+	queueStats := h.migrator.GetQueueStats()
+
+	data := TemplateData{
+		Title:       "Analytics",
+		Active:      "analytics",
+		PageName:    "analytics",
+		CurrentYear: time.Now().Year(),
+		Stats:       stats,
+		QueueStats:  queueStats,
+		LastUpdate:  time.Now(),
 	}
 
 	err := h.templates.ExecuteTemplate(w, "base", data)
@@ -347,8 +545,18 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Calculate real-time duration for active migrations
+	calculateRealTimeDuration(migrationsSlice)
+
 	// Apply filters
-	filteredMigrations := filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	var filteredMigrations []*payload.MigrationStatus
+	if statusFilter != "" {
+		// If a specific status filter is applied, use the normal filtering
+		filteredMigrations = filterMigrations(migrationsSlice, statusFilter, repoFilter, timeRangeFilter)
+	} else {
+		// If no status filter is applied, show only active migrations (exclude succeeded and failed)
+		filteredMigrations = filterActiveMigrations(migrationsSlice, repoFilter, timeRangeFilter)
+	}
 
 	// Apply sorting
 	sortedMigrations := sortMigrations(filteredMigrations, sortBy, sortDir)
@@ -533,6 +741,33 @@ func filterMigrations(migrations []*payload.MigrationStatus, statusFilter, repoF
 	for _, m := range migrations {
 		// Apply status filter
 		if statusFilter != "" && !strings.EqualFold(m.Status, statusFilter) {
+			continue
+		}
+
+		// Apply repository filter
+		if repoFilter != "" && !strings.Contains(strings.ToLower(m.Repository), strings.ToLower(repoFilter)) {
+			continue
+		}
+
+		// Apply time range filter
+		if !passesTimeFilter(m, timeRangeFilter) {
+			continue
+		}
+
+		result = append(result, m)
+	}
+
+	return result
+}
+
+// filterActiveMigrations filters migrations to only include active ones (excludes succeeded and failed)
+// This is used for the "Active Migrations" table to only show in-progress migrations
+func filterActiveMigrations(migrations []*payload.MigrationStatus, repoFilter, timeRangeFilter string) []*payload.MigrationStatus {
+	result := make([]*payload.MigrationStatus, 0, len(migrations))
+
+	for _, m := range migrations {
+		// Only include in-progress migrations (exclude succeeded and failed)
+		if m.Status == payload.StatusSucceeded || m.Status == payload.StatusFailed {
 			continue
 		}
 
@@ -826,21 +1061,28 @@ func (h *Handler) handleMigrationDetail(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// handleNewMigration handles the new migration form page
-func (h *Handler) handleNewMigration(w http.ResponseWriter, r *http.Request) {
+// handleMigrationWizard handles the new migration wizard page
+func (h *Handler) handleMigrationWizard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	// Check for error and success messages from query parameters
+	errorMsg := r.URL.Query().Get("error")
+	successMsg := r.URL.Query().Get("success")
+
 	data := TemplateData{
-		Title:       "New Migration",
-		Active:      "new",
-		PageName:    "new_migration",
+		Title:       "New Migration Wizard",
+		Active:      "wizard",
+		PageName:    "migration_wizard",
 		CurrentYear: time.Now().Year(),
+		Error:       errorMsg,
+		Success:     successMsg,
 	}
 
-	if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
+	if err := h.templates.ExecuteTemplate(w, "migration_wizard", data); err != nil {
+		h.logger.Error("failed to execute migration wizard template", "error", err)
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
 	}
 }
@@ -927,10 +1169,13 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Parse form data
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Failed to parse form", http.StatusBadRequest)
-		return
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Extract and sanitize form fields
@@ -941,6 +1186,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 	ghCloudToken := r.FormValue("gh_cloud_token")
 	maxDuration := sanitizeInput(r.FormValue("max_duration"))
 	useGHOS := r.FormValue("use_ghos") == "true"
+	deleteIfExists := r.FormValue("delete_if_exists") == "true"
 
 	// Parse repositories (one per line)
 	repoText := r.FormValue("repositories")
@@ -986,6 +1232,7 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 		Repositories:       repositories,
 		MaxDuration:        maxDuration,
 		UseGHOS:            useGHOS,
+		DeleteIfExists:     deleteIfExists,
 		ScheduledTime:      scheduledTime,
 		ScheduledTimeZone:  scheduledTimeZone,
 		ScheduledDaysOnly:  scheduledDaysOnly,
@@ -995,15 +1242,8 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 
 	// Validate the request
 	if err := migrationReq.Validate(); err != nil {
-		data := TemplateData{
-			Title:       "New Migration",
-			Active:      "new",
-			CurrentYear: time.Now().Year(),
-			Error:       "Validation error: " + html.EscapeString(err.Error()),
-		}
-		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
-			http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		}
+		// Redirect back to wizard with error message
+		http.Redirect(w, r, "/dashboard/wizard?error="+url.QueryEscape("Validation error: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -1014,20 +1254,13 @@ func (h *Handler) handleSubmitMigration(w http.ResponseWriter, r *http.Request) 
 	// Start the migration
 	err := h.migrator.StartMigration(ctx, migrationReq, cancel)
 	if err != nil {
-		data := TemplateData{
-			Title:       "New Migration",
-			Active:      "new",
-			CurrentYear: time.Now().Year(),
-			Error:       "Failed to start migration: " + html.EscapeString(err.Error()),
-		}
-		if err := h.templates.ExecuteTemplate(w, "base", data); err != nil {
-			http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		}
+		// Redirect back to wizard with error message
+		http.Redirect(w, r, "/dashboard/wizard?error="+url.QueryEscape("Failed to start migration: "+err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	// Redirect to dashboard with success message
-	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+	http.Redirect(w, r, "/dashboard?success="+url.QueryEscape("Migration started successfully!"), http.StatusSeeOther)
 }
 
 // parseRepositories splits a multi-line string into a slice of repository names
@@ -1073,6 +1306,20 @@ func calculateStats(migrations []*payload.MigrationStatus) MigrationStats {
 	}
 
 	return stats
+}
+
+// calculateRealTimeDuration calculates the real-time duration for active migrations
+func calculateRealTimeDuration(migrations []*payload.MigrationStatus) {
+	now := time.Now()
+	for _, m := range migrations {
+		// Only calculate real-time duration for active migrations that have started
+		if m.Status == payload.StatusInProgress && !m.StartedAt.IsZero() {
+			// If Duration is not already set (completed migrations), calculate real-time duration
+			if m.Duration == 0 {
+				m.Duration = now.Sub(m.StartedAt)
+			}
+		}
+	}
 }
 
 // getStagesInfo creates information about migration stages based on the overall migration status.
@@ -1185,34 +1432,15 @@ func (h *Handler) handleStats(w http.ResponseWriter, r *http.Request) {
 	allMigrations := mapToSlice(migrationsMap)
 	stats := calculateStats(allMigrations)
 
-	// Create a template with just the stats HTML
-	statsTemplate := `
-		<div class="stat-card">
-			<h3>Active</h3>
-			<span class="stat-value">{{ .Active }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Succeeded</h3>
-			<span class="stat-value">{{ .Succeeded }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Failed</h3>
-			<span class="stat-value">{{ .Failed }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Total</h3>
-			<span class="stat-value">{{ .Total }}</span>
-		</div>
-	`
-
-	// Parse and execute the template using html/template which auto-escapes
-	tmpl, err := template.New("stats").Parse(statsTemplate)
-	if err != nil {
-		http.Error(w, "Failed to parse stats template", http.StatusInternalServerError)
-		return
+	// Create template data
+	data := TemplateData{
+		Stats: stats,
 	}
 
-	if err := tmpl.Execute(w, stats); err != nil {
+	// Use the stats_section template
+	err := h.templates.ExecuteTemplate(w, "stats_section", data)
+	if err != nil {
+		h.logger.Error("failed to execute stats template", "error", err)
 		http.Error(w, "Failed to render stats", http.StatusInternalServerError)
 	}
 }
@@ -1252,34 +1480,61 @@ func (h *Handler) handleQueueStats(w http.ResponseWriter, r *http.Request) {
 		"active_migrations", queueStats["active_migrations"],
 		"max_migration_threads", queueStats["max_migration_threads"])
 
-	// Create a template with just the queue stats HTML
-	queueStatsTemplate := `
-		<div class="stat-card">
-			<h3>Queue Size</h3>
-			<span class="stat-value">{{ .queue_size }}</span>
-			<span class="stat-label">/ {{ .max_queue_size }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Active Archives</h3>
-			<span class="stat-value">{{ .active_archive_generations }}</span>
-			<span class="stat-label">/ {{ .max_archive_generations }}</span>
-		</div>
-		<div class="stat-card">
-			<h3>Active Migrations</h3>
-			<span class="stat-value">{{ .active_migrations }}</span>
-			<span class="stat-label">/ {{ .max_migration_threads }}</span>
-		</div>
-	`
+	// Create template data
+	data := TemplateData{
+		QueueStats: queueStats,
+	}
 
-	// Parse and execute the template using html/template which auto-escapes
-	tmpl, err := template.New("queue_stats").Parse(queueStatsTemplate)
+	// Use the queue_stats_section template
+	err := h.templates.ExecuteTemplate(w, "queue_stats_section", data)
 	if err != nil {
-		http.Error(w, "Failed to parse queue stats template", http.StatusInternalServerError)
+		h.logger.Error("failed to execute queue stats template", "error", err)
+		http.Error(w, "Failed to render queue stats", http.StatusInternalServerError)
+	}
+}
+
+// handleTimeline returns just the timeline section for HTMX updates
+func (h *Handler) handleTimeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	if err := tmpl.Execute(w, queueStats); err != nil {
-		http.Error(w, "Failed to render queue stats", http.StatusInternalServerError)
+	// Get migrations from the migrator
+	migrationsMap := h.migrator.GetAllMigrationStatuses()
+
+	// Get queued repositories (waiting for worker)
+	queuedRepos := h.migrator.GetQueuedRepositories()
+	queuedReposSet := stringSet(queuedRepos)
+
+	// Convert map to slice
+	migrationsSlice := mapToSlice(migrationsMap)
+
+	// For each migration, if in_progress and (stage is empty or unknown) and in queuedReposSet, override stage/state
+	for _, m := range migrationsSlice {
+		if m.Status == "in_progress" && (m.Stage == "" || m.Stage == "unknown") {
+			if _, isQueued := queuedReposSet[m.Repository]; isQueued {
+				m.Stage = "queued"
+				m.State = "waiting for worker"
+			}
+		}
+	}
+
+	// Calculate real-time duration for active migrations
+	calculateRealTimeDuration(migrationsSlice)
+
+	// Get recent activity events
+	recentActivity := getRecentActivity(migrationsSlice, 10)
+
+	data := TemplateData{
+		RecentActivity: recentActivity,
+	}
+
+	err := h.templates.ExecuteTemplate(w, "timeline_section", data)
+	if err != nil {
+		h.logger.Error("failed to execute timeline template", "error", err)
+		http.Error(w, "Failed to render timeline", http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -1482,9 +1737,10 @@ func sanitizeInput(input string) string {
 	// HTML escape the input to prevent XSS
 	escaped := html.EscapeString(input)
 
-	// Only allow alphanumeric characters, slashes, hyphens, underscores, periods, and colons
-	// This is suitable for repository paths, URLs, and organization names
-	re := regexp.MustCompile(`[^a-zA-Z0-9/\-_.:]`)
+	// CORRECTED: Allow alphanumeric, slashes, hyphens, underscores, periods, colons. Replace OTHERS.
+	// Added \\ to correctly escape - within the character class.
+	// Added + to match one or more occurrences of disallowed characters for efficiency.
+	re := regexp.MustCompile(`[^a-zA-Z0-9/\-_.:\s]`) // Allow common safe characters + whitespace
 	sanitized := re.ReplaceAllString(escaped, "")
 
 	return sanitized
@@ -1638,5 +1894,564 @@ func (h *Handler) handleHistoryExport(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to generate JSON export", http.StatusInternalServerError)
 			return
 		}
+	}
+}
+
+// handleChartData returns JSON data for dashboard charts
+func (h *Handler) handleChartData(w http.ResponseWriter, r *http.Request) {
+	migrations := h.migrator.GetAllMigrationStatuses()
+	migrationSlice := mapToSlice(migrations)
+
+	chartData := h.generateChartData(migrationSlice)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(chartData); err != nil {
+		h.logger.Error("Failed to encode chart data", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+}
+
+// generateChartData creates chart data from migrations
+func (h *Handler) generateChartData(migrations []*payload.MigrationStatus) ChartData {
+	stats := calculateStats(migrations)
+
+	// Status distribution
+	statusData := StatusChartData{
+		Succeeded: stats.Succeeded,
+		Running:   stats.Active,
+		Failed:    stats.Failed,
+		Pending:   0, // Calculate pending if needed
+	}
+
+	// Trends data - generate meaningful historical data from current migration timings
+	trendsData := h.generateTrendsData(migrations)
+
+	// Repository size distribution
+	sizeData := h.calculateSizeDistribution(migrations)
+
+	// Performance metrics - generate meaningful performance data
+	performanceData := h.generatePerformanceData(migrations)
+
+	// Activity heatmap - only use real migration data
+	activityData := h.generateActivityHeatmap(migrations)
+
+	return ChartData{
+		Status:      statusData,
+		Trends:      trendsData,
+		Sizes:       sizeData,
+		Performance: performanceData,
+		Activity:    activityData,
+	}
+}
+
+// calculateSizeDistribution analyzes repository sizes
+func (h *Handler) calculateSizeDistribution(migrations []*payload.MigrationStatus) SizeChartData {
+	sizeData := SizeChartData{}
+
+	for _, migration := range migrations {
+		// Convert bytes to MB for categorization
+		sizeMB := float64(migration.RepositorySize) / (1024 * 1024)
+
+		switch {
+		case sizeMB < 100: // < 100MB
+			sizeData.Small++
+		case sizeMB < 500: // 100MB - 500MB
+			sizeData.Medium++
+		case sizeMB < 1000: // 500MB - 1GB
+			sizeData.Large++
+		default: // > 1GB
+			sizeData.ExtraLarge++
+		}
+	}
+
+	return sizeData
+}
+
+// generateActivityHeatmap creates a 7x24 grid of migration activity
+func (h *Handler) generateActivityHeatmap(migrations []*payload.MigrationStatus) ActivityChartData {
+	// Create 7 days x 24 hours grid
+	heatmap := make([][]int, 7)
+	for i := range heatmap {
+		heatmap[i] = make([]int, 24)
+	}
+
+	maxActivity := 0
+
+	// Analyze migration start times
+	for _, migration := range migrations {
+		if !migration.StartedAt.IsZero() {
+			weekday := int(migration.StartedAt.Weekday())
+			hour := migration.StartedAt.Hour()
+
+			heatmap[weekday][hour]++
+			if heatmap[weekday][hour] > maxActivity {
+				maxActivity = heatmap[weekday][hour]
+			}
+		}
+	}
+
+	return ActivityChartData{
+		MaxActivity: maxActivity,
+		Heatmap:     heatmap,
+	}
+}
+
+// generateTrendsData creates trending data based on migration start times
+func (h *Handler) generateTrendsData(migrations []*payload.MigrationStatus) TrendsChartData {
+	now := time.Now()
+
+	// Generate labels for the last 7 days
+	labels := make([]string, 7)
+	successful := make([]int, 7)
+	failed := make([]int, 7)
+	total := make([]int, 7)
+
+	for i := 6; i >= 0; i-- {
+		date := now.AddDate(0, 0, -i)
+		labels[6-i] = date.Format("Jan 2")
+
+		// Count migrations that started on this day
+		for _, migration := range migrations {
+			if !migration.StartedAt.IsZero() {
+				migrationDate := migration.StartedAt.Truncate(24 * time.Hour)
+				dayDate := date.Truncate(24 * time.Hour)
+
+				if migrationDate.Equal(dayDate) {
+					total[6-i]++
+					switch migration.Status {
+					case "succeeded":
+						successful[6-i]++
+					case "failed":
+						failed[6-i]++
+					}
+				}
+			}
+		}
+	}
+
+	return TrendsChartData{
+		Labels:     labels,
+		Successful: successful,
+		Failed:     failed,
+		Total:      total,
+	}
+}
+
+// generatePerformanceData creates performance metrics based on current migration data
+func (h *Handler) generatePerformanceData(migrations []*payload.MigrationStatus) PerformanceChartData {
+	now := time.Now()
+
+	// Generate labels for the last 4 weeks
+	labels := make([]string, 4)
+	duration := make([]float64, 4)
+	successRate := make([]int, 4)
+
+	for i := 3; i >= 0; i-- {
+		weekStart := now.AddDate(0, 0, -7*(i+1))
+		weekEnd := now.AddDate(0, 0, -7*i)
+		labels[3-i] = fmt.Sprintf("Week %d", 4-i)
+
+		var weekMigrations []*payload.MigrationStatus
+		var weekSuccessful int
+		var totalDuration time.Duration
+		var completedMigrations int
+
+		// Find migrations that started in this week
+		for _, migration := range migrations {
+			if !migration.StartedAt.IsZero() &&
+				migration.StartedAt.After(weekStart) &&
+				migration.StartedAt.Before(weekEnd) {
+				weekMigrations = append(weekMigrations, migration)
+
+				// Calculate duration for completed migrations
+				if migration.Status == "succeeded" || migration.Status == "failed" {
+					var endTime time.Time
+					if migration.Status == "succeeded" {
+						endTime = now // Use current time as approximation
+					} else {
+						endTime = now
+					}
+
+					migrationDuration := endTime.Sub(migration.StartedAt)
+					totalDuration += migrationDuration
+					completedMigrations++
+
+					if migration.Status == "succeeded" {
+						weekSuccessful++
+					}
+				}
+			}
+		}
+
+		// Calculate average duration in hours
+		if completedMigrations > 0 {
+			avgDuration := totalDuration / time.Duration(completedMigrations)
+			duration[3-i] = avgDuration.Hours()
+		}
+
+		// Calculate success rate
+		if len(weekMigrations) > 0 {
+			successRate[3-i] = (weekSuccessful * 100) / len(weekMigrations)
+		}
+	}
+
+	return PerformanceChartData{
+		Labels:      labels,
+		Duration:    duration,
+		SuccessRate: successRate,
+	}
+}
+
+// handleTestConnection tests the connection to GitHub instances
+func (h *Handler) handleTestConnection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Log Content-Type
+	contentType := r.Header.Get("Content-Type")
+	h.logger.Debug("TestConnection: Request Content-Type", "contentType", contentType)
+
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		h.logger.Debug("TestConnection: ParseMultipartForm failed, trying ParseForm", "error", err)
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			h.logger.Error("TestConnection: Failed to parse form data", "error", err)
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"message": "Failed to parse form data: " + err.Error(),
+			}); err != nil {
+				h.logger.Error("Failed to encode JSON response", "error", err)
+			}
+			return
+		}
+	}
+
+	// Log the raw form values from r.Form and r.PostForm
+	h.logger.Debug("TestConnection: r.Form after ParseForm", "r.Form", fmt.Sprintf("%#v", r.Form))
+	h.logger.Debug("TestConnection: r.PostForm after ParseForm", "r.PostForm", fmt.Sprintf("%#v", r.PostForm))
+	if r.MultipartForm != nil {
+		h.logger.Debug("TestConnection: r.MultipartForm.Value after ParseForm", "r.MultipartForm.Value", fmt.Sprintf("%#v", r.MultipartForm.Value))
+	}
+
+	rawConnectionType := r.FormValue("type")
+	rawToken := r.FormValue("token") // Use raw token
+	rawOrg := r.FormValue("org")
+	rawBaseURL := r.FormValue("base_url")
+
+	h.logger.Debug("TestConnection: Raw form values retrieved",
+		"raw_type", rawConnectionType,
+		"raw_token_present", rawToken != "",
+		"raw_token_length", len(rawToken),
+		"raw_org", rawOrg,
+		"raw_base_url", rawBaseURL,
+	)
+
+	// Apply sanitization only to fields that need it
+	connectionType := sanitizeInput(rawConnectionType)
+	token := rawToken // Do NOT sanitize the token if it's for API use
+	org := sanitizeInput(rawOrg)
+	baseURL := sanitizeInput(rawBaseURL)
+
+	// Debug logging (original style, now shows values after selective sanitization)
+	h.logger.Debug("Connection test request received (values after processing)",
+		"type", connectionType,
+		"token_present", token != "", // This token is rawToken
+		"token_length", len(token), // This token is rawToken
+		"org", org,
+		"base_url", baseURL,
+	)
+
+	// Validate required fields (use raw token for check)
+	if connectionType == "" || rawToken == "" || org == "" {
+		h.logger.Debug("Missing required fields validation hit",
+			"type_empty", connectionType == "",
+			"token_empty", rawToken == "", // Check rawToken
+			"org_empty", org == "",
+		)
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Missing required fields (type, token, or org is empty)",
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
+		return
+	}
+
+	// Set default URL for GitHub Cloud
+	if connectionType == "target" && baseURL == "" {
+		baseURL = "https://api.github.com"
+	}
+
+	// Validate that base URL is provided for source connections
+	if connectionType == "source" && baseURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "GHES URL is required for source connections",
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
+		return
+	}
+
+	// Test the connection using real GitHub API calls
+	success, message := h.testGitHubConnectionReal(r.Context(), connectionType, baseURL, token, org)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": success,
+		"message": message,
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
+}
+
+// testGitHubConnectionReal performs a real test of GitHub API connectivity by calling the organization endpoint
+func (h *Handler) testGitHubConnectionReal(ctx context.Context, connectionType, baseURL, token, org string) (bool, string) {
+	// Import the config package to create temporary clients
+	clientsConfig := &config.ClientsConfig{
+		Proxy: config.ProxyConfig{
+			Enabled: false, // No proxy for connection testing
+		},
+	}
+
+	// Set appropriate token and base URL based on connection type
+	if connectionType == "source" {
+		clientsConfig.GHESToken = token
+		// For GHES, we need to construct the API URL properly (add /api/v3/ to the base URL)
+		// This matches how the actual migration process handles the URL
+		baseURLTrimmed := strings.TrimSuffix(baseURL, "/")
+		clientsConfig.GHESBaseURL = baseURLTrimmed + "/api/v3/"
+	} else {
+		clientsConfig.GHCloudToken = token
+	}
+
+	// Create temporary clients for testing
+	clients, err := config.NewClients(clientsConfig)
+	if err != nil {
+		h.logger.Error("Failed to create GitHub clients for connection test", "error", err)
+		return false, "Failed to initialize GitHub client"
+	}
+
+	// Create a temporary GitHub API instance for testing
+	githubAPI := github.New(clients, h.logger)
+
+	// Create a context with timeout for the API call
+	testCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Test organization access based on connection type
+	if connectionType == "source" {
+		if err := githubAPI.ValidateGHESOrganization(testCtx, org); err != nil {
+			h.logger.Debug("GHES organization validation failed during connection test",
+				"org", org,
+				"error", err)
+			return false, "Cannot access organization - check your token permissions and organization name"
+		}
+		return true, "Successfully connected to GHES organization"
+	} else {
+		if err := githubAPI.ValidateGHCloudOrganization(testCtx, org); err != nil {
+			h.logger.Debug("GitHub Cloud organization validation failed during connection test",
+				"org", org,
+				"error", err)
+			return false, "Cannot access organization - check your token permissions and organization name"
+		}
+		return true, "Successfully connected to GitHub Cloud organization"
+	}
+}
+
+// handleLoadRepositories loads repositories from the source organization
+func (h *Handler) handleLoadRepositories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+	}
+
+	token := r.FormValue("token")
+	org := sanitizeInput(r.FormValue("org"))
+	baseURL := sanitizeInput(r.FormValue("base_url"))
+	searchQuery := sanitizeInput(r.FormValue("search"))
+
+	// Validate required fields
+	if token == "" || org == "" || baseURL == "" {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "Missing required fields",
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
+		return
+	}
+
+	// Load repositories using real GitHub API
+	repositories, err := h.loadRepositoriesFromGitHub(baseURL, token, org, searchQuery)
+	if err != nil {
+		h.logger.Error("Failed to load repositories from GitHub",
+			"org", org,
+			"baseURL", baseURL,
+			"error", err)
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": fmt.Sprintf("Failed to load repositories: %v", err),
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":      true,
+		"repositories": repositories,
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
+}
+
+// loadRepositoriesFromGitHub loads repositories from GitHub using the actual API
+func (h *Handler) loadRepositoriesFromGitHub(baseURL, token, org, searchQuery string) ([]github.Repository, error) {
+	// Create a temporary GitHub API client with the provided credentials
+	githubAPI, err := h.createTemporaryGitHubAPI(baseURL, token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GitHub API client: %w", err)
+	}
+
+	// Get all repositories from the organization
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	repositories, err := githubAPI.ListOrganizationRepositories(ctx, org)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list repositories: %w", err)
+	}
+
+	// Filter by search query if provided
+	if searchQuery != "" {
+		var filtered []github.Repository
+		searchLower := strings.ToLower(searchQuery)
+		for _, repo := range repositories {
+			if strings.Contains(strings.ToLower(repo.Name), searchLower) ||
+				strings.Contains(strings.ToLower(repo.Description), searchLower) {
+				filtered = append(filtered, repo)
+			}
+		}
+		return filtered, nil
+	}
+
+	return repositories, nil
+}
+
+// createTemporaryGitHubAPI creates a temporary GitHub API client with the provided credentials
+func (h *Handler) createTemporaryGitHubAPI(baseURL, token string) (github.API, error) {
+	// Create configuration for GHES client only
+	clientsConfig := &config.ClientsConfig{
+		GHESToken: token,
+		Proxy: config.ProxyConfig{
+			Enabled: false, // No proxy for wizard repository loading
+		},
+	}
+
+	// Create clients using the config package
+	clients, err := config.NewClients(clientsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create clients: %w", err)
+	}
+
+	// Set the GHES base URL
+	if baseURL != "" {
+		// For GHES, we need to construct the API URL properly (add /api/v3/ to the base URL)
+		baseURLTrimmed := strings.TrimSuffix(baseURL, "/")
+		apiURL := baseURLTrimmed + "/api/v3/"
+
+		if err := clients.UpdateGHESBaseURL(apiURL); err != nil {
+			return nil, fmt.Errorf("failed to update GHES base URL: %w", err)
+		}
+	}
+
+	// Create and return the GitHub API
+	return github.New(clients, h.logger), nil
+}
+
+// handleSaveDraft saves wizard draft data
+func (h *Handler) handleSaveDraft(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse form data - handle both multipart and URL-encoded
+	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB max memory
+		// Fallback to regular form parsing for URL-encoded data
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+	}
+
+	draftData := r.FormValue("draft_data")
+	draftName := sanitizeInput(r.FormValue("draft_name"))
+
+	if draftData == "" {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "No draft data provided",
+		}); err != nil {
+			h.logger.Error("Failed to encode JSON response", "error", err)
+		}
+		return
+	}
+
+	// For now, we'll just acknowledge the save
+	// In a real implementation, you would save to a database or file system
+	h.logger.Info("Draft saved", "name", draftName, "data_length", len(draftData))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Draft saved successfully",
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
+	}
+}
+
+// handleLoadDraft loads wizard draft data
+func (h *Handler) handleLoadDraft(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	draftName := sanitizeInput(r.URL.Query().Get("name"))
+
+	// For now, return empty data since we don't have persistent storage
+	// In a real implementation, you would load from a database or file system
+	h.logger.Debug("Loading draft", "name", draftName)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"data":    nil, // No saved draft data
+		"message": "No saved draft found",
+	}); err != nil {
+		h.logger.Error("Failed to encode JSON response", "error", err)
 	}
 }

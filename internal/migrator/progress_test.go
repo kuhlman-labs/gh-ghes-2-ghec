@@ -93,8 +93,8 @@ func TestCalculateProgressData(t *testing.T) {
 			stage:                 "migration",
 			state:                 "IN_PROGRESS",
 			existing:              nil,
-			expectedProgress:      88, // 10% + 10% + 25% + 15% + 40% * 70%
-			expectedStageProgress: 70,
+			expectedProgress:      92, // 10% + 10% + 25% + 15% + 40% * 80%
+			expectedStageProgress: 80,
 			expectedCompleted:     []string{"validation", "setup", "archive", "storage"},
 			expectedStageIndex:    5,
 		},
@@ -132,17 +132,18 @@ func TestCalculateProgressData(t *testing.T) {
 				StageProgress:     30,
 				CompletedStages:   []string{"validation", "setup"},
 				CurrentStageIndex: 3,
+				UseGHOS:           false, // Non-GHOS migration
 			},
-			expectedProgress:      80, // 10% + 10% + 25% + 15% + 40% * 50%
-			expectedStageProgress: 50,
-			expectedCompleted:     []string{"validation", "setup", "archive", "storage"},
-			expectedStageIndex:    5,
+			expectedProgress:      82, // 10% + 10% + 30% + 50% * 65% = 82.5 → 82
+			expectedStageProgress: 65,
+			expectedCompleted:     []string{"validation", "setup", "archive"},
+			expectedStageIndex:    4, // Migration stage index for non-GHOS (storage skipped)
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calculateProgressData(tt.stage, tt.state, tt.existing)
+			result := calculateProgressData(tt.stage, tt.state, tt.existing, nil)
 
 			assert.Equal(t, tt.expectedProgress, result.progress, "Progress mismatch")
 			assert.Equal(t, tt.expectedStageProgress, result.stageProgress, "Stage progress mismatch")
@@ -262,31 +263,31 @@ func TestCalculateStageProgress(t *testing.T) {
 			name:     "migration - created",
 			stage:    "migration",
 			state:    "created",
-			expected: 20,
+			expected: 40,
 		},
 		{
 			name:     "migration - waiting",
 			stage:    "migration",
 			state:    "waiting",
-			expected: 30,
+			expected: 50,
 		},
 		{
 			name:     "migration - QUEUED",
 			stage:    "migration",
 			state:    "QUEUED",
-			expected: 40,
+			expected: 60,
 		},
 		{
 			name:     "migration - PENDING",
 			stage:    "migration",
 			state:    "PENDING",
-			expected: 50,
+			expected: 65,
 		},
 		{
 			name:     "migration - IN_PROGRESS",
 			stage:    "migration",
 			state:    "IN_PROGRESS",
-			expected: 70,
+			expected: 80,
 		},
 		{
 			name:     "migration - SUCCEEDED",
@@ -384,7 +385,7 @@ func TestCalculateProgressDataEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calculateProgressData(tt.stage, tt.state, tt.existing)
+			result := calculateProgressData(tt.stage, tt.state, tt.existing, nil)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -432,7 +433,7 @@ func TestCalculateProgressDataStageProgression(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := calculateProgressData(tt.stage, tt.state, nil)
+			result := calculateProgressData(tt.stage, tt.state, nil, nil)
 			assert.Equal(t, tt.expectedComplete, result.completedStages)
 		})
 	}
@@ -445,7 +446,7 @@ func TestCalculateProgressDataPreservesExistingCompleted(t *testing.T) {
 		Progress:        25,
 	}
 
-	result := calculateProgressData("archive", "generating", existing)
+	result := calculateProgressData("archive", "generating", existing, nil)
 
 	// Should have original completed stages plus any new ones based on current stage
 	assert.Contains(t, result.completedStages, "validation")
@@ -458,19 +459,19 @@ func TestCalculateProgressDataWeightedProgress(t *testing.T) {
 	// Stage weights: validation(10), setup(10), archive(25), storage(15), migration(40)
 
 	// Test middle of archive stage (50% through)
-	result := calculateProgressData("archive", "exporting", nil)
+	result := calculateProgressData("archive", "exporting", nil, nil)
 	// expectedProgress := 10 + 10 + (25 * 50 / 100) // 20 + 12.5 = 32.5 -> 32
 	assert.Equal(t, 32, result.progress)
 
 	// Test beginning of migration stage
-	result = calculateProgressData("migration", "starting", nil)
+	result = calculateProgressData("migration", "starting", nil, nil)
 	// expectedProgress = 10 + 10 + 25 + 15 + (40 * 10 / 100) // 60 + 4 = 64
 	assert.Equal(t, 64, result.progress)
 }
 
 func TestCalculateProgressDataMigrationCompleted(t *testing.T) {
 	// Test special case when migration is completed
-	result := calculateProgressData("migration", "completed", nil)
+	result := calculateProgressData("migration", "completed", nil, nil)
 
 	assert.Equal(t, 100, result.progress)
 	assert.Equal(t, 100, result.stageProgress)
@@ -478,6 +479,145 @@ func TestCalculateProgressDataMigrationCompleted(t *testing.T) {
 	assert.Equal(t, 5, result.currentStageIndex)
 
 	// Test SUCCEEDED state too
-	result = calculateProgressData("migration", "SUCCEEDED", nil)
+	result = calculateProgressData("migration", "SUCCEEDED", nil, nil)
 	assert.Equal(t, 100, result.stageProgress)
+}
+
+func TestCalculateProgressData_QueueStage(t *testing.T) {
+	tests := []struct {
+		name                  string
+		stage                 string
+		state                 string
+		existing              *payload.MigrationStatus
+		expectedProgress      int
+		expectedStageProgress int
+		expectedCompleted     []string
+		expectedStageIndex    int
+	}{
+		{
+			name:                  "waiting for archive worker after validation",
+			stage:                 "queue",
+			state:                 "waiting_archive_worker",
+			existing:              &payload.MigrationStatus{CompletedStages: []string{}, Progress: 5},
+			expectedProgress:      10, // Validation completed (10%)
+			expectedStageProgress: 0,
+			expectedCompleted:     []string{"validation"},
+			expectedStageIndex:    2, // Next would be archive
+		},
+		{
+			name:                  "waiting for migration worker after archive",
+			stage:                 "queue",
+			state:                 "waiting_migration_worker",
+			existing:              &payload.MigrationStatus{CompletedStages: []string{"validation"}, Progress: 25, UseGHOS: false},
+			expectedProgress:      50, // Validation (10%) + Setup (10%) + Archive (30%) = 50%
+			expectedStageProgress: 0,
+			expectedCompleted:     []string{"validation", "setup", "archive"},
+			expectedStageIndex:    4, // Next would be migration (storage skipped)
+		},
+		{
+			name:                  "generic queue state preserves existing progress",
+			stage:                 "queue",
+			state:                 "unknown_queue_state",
+			existing:              &payload.MigrationStatus{CompletedStages: []string{"validation", "setup"}, Progress: 30, CurrentStageIndex: 3},
+			expectedProgress:      30,
+			expectedStageProgress: 0,
+			expectedCompleted:     []string{"validation", "setup"},
+			expectedStageIndex:    3,
+		},
+		{
+			name:                  "queue stage with no existing status",
+			stage:                 "queue",
+			state:                 "waiting_archive_worker",
+			existing:              nil,
+			expectedProgress:      0,
+			expectedStageProgress: 0,
+			expectedCompleted:     []string{},
+			expectedStageIndex:    0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateProgressData(tt.stage, tt.state, tt.existing, nil)
+			assert.Equal(t, tt.expectedProgress, result.progress, "progress mismatch")
+			assert.Equal(t, tt.expectedStageProgress, result.stageProgress, "stage progress mismatch")
+			assert.Equal(t, tt.expectedCompleted, result.completedStages, "completed stages mismatch")
+			assert.Equal(t, tt.expectedStageIndex, result.currentStageIndex, "stage index mismatch")
+		})
+	}
+}
+
+func TestCalculateProgressData_GHOSvsNonGHOS(t *testing.T) {
+	tests := []struct {
+		name                  string
+		stage                 string
+		state                 string
+		useGHOS               bool
+		expectedProgress      int
+		expectedStageProgress int
+		expectedCompleted     []string
+		expectedStageIndex    int
+		description           string
+	}{
+		{
+			name:                  "migration starting with GHOS enabled",
+			stage:                 "migration",
+			state:                 "starting",
+			useGHOS:               true,
+			expectedProgress:      64, // 10% + 10% + 25% + 15% + 40% * 10% = 64
+			expectedStageProgress: 10,
+			expectedCompleted:     []string{"validation", "setup", "archive", "storage"},
+			expectedStageIndex:    5,
+			description:           "GHOS enabled should include storage stage in progress",
+		},
+		{
+			name:                  "migration starting with GHOS disabled",
+			stage:                 "migration",
+			state:                 "starting",
+			useGHOS:               false,
+			expectedProgress:      55, // 10% + 10% + 30% + 50% * 10% = 55
+			expectedStageProgress: 10,
+			expectedCompleted:     []string{"validation", "setup", "archive"},
+			expectedStageIndex:    4,
+			description:           "GHOS disabled should skip storage stage",
+		},
+		{
+			name:                  "archive completion with GHOS enabled",
+			stage:                 "archive",
+			state:                 "ready",
+			useGHOS:               true,
+			expectedProgress:      45, // 10% + 10% + 25% * 100% = 45
+			expectedStageProgress: 100,
+			expectedCompleted:     []string{"validation", "setup"},
+			expectedStageIndex:    3,
+			description:           "Archive completion with GHOS should be 45%",
+		},
+		{
+			name:                  "archive completion with GHOS disabled",
+			stage:                 "archive",
+			state:                 "ready",
+			useGHOS:               false,
+			expectedProgress:      50, // 10% + 10% + 30% * 100% = 50
+			expectedStageProgress: 100,
+			expectedCompleted:     []string{"validation", "setup"},
+			expectedStageIndex:    3,
+			description:           "Archive completion without GHOS should be 50%",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a migration request with the specified GHOS setting
+			req := &payload.MigrationRequest{
+				UseGHOS: tt.useGHOS,
+			}
+
+			result := calculateProgressData(tt.stage, tt.state, nil, req)
+
+			assert.Equal(t, tt.expectedProgress, result.progress, "Progress mismatch: %s", tt.description)
+			assert.Equal(t, tt.expectedStageProgress, result.stageProgress, "Stage progress mismatch: %s", tt.description)
+			assert.Equal(t, tt.expectedCompleted, result.completedStages, "Completed stages mismatch: %s", tt.description)
+			assert.Equal(t, tt.expectedStageIndex, result.currentStageIndex, "Stage index mismatch: %s", tt.description)
+		})
+	}
 }

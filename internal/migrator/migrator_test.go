@@ -3,7 +3,6 @@
 package migrator
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -180,39 +179,4 @@ func TestMigrator_SendWebhookNotification(t *testing.T) {
 	// Note: We can't easily test the actual webhook payload without mocking the HTTP client
 }
 
-func TestMigrateRepository_GHOS_InvalidOrgID(t *testing.T) {
-	// Create a test migrator
-	logger := logging.Get()
-	githubAPI := github.NewNoopAPI(logger)
-	storageProvider := &storage.NoopStorage{}
-	cfg := config.Get()
-	m := NewMigrator(logger, githubAPI, storageProvider, "", cfg, nil, nil)
-
-	// Create test data
-	startTime := time.Now()
-
-	// Set invalid ownerID that cannot be parsed
-	ownerID := "invalid-owner-id"
-
-	// Call the function being tested directly
-	err := m.extractAndValidateOrgID("test-repo", ownerID, startTime)
-
-	// Verify the error message
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "error extracting organization database ID")
-	assert.NotContains(t, err.Error(), "%!w(<nil>)") // Ensure we don't have the formatting error
-}
-
-// Helper function for testing GHOS organization ID extraction
-func (m *Migrator) extractAndValidateOrgID(repoName string, _ string, startTime time.Time) error {
-	// This function replicates just the org ID extraction logic from migrateRepository
-	orgDatabaseID := "" // Simulate failure to extract ID
-
-	if orgDatabaseID == "" {
-		errMsg := "failed to extract organization database ID for GHOS upload"
-		m.updateStatus(repoName, payload.StatusFailed, errMsg, time.Now(), startTime)
-		return fmt.Errorf("error extracting organization database ID for GHOS upload")
-	}
-
-	return nil
-}
+// Note: Removed TestMigrateRepository_GHOS_InvalidOrgID test as it was testing non-existent functionality

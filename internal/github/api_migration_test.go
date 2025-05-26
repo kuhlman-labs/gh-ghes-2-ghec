@@ -122,8 +122,8 @@ func TestStartRepositoryMigration(t *testing.T) {
 			sourceRepoURL: "https://github.example.com/org/repo",
 			archiveURL:    "https://example.com/archive.tar.gz",
 			metadataURL:   "https://example.com/metadata.json",
-			ghesToken:     "ghes-token",
-			ghCloudToken:  "ghec-token",
+			ghesToken:     "ghp_123456789012345678901234567890123456",
+			ghCloudToken:  "ghp_123456789012345678901234567890123456",
 			expectError:   false,
 		},
 		{
@@ -134,8 +134,8 @@ func TestStartRepositoryMigration(t *testing.T) {
 			sourceRepoURL:  "://invalid-url-with-no-scheme",
 			archiveURL:     "https://example.com/archive.tar.gz",
 			metadataURL:    "https://example.com/metadata.json",
-			ghesToken:      "ghes-token",
-			ghCloudToken:   "ghec-token",
+			ghesToken:      "ghp_123456789012345678901234567890123456",
+			ghCloudToken:   "ghp_123456789012345678901234567890123456",
 			expectError:    true,
 			expectURLError: true,
 		},
@@ -147,8 +147,8 @@ func TestStartRepositoryMigration(t *testing.T) {
 			sourceRepoURL: "https://github.example.com/org/repo",
 			archiveURL:    "https://example.com/archive.tar.gz",
 			metadataURL:   "https://example.com/metadata.json",
-			ghesToken:     "ghes-token",
-			ghCloudToken:  "ghec-token",
+			ghesToken:     "ghp_123456789012345678901234567890123456",
+			ghCloudToken:  "ghp_123456789012345678901234567890123456",
 			expectError:   false, // GraphQL might handle this
 		},
 		{
@@ -272,8 +272,8 @@ func TestMigrationConflictDetection(t *testing.T) {
 			"https://github.example.com/org/repo",
 			"https://example.com/archive.tar.gz",
 			"https://example.com/metadata.json",
-			"ghes-token",
-			"ghec-token",
+			"ghp_123456789012345678901234567890123456",
+			"ghp_123456789012345678901234567890123456",
 		)
 
 		if err != nil {
@@ -311,8 +311,8 @@ func TestMigrationURLValidation(t *testing.T) {
 				invalidURL,
 				"https://example.com/archive.tar.gz",
 				"https://example.com/metadata.json",
-				"ghes-token",
-				"ghec-token",
+				"ghp_123456789012345678901234567890123456",
+				"ghp_123456789012345678901234567890123456",
 			)
 
 			// Empty URL should cause URL parsing error
@@ -379,8 +379,8 @@ func TestMigrationParameterValidation(t *testing.T) {
 					"https://github.example.com/org/repo",
 					"https://example.com/archive.tar.gz",
 					"https://example.com/metadata.json",
-					"ghes-token",
-					"ghec-token",
+					"ghp_123456789012345678901234567890123456",
+					"ghp_123456789012345678901234567890123456",
 				)
 
 				if err != nil {
@@ -423,8 +423,8 @@ func TestMigrationContextCancellation(t *testing.T) {
 			"https://github.example.com/org/repo",
 			"https://example.com/archive.tar.gz",
 			"https://example.com/metadata.json",
-			"ghes-token",
-			"ghec-token",
+			"ghp_123456789012345678901234567890123456",
+			"ghp_123456789012345678901234567890123456",
 		)
 		if err == nil {
 			t.Errorf("Expected error due to cancelled context")

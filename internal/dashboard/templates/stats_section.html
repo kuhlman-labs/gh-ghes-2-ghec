@@ -1,20 +1,35 @@
 {{define "stats_section"}}
-<div class="dashboard-stats">
-    <div class="stat-card">
-        <h3>Active</h3>
-        <span class="stat-value">{{ .Stats.Active }}</span>
+<!-- Total Migrations -->
+<div class="card text-center">
+    <div class="text-sm font-medium text-muted mb-1">Total Migrations</div>
+    <div class="text-2xl font-bold mb-2">{{ .Stats.Total }}</div>
+    <div class="text-xs text-muted">All time</div>
+</div>
+
+<!-- Succeeded -->
+<div class="card text-center">
+    <div class="text-sm font-medium text-muted mb-1">Succeeded</div>
+    <div class="text-2xl font-bold text-success mb-1">{{ .Stats.Succeeded }}</div>
+    <div class="text-sm font-semibold text-success">
+        {{if gt .Stats.Total 0}}{{percentage .Stats.Succeeded .Stats.Total}}%{{else}}0%{{end}} success rate
     </div>
-    <div class="stat-card">
-        <h3>Succeeded</h3>
-        <span class="stat-value">{{ .Stats.Succeeded }}</span>
+</div>
+
+<!-- Failed -->
+<div class="card text-center">
+    <div class="text-sm font-medium text-muted mb-1">Failed</div>
+    <div class="text-2xl font-bold text-danger mb-1">{{ .Stats.Failed }}</div>
+    <div class="text-sm font-semibold text-danger">
+        {{if gt .Stats.Total 0}}{{percentage .Stats.Failed .Stats.Total}}%{{else}}0%{{end}} failure rate
     </div>
-    <div class="stat-card">
-        <h3>Failed</h3>
-        <span class="stat-value">{{ .Stats.Failed }}</span>
-    </div>
-    <div class="stat-card">
-        <h3>Total</h3>
-        <span class="stat-value">{{ .Stats.Total }}</span>
+</div>
+
+<!-- Active -->
+<div class="card text-center">
+    <div class="text-sm font-medium text-muted mb-1">Currently Active</div>
+    <div class="text-2xl font-bold text-primary mb-1">{{ .Stats.Active }}</div>
+    <div class="text-sm font-semibold text-primary">
+        {{if .Stats.Active}}In progress{{else}}None running{{end}}
     </div>
 </div>
 {{end}} 

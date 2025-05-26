@@ -12,20 +12,74 @@ import (
 
 // parseMessageToStageAndState extracts the stage and state information from a status message.
 // It returns the appropriate stage and state strings based on the message content.
-func parseMessageToStageAndState(message string, overallStatus string) (stage, state string) {
+// It also considers the existing status to prevent progress regression.
+func parseMessageToStageAndState(message string, overallStatus string, existing *payload.MigrationStatus) (stage, state string) {
+	// First, determine the raw stage and state based on message content
+	rawStage, rawState := parseRawMessageToStageAndState(message, overallStatus)
+
+	// If no existing status, return the raw parsing result
+	if existing == nil {
+		return rawStage, rawState
+	}
+
+	// Context-aware adjustments to prevent progress regression
+	return adjustStageAndStateForContext(rawStage, rawState, existing, message)
+}
+
+// parseRawMessageToStageAndState provides the basic message-to-stage-state mapping
+func parseRawMessageToStageAndState(message string, overallStatus string) (stage, state string) {
 	switch {
 	case strings.Contains(message, "starting migration process"):
 		stage = "init"
 		state = "starting"
+	case strings.Contains(message, "Migration process initiated"):
+		stage = "migration"
+		state = "starting"
+	case strings.Contains(message, "pre-enqueue validation: repository exists in target organization"):
+		stage = "validation"
+		state = "target_exists"
+	case strings.Contains(message, "pre-enqueue validation: successfully deleted existing repository"):
+		stage = "validation"
+		state = "target_cleaned"
+	case strings.Contains(message, "repository exists in target organization, attempting to delete"):
+		stage = "validation"
+		state = "target_exists"
+	case strings.Contains(message, "successfully deleted existing repository"):
+		stage = "validation"
+		state = "target_cleaned"
+	case strings.Contains(message, "pre-enqueue validation"):
+		stage = "queue"
+		state = "pre_validation"
+	case strings.Contains(message, "initializing archive job"):
+		stage = "queue"
+		state = "initializing_archive"
 	case strings.Contains(message, "validating source repository"):
 		stage = "validation"
 		state = "checking_source"
+	case strings.Contains(message, "estimating repository size"):
+		stage = "validation"
+		state = "estimating_size"
+	case strings.Contains(message, "repository size:"):
+		stage = "validation"
+		state = "size_estimated"
+	case strings.Contains(message, "checking if repository exists in target organization"):
+		stage = "validation"
+		state = "checking_target"
+	case strings.Contains(message, "checking target repository"):
+		stage = "validation"
+		state = "checking_target"
 	case strings.Contains(message, "getting target organization ID"):
 		stage = "validation"
 		state = "checking_target"
 	case strings.Contains(message, "creating migration source"):
 		stage = "setup"
 		state = "creating_source"
+	case strings.Contains(message, "creating migration source in GHEC"):
+		stage = "setup"
+		state = "creating_source"
+	case strings.Contains(message, "starting archive generation"):
+		stage = "archive"
+		state = "preparing"
 	case strings.Contains(message, "generating migration archive"):
 		stage = "archive"
 		state = "generating"
@@ -48,13 +102,25 @@ func parseMessageToStageAndState(message string, overallStatus string) (stage, s
 	case strings.Contains(message, "archive ready for migration"):
 		stage = "archive"
 		state = "ready"
+	case strings.Contains(message, "retrieving archive URL"):
+		stage = "archive"
+		state = "retrieving_url"
 	case strings.Contains(message, "uploading archive to GitHub Owned Storage"):
+		stage = "storage"
+		state = "uploading"
+	case strings.Contains(message, "uploading archive to GHOS"):
 		stage = "storage"
 		state = "uploading"
 	case strings.Contains(message, "archive uploaded to GHOS:"):
 		stage = "storage"
 		state = "completed"
+	case strings.Contains(message, "archive complete, waiting for migration worker"):
+		stage = "queue"
+		state = "waiting_migration_worker"
 	case strings.Contains(message, "starting repository migration"):
+		stage = "migration"
+		state = "starting"
+	case strings.Contains(message, "Starting migration import"):
 		stage = "migration"
 		state = "starting"
 	case strings.Contains(message, "starting repository migration with GHOS archive"):
@@ -92,6 +158,79 @@ func parseMessageToStageAndState(message string, overallStatus string) (stage, s
 	}
 
 	return stage, state
+}
+
+// adjustStageAndStateForContext prevents progress regression by adjusting stage/state based on existing status
+func adjustStageAndStateForContext(rawStage, rawState string, existing *payload.MigrationStatus, message string) (stage, state string) {
+	// Define stage progression order for context checking
+	stageOrder := map[string]int{
+		"init":       0,
+		"validation": 1,
+		"setup":      2,
+		"archive":    3,
+		"storage":    4,
+		"migration":  5,
+		"queue":      6, // Queue is special - can appear at multiple points
+		"error":      7,
+		"unknown":    8,
+	}
+
+	currentStageOrder := stageOrder[existing.Stage]
+	newStageOrder := stageOrder[rawStage]
+
+	// Special handling for specific patterns that should not regress progress
+
+	// 1. Validation checks during migration phase should be treated as migration activities
+	if existing.Stage == "migration" || existing.Stage == "queue" && existing.State == "waiting_migration_worker" {
+		if rawStage == "validation" {
+			// These are validation checks happening during migration setup, not initial validation
+			if strings.Contains(message, "repository exists in target organization") ||
+				strings.Contains(message, "checking target repository") ||
+				strings.Contains(message, "successfully deleted existing repository") {
+				return "migration", "pre_migration_validation"
+			}
+		}
+
+		// 2. GHOS uploads during migration should be treated as migration activities, not separate storage stage
+		if rawStage == "storage" {
+			if strings.Contains(message, "uploading archive to GHOS") {
+				return "migration", "uploading_to_ghos"
+			}
+			if strings.Contains(message, "archive uploaded to GHOS") {
+				return "migration", "ghos_upload_complete"
+			}
+		}
+	}
+
+	// 3. If we're past the archive stage and get archive-related messages, treat them as migration setup
+	if currentStageOrder >= stageOrder["storage"] && rawStage == "archive" {
+		// Archive operations happening late in the process are likely part of migration setup
+		if strings.Contains(message, "retrieving archive URL") ||
+			strings.Contains(message, "archive ready") {
+			return "migration", "preparing_archive"
+		}
+	}
+
+	// 4. Queue stage special handling - preserve progress based on state
+	if rawStage == "queue" {
+		// Queue states should preserve existing progress appropriately
+		return rawStage, rawState
+	}
+
+	// 5. Prevent regression to earlier stages unless it's an error
+	if newStageOrder < currentStageOrder && rawStage != "error" && rawStage != "queue" {
+		// If the new stage would regress progress, keep the current stage but update state if meaningful
+		if rawStage == "validation" && existing.Stage == "migration" {
+			// Validation during migration becomes a migration sub-activity
+			return "migration", "validating"
+		}
+
+		// For other regressions, preserve current stage but update state to reflect activity
+		return existing.Stage, rawState
+	}
+
+	// 6. Allow progression to later stages
+	return rawStage, rawState
 }
 
 // persistAndNotifyStatusUpdate handles persisting the status to storage and sending webhook notifications.
@@ -141,6 +280,18 @@ func (m *Migrator) persistAndNotifyStatusUpdate(status *payload.MigrationStatus,
 // timestamp is when this specific update event occurred.
 // attemptStartTime is the time this particular migration attempt (fresh or retry) began.
 func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, message string, timestamp time.Time, attemptStartTime time.Time) {
+	m.updateStatusWithContext(repoFullName, newOverallStatus, message, timestamp, attemptStartTime, nil)
+}
+
+// updateStatusWithContext updates the in-memory status of a migration with additional context and triggers persistence.
+// This version allows passing migration request context for proper initialization of new migration statuses.
+// repoFullName is the unique identifier in "org/repo" format.
+// newOverallStatus is one of payload.StatusInProgress, payload.StatusSucceeded, payload.StatusFailed.
+// message often contains details about the current state or an error.
+// timestamp is when this specific update event occurred.
+// attemptStartTime is the time this particular migration attempt (fresh or retry) began.
+// req is the migration request context (can be nil for existing migrations).
+func (m *Migrator) updateStatusWithContext(repoFullName string, newOverallStatus string, message string, timestamp time.Time, attemptStartTime time.Time, req *payload.MigrationRequest) {
 	m.mu.Lock() // Lock is released before potentially long-running operations
 
 	var currentAttemptStatus *payload.MigrationStatus
@@ -149,14 +300,18 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 	var migrationStatus *payload.MigrationStatus
 
 	// Parse the message to determine stage and state for this update
-	stage, state := parseMessageToStageAndState(message, newOverallStatus)
+	var existing *payload.MigrationStatus
+	if existingStatus, ok := m.migrations[repoFullName]; ok {
+		existing = existingStatus
+	}
+	stage, state := parseMessageToStageAndState(message, newOverallStatus, existing)
 
 	if existing, ok := m.migrations[repoFullName]; !ok {
 		// New status - Initialize with first stage
 		isNewOrChanged = true
 
 		// Determine progression data
-		progressData := calculateProgressData(stage, state, nil)
+		progressData := calculateProgressData(stage, state, nil, req)
 
 		migrationStatus = &payload.MigrationStatus{
 			Repository:        repoFullName,
@@ -172,6 +327,15 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 			TotalStages:       len(payload.MigrationStages),
 			CurrentStageIndex: progressData.currentStageIndex,
 		}
+
+		// Set UseGHOS from request context if available
+		if req != nil {
+			migrationStatus.UseGHOS = req.UseGHOS
+			migrationStatus.TargetOrg = req.TargetOrg
+			migrationStatus.GHESBaseURL = req.GHESBaseURL
+			migrationStatus.DeleteIfExists = req.DeleteIfExists
+		}
+
 		m.migrations[repoFullName] = migrationStatus
 		currentAttemptStatus = migrationStatus
 		m.logger.Debug("Created new in-memory status for first update", "repository_full_name", repoFullName, "attempt_start_time", attemptStartTime)
@@ -185,7 +349,7 @@ func (m *Migrator) updateStatus(repoFullName string, newOverallStatus string, me
 		}
 
 		// Calculate progress data based on current stage/state and previous state
-		progressData := calculateProgressData(stage, state, existing)
+		progressData := calculateProgressData(stage, state, existing, req)
 
 		// Update existing status
 		existing.Repository = repoFullName
@@ -290,6 +454,8 @@ func getStageDescription(stage string) string {
 		return "Storage upload"
 	case "migration":
 		return "Repository migration"
+	case "queue":
+		return "Queue management"
 	case "error":
 		return "Error occurred"
 	default:
@@ -310,8 +476,16 @@ func getStateDescription(stage, state string) string {
 		switch state {
 		case "checking_source":
 			return "Validating source repository exists"
+		case "estimating_size":
+			return "Estimating repository size"
+		case "size_estimated":
+			return "Repository size has been estimated"
 		case "checking_target":
 			return "Validating target organization"
+		case "target_exists":
+			return "Target repository exists, handling accordingly"
+		case "target_cleaned":
+			return "Existing target repository has been removed"
 		default:
 			return state
 		}
@@ -324,12 +498,16 @@ func getStateDescription(stage, state string) string {
 		}
 	case "archive":
 		switch state {
+		case "preparing":
+			return "Preparing archive generation"
 		case "generating":
 			return "Generating migration archive"
 		case "waiting":
 			return "Waiting for archive to be created"
 		case "exported":
 			return "Archive has been exported"
+		case "retrieving_url":
+			return "Retrieving archive download URL"
 		case "ready":
 			return "Archive is ready for migration"
 		default:
@@ -348,6 +526,16 @@ func getStateDescription(stage, state string) string {
 		switch state {
 		case "starting":
 			return "Starting repository migration"
+		case "pre_migration_validation":
+			return "Performing pre-migration validation checks"
+		case "uploading_to_ghos":
+			return "Uploading archive to GitHub Owned Storage"
+		case "ghos_upload_complete":
+			return "Archive upload to GHOS completed"
+		case "preparing_archive":
+			return "Preparing migration archive"
+		case "validating":
+			return "Performing validation checks"
 		case "created":
 			return "Migration has been created"
 		case "waiting":
@@ -366,6 +554,19 @@ func getStateDescription(stage, state string) string {
 			return "Migration completed successfully"
 		default:
 			return state
+		}
+	case "queue":
+		switch state {
+		case "pre_validation":
+			return "Performing pre-enqueue validation"
+		case "initializing_archive":
+			return "Initializing archive job"
+		case "waiting_archive_worker":
+			return "Waiting for available archive worker"
+		case "waiting_migration_worker":
+			return "Waiting for available migration worker"
+		default:
+			return "Waiting for worker"
 		}
 	default:
 		return state

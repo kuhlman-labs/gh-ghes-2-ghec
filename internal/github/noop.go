@@ -61,6 +61,27 @@ func (n *NoopAPI) GetOrganizationID(ctx context.Context, org string) (string, in
 	return "", 0, fmt.Errorf("GetOrganizationID not implemented in NoopAPI")
 }
 
+// ValidateGHESOrganization is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ValidateGHESOrganization(ctx context.Context, org string) error {
+	n.logger.Warn("NoopAPI: ValidateGHESOrganization called but not implemented",
+		"org", org)
+	return fmt.Errorf("ValidateGHESOrganization not implemented in NoopAPI")
+}
+
+// ValidateGHCloudOrganization is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ValidateGHCloudOrganization(ctx context.Context, org string) error {
+	n.logger.Warn("NoopAPI: ValidateGHCloudOrganization called but not implemented",
+		"org", org)
+	return fmt.Errorf("ValidateGHCloudOrganization not implemented in NoopAPI")
+}
+
+// ListOrganizationRepositories is a no-op implementation that logs the call and returns an error.
+func (n *NoopAPI) ListOrganizationRepositories(ctx context.Context, org string) ([]Repository, error) {
+	n.logger.Warn("NoopAPI: ListOrganizationRepositories called but not implemented",
+		"org", org)
+	return nil, fmt.Errorf("ListOrganizationRepositories not implemented in NoopAPI")
+}
+
 // CreateMigrationSource is a no-op implementation that logs the call and returns an error.
 func (n *NoopAPI) CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error) {
 	n.logger.Warn("NoopAPI: CreateMigrationSource called but not implemented",
@@ -144,4 +165,9 @@ func (n *NoopAPI) GetRepositorySize(ctx context.Context, org, repo string) (int6
 		"repo", repo)
 	// Return a medium-sized repository (50MB) for testing purposes
 	return 50 * 1024 * 1024, nil
+}
+
+// IsTestImplementation returns true since NoopAPI is a test implementation
+func (n *NoopAPI) IsTestImplementation() bool {
+	return true
 }
