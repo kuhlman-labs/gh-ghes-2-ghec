@@ -134,12 +134,7 @@
         <div class="dashboard__section-header">
             <h3 class="dashboard__section-title">Active Migrations</h3>
             <div class="flex items-center gap-2 text-sm text-muted">
-                <span id="last-updated-timestamp" 
-                      hx-get="/dashboard/refresh" 
-                      hx-target="this" 
-                      hx-trigger="every 10s, refreshTable from:body, refreshTimestamp from:body" 
-                      hx-swap="innerHTML" 
-                      hx-select="#last-updated-timestamp">Last updated: {{.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
+                <span id="last-updated-timestamp">Last updated: {{.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
                 <div class="spinner w-4 h-4" id="refresh-spinner" style="display: none;"></div>
             </div>
         </div>
@@ -220,6 +215,23 @@
         return true;
     }
     
+    // Update timestamp when any section refreshes
+    function updateTimestamp() {
+        const timestampElement = document.getElementById('last-updated-timestamp');
+        if (timestampElement) {
+            const now = new Date();
+            const options = { 
+                month: 'short', 
+                day: '2-digit', 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit',
+                hour12: false
+            };
+            timestampElement.textContent = `Last updated: ${now.toLocaleDateString('en-US', options)}`;
+        }
+    }
+    
     // Comprehensive refresh function that updates all dashboard sections
     function refreshDashboard() {
         // Show refresh indicator
@@ -229,11 +241,13 @@
             refreshBtn.disabled = true;
         }
         
+        // Update timestamp immediately
+        updateTimestamp();
+        
         // Trigger refresh events for all sections
         document.body.dispatchEvent(new Event('refreshStats'));
         document.body.dispatchEvent(new Event('refreshQueueStats'));
         document.body.dispatchEvent(new Event('refreshTable'));
-        document.body.dispatchEvent(new Event('refreshTimestamp'));
         document.body.dispatchEvent(new Event('refreshTimeline'));
         
         // Re-enable button after a delay
@@ -273,8 +287,7 @@
         // Show refresh indicator when refreshing
         document.body.addEventListener('htmx:beforeRequest', function(evt) {
             if (evt.detail.target.id === 'migrations-table' || 
-                evt.detail.target.classList.contains('dashboard__stats') ||
-                evt.detail.target.id === 'last-updated-timestamp') {
+                evt.detail.target.classList.contains('dashboard__stats')) {
                 const spinner = document.getElementById('refresh-spinner');
                 if (spinner) spinner.style.display = 'block';
             }
@@ -282,10 +295,11 @@
         
         document.body.addEventListener('htmx:afterRequest', function(evt) {
             if (evt.detail.target.id === 'migrations-table' || 
-                evt.detail.target.classList.contains('dashboard__stats') ||
-                evt.detail.target.id === 'last-updated-timestamp') {
+                evt.detail.target.classList.contains('dashboard__stats')) {
                 const spinner = document.getElementById('refresh-spinner');
                 if (spinner) spinner.style.display = 'none';
+                // Update timestamp after successful refresh
+                updateTimestamp();
             }
         });
     });
