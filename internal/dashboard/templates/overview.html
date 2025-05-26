@@ -17,12 +17,7 @@
                     </svg>
                     View Analytics
                 </a>
-                <div class="flex items-center gap-4">
-                    <label class="checkbox">
-                        <input type="checkbox" id="auto-refresh" checked class="checkbox__input">
-                        <span class="checkbox__label">Auto-refresh (10s)</span>
-                    </label>
-                </div>
+
                 <button class="btn btn--secondary" 
                         id="manual-refresh" 
                         onclick="refreshDashboard()">
@@ -64,7 +59,7 @@
             <h3 class="dashboard__section-title">Migration Statistics</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" 
                  hx-get="/dashboard/stats" 
-                 hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body, refreshStats from:body" 
+                 hx-trigger="every 10s, refreshTable from:body, refreshStats from:body" 
                  hx-swap="innerHTML">
                 <!-- Total Migrations -->
                 <div class="card text-center">
@@ -108,7 +103,7 @@
         <h3 class="dashboard__section-title">Queue Statistics</h3>
         <div class="dashboard__stats" 
              hx-get="/dashboard/queue-stats" 
-             hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body, refreshQueueStats from:body" 
+             hx-trigger="every 10s, refreshTable from:body, refreshQueueStats from:body" 
              hx-swap="innerHTML">
             <div class="card text-center">
                 <h3 class="text-sm font-semibold text-muted mb-2">Queue Size</h3>
@@ -142,7 +137,7 @@
                 <span id="last-updated-timestamp" 
                       hx-get="/dashboard/refresh" 
                       hx-target="this" 
-                      hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body, refreshTimestamp from:body" 
+                      hx-trigger="every 10s, refreshTable from:body, refreshTimestamp from:body" 
                       hx-swap="innerHTML" 
                       hx-select="#last-updated-timestamp">Last updated: {{.LastUpdate.Format "Jan 02, 15:04:05"}}</span>
                 <div class="spinner w-4 h-4" id="refresh-spinner" style="display: none;"></div>
@@ -195,7 +190,7 @@
 
         <div class="table-container" id="migrations-table" 
              hx-get="/dashboard/refresh" 
-             hx-trigger="every 10s[autoRefreshEnabled()], refreshTable from:body" 
+             hx-trigger="every 10s, refreshTable from:body" 
              hx-swap="innerHTML" 
              hx-include="[name='page-size'], [name='filter-status'], [name='filter-repo'], [name='filter-timerange'], [name='sort-by'], [name='sort-dir']">
             {{template "migrations_table" .}}
@@ -209,7 +204,7 @@
         <div class="card" 
              id="timeline-events" 
              hx-get="/dashboard/timeline" 
-             hx-trigger="every 30s[autoRefreshEnabled()], refreshTimeline from:body" 
+             hx-trigger="every 30s, refreshTimeline from:body" 
              hx-swap="innerHTML">
             {{template "timeline_section" .}}
         </div>
@@ -222,8 +217,7 @@
 <script>
     // Function to check if auto-refresh is enabled
     function autoRefreshEnabled() {
-        const checkbox = document.getElementById('auto-refresh');
-        return checkbox ? checkbox.checked : true;
+        return true;
     }
     
     // Comprehensive refresh function that updates all dashboard sections
@@ -253,20 +247,7 @@
     
     // Main initialization function
     document.addEventListener('DOMContentLoaded', function() {
-        // Set up auto-refresh toggle persistence
-        const autoRefreshCheckbox = document.getElementById('auto-refresh');
-        if (autoRefreshCheckbox) {
-            // Load saved setting
-            const savedSetting = localStorage.getItem('autoRefreshEnabled');
-            if (savedSetting !== null) {
-                autoRefreshCheckbox.checked = savedSetting === 'true';
-            }
-            
-            // Save setting when changed
-            autoRefreshCheckbox.addEventListener('change', function() {
-                localStorage.setItem('autoRefreshEnabled', this.checked);
-            });
-        }
+        // Auto-refresh is now always enabled for this view
         
         // Handle dropdown menu on touch devices
         const dropdownBtn = document.querySelector('.btn-export');

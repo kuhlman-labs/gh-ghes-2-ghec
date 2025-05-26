@@ -36,31 +36,19 @@ function initializeProgressBars() {
 }
 
 /**
- * Sets up the auto-refresh checkbox functionality
+ * Sets up the auto-refresh functionality (now always enabled)
  */
 function setupAutoRefresh() {
-    const autoRefreshCheckbox = document.getElementById('auto-refresh');
-    if (autoRefreshCheckbox) {
-        // Check local storage for previous setting
-        const savedSetting = localStorage.getItem('autoRefreshEnabled');
-        if (savedSetting !== null) {
-            autoRefreshCheckbox.checked = savedSetting === 'true';
-        }
-        
-        // Save setting when changed
-        autoRefreshCheckbox.addEventListener('change', function() {
-            localStorage.setItem('autoRefreshEnabled', this.checked);
-        });
-    }
+    // Auto-refresh is now always enabled by default
+    // No checkbox functionality needed
 }
 
 /**
- * Determines if auto-refresh is enabled
- * This function is called by HTMX for the auto-refresh trigger
+ * Auto-refresh is now always enabled by default
+ * This function is kept for compatibility but no longer used by HTMX triggers
  */
 function autoRefreshEnabled() {
-    const checkbox = document.getElementById('auto-refresh');
-    return checkbox ? checkbox.checked : false;
+    return true;
 }
 
 /**
