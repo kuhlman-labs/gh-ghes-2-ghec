@@ -99,7 +99,7 @@ jobs:
             # Create resource group
             az group create \
               --name gh-ghes-2-ghec-rg \
-              --location "East US"
+              --location "East US 2"
             
             # Create App Service Plan
             az appservice plan create \
