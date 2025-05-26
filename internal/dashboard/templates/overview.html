@@ -57,7 +57,7 @@
 
         <div class="dashboard__section">
             <h3 class="dashboard__section-title">Migration Statistics</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" 
+            <div class="grid grid-cols-4 gap-4 sm:grid-cols-1" 
                  hx-get="/dashboard/stats" 
                  hx-trigger="every 10s, refreshTable from:body, refreshStats from:body" 
                  hx-swap="innerHTML">
