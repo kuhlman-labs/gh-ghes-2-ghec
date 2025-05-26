@@ -25,18 +25,21 @@ A server application that provides an HTTP API for migrating repositories from G
 - Respects GitHub's concurrency limits (5 archives, 10 migrations)
 - Queue statistics and metrics via Prometheus
 
-## Dashboard
+## Migration Dashboard
 
 ![Migration Dashboard](docs/images/dashboard.png)
 
-The migration server includes a web-based dashboard for monitoring and managing migrations:
+The GitHub GHES to GHEC Migration Server includes a comprehensive web-based dashboard that provides complete visibility and control over your migration process. Access the dashboard at `/dashboard` to monitor and manage all your migrations.
 
-- **Migration Overview**: View all migration jobs with status summaries and progress indicators
-- **Real-time Updates**: Get live status updates on migration progress
-- **Detailed Progress**: Track each migration stage with visual progress indicators
-- **Self-service Form**: Submit new migrations directly through the web UI without constructing API requests
-- **Historical Data**: Access past migration records when storage is enabled
-- **Queue Management**: Monitor and manage the migration queue with priority controls
+### Key Features
+
+- **Migration Overview**: Real-time monitoring of active migrations with progress tracking and queue statistics
+- **Advanced Analytics**: Interactive charts showing migration trends, success rates, and performance metrics  
+- **Migration Wizard**: Guided setup for new migrations with connection testing and repository selection
+- **Migration History**: Complete searchable record with filtering, sorting, and export capabilities
+- **Error Dashboard**: Centralized error tracking and categorization for troubleshooting
+
+For detailed information about dashboard features and usage, see the [Migration Dashboard Guide](docs/dashboard.md).
 
 ## Prerequisites
 
