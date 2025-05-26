@@ -18,12 +18,29 @@ import (
 
 func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payload.MigrationRequest) {
 	m.mu.RLock()
-	status := m.migrations[repoName]
-	m.mu.RUnlock()
-
-	if status == nil {
+	originalStatus := m.migrations[repoName]
+	if originalStatus == nil {
+		m.mu.RUnlock()
 		return
 	}
+
+	// Make a copy of the status to avoid race conditions
+	status := &payload.MigrationStatus{
+		Repository:      originalStatus.Repository,
+		Status:          originalStatus.Status,
+		Stage:           originalStatus.Stage,
+		State:           originalStatus.State,
+		Progress:        originalStatus.Progress,
+		StageProgress:   originalStatus.StageProgress,
+		Error:           originalStatus.Error,
+		StartedAt:       originalStatus.StartedAt,
+		UpdatedAt:       originalStatus.UpdatedAt,
+		Duration:        originalStatus.Duration,
+		MigrationID:     originalStatus.MigrationID,
+		CompletedStages: make([]string, len(originalStatus.CompletedStages)),
+	}
+	copy(status.CompletedStages, originalStatus.CompletedStages)
+	m.mu.RUnlock()
 
 	// Skip if no webhook URL is configured
 	if m.webhookURL == "" {

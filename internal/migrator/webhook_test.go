@@ -334,8 +334,11 @@ func TestSendWebhookNotificationConcurrent(t *testing.T) {
 	numWebhooks := 10
 	done := make(chan bool, numWebhooks)
 
+	// Populate all migration statuses first to avoid race conditions
+	repoNames := make([]string, numWebhooks)
 	for i := 0; i < numWebhooks; i++ {
 		repoName := fmt.Sprintf("test-org/test-repo-%d", i)
+		repoNames[i] = repoName
 		status := &payload.MigrationStatus{
 			Status:    payload.StatusInProgress,
 			Stage:     "archive",
@@ -343,7 +346,10 @@ func TestSendWebhookNotificationConcurrent(t *testing.T) {
 			UpdatedAt: time.Now(),
 		}
 		m.migrations[repoName] = status
+	}
 
+	// Now start all goroutines
+	for _, repoName := range repoNames {
 		go func(repo string) {
 			m.sendWebhookNotification(repo, nil)
 			done <- true
