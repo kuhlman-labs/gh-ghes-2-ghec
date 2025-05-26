@@ -95,23 +95,19 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Azure CLI Action - Terraform Init
-        uses: Azure/cli@v2.1.0
-        with:
-          inlineScript: |
-            cd terraform
-            terraform init
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
         env:
           TF_VAR_github_owner: ${{ github.repository_owner }}
           TF_VAR_github_username: ${{ github.actor }}
           TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Azure CLI Action - Terraform Apply
-        uses: Azure/cli@v2.1.0
-        with:
-          inlineScript: |
-            cd terraform
-            terraform apply -auto-approve
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve
         env:
           TF_VAR_github_owner: ${{ github.repository_owner }}
           TF_VAR_github_username: ${{ github.actor }}
