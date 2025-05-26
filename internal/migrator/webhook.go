@@ -25,20 +25,8 @@ func (m *Migrator) sendWebhookNotification(repoName string, migrationReq *payloa
 	}
 
 	// Make a copy of the status to avoid race conditions
-	status := &payload.MigrationStatus{
-		Repository:      originalStatus.Repository,
-		Status:          originalStatus.Status,
-		Stage:           originalStatus.Stage,
-		State:           originalStatus.State,
-		Progress:        originalStatus.Progress,
-		StageProgress:   originalStatus.StageProgress,
-		Error:           originalStatus.Error,
-		StartedAt:       originalStatus.StartedAt,
-		UpdatedAt:       originalStatus.UpdatedAt,
-		Duration:        originalStatus.Duration,
-		MigrationID:     originalStatus.MigrationID,
-		CompletedStages: make([]string, len(originalStatus.CompletedStages)),
-	}
+	status := *originalStatus
+	status.CompletedStages = make([]string, len(originalStatus.CompletedStages))
 	copy(status.CompletedStages, originalStatus.CompletedStages)
 	m.mu.RUnlock()
 
