@@ -78,6 +78,23 @@ func (m *MockSimpleAPI) GetRepositorySize(ctx context.Context, org, repo string)
 	return 0, nil
 }
 
+func (m *MockSimpleAPI) ValidateGHESOrganization(ctx context.Context, org string) error {
+	return nil
+}
+
+func (m *MockSimpleAPI) ValidateGHCloudOrganization(ctx context.Context, org string) error {
+	return nil
+}
+
+func (m *MockSimpleAPI) ListOrganizationRepositories(ctx context.Context, org string) ([]github.Repository, error) {
+	return nil, nil
+}
+
+// IsTestImplementation returns true since MockSimpleAPI is a test implementation
+func (m *MockSimpleAPI) IsTestImplementation() bool {
+	return true
+}
+
 func TestNewQueueManagerIntegration(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 

@@ -4,15 +4,22 @@ FROM golang:1.24-alpine AS builder
 # Set working directory
 WORKDIR /app
 
-# Install git and other dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+# Install git, Node.js, npm and other dependencies
+RUN apk add --no-cache git ca-certificates tzdata nodejs npm
 
 # Copy go.mod and go.sum first (better layer caching)
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy package.json and package-lock.json for CSS dependencies
+COPY static/css/package*.json ./static/css/
+RUN cd static/css && npm ci
+
 # Copy the source code and config template
 COPY . .
+
+# Build CSS
+RUN cd static/css && npm run build
 
 # Generate config file from template
 RUN cp config.yaml.template config.yaml

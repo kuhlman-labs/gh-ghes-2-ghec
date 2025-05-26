@@ -8,6 +8,9 @@ Welcome to the documentation for the GitHub GHES to GHEC Migration Server. This 
   - [Configuration Guide](configuration.md)
   - [Proxy Configuration](proxy-configuration.md)
 
+- **Dashboard & Interface**
+  - [Migration Dashboard](dashboard.md)
+
 - **Monitoring & Observability**
   - [Metrics with Prometheus](monitoring/metrics.md)
   - [Distributed Tracing with OpenTelemetry](monitoring/tracing.md)
@@ -27,9 +30,6 @@ Welcome to the documentation for the GitHub GHES to GHEC Migration Server. This 
 - **Features**
   - [Migration Retry](retry.md)
 
-## Screenshots
-
-![Migration Dashboard](images/dashboard.png)
 
 ## Feedback and Contributions
 

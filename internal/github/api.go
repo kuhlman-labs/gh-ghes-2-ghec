@@ -12,6 +12,14 @@ import (
 	"github.com/kuhlman-labs/gh-ghes-2-ghec/internal/utils"
 )
 
+// Repository represents a GitHub repository for wizard operations
+type Repository struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Size        int64  `json:"size"`
+	Private     bool   `json:"private"`
+}
+
 // API is the interface for interacting with GitHub APIs.
 // It abstracts the GitHub API operations for better testability and flexibility.
 type API interface {
@@ -20,6 +28,9 @@ type API interface {
 	CheckCloudRepositoryExists(ctx context.Context, org, repo string) (bool, error)
 	DeleteCloudRepositoryIfExists(ctx context.Context, org, repo string) (bool, error)
 	GetOrganizationID(ctx context.Context, org string) (string, int64, error)
+	ValidateGHESOrganization(ctx context.Context, org string) error
+	ValidateGHCloudOrganization(ctx context.Context, org string) error
+	ListOrganizationRepositories(ctx context.Context, org string) ([]Repository, error)
 	CreateMigrationSource(ctx context.Context, name, url, ownerID string) (string, error)
 	GenerateMigrationArchive(ctx context.Context, orgName, repoName string) (int64, error)
 	GetMigrationArchiveStatus(ctx context.Context, migrationID int64, orgName string) (string, error)
@@ -30,6 +41,10 @@ type API interface {
 	GetGHESRateLimit(ctx context.Context) (*RateLimitInfo, error)
 	GetGHCloudRateLimit(ctx context.Context) (*RateLimitInfo, error)
 	GetRepositorySize(ctx context.Context, org, repo string) (int64, error)
+
+	// IsTestImplementation returns true if this is a test implementation
+	// that shouldn't be used for real operations
+	IsTestImplementation() bool
 }
 
 // GitHubAPI handles GitHub API operations for both GitHub Enterprise Server and GitHub Cloud.
@@ -91,4 +106,9 @@ func New(clients *config.Clients, logger *slog.Logger) API {
 		ghesCircuitBreaker:    ghesCircuitBreaker,
 		ghCloudCircuitBreaker: ghCloudCircuitBreaker,
 	}
+}
+
+// IsTestImplementation returns false for the real GitHubAPI implementation
+func (a *GitHubAPI) IsTestImplementation() bool {
+	return false
 }

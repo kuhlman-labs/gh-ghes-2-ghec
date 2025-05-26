@@ -1,60 +1,92 @@
 .queue-stats-section {
-    margin: 2rem 0;
-    padding: 1.5rem;
-    background: var(--surface-color);
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin: 2rem 0;
+  padding: 1.5rem;
+  border-radius: 8px;
+  background: var(--surface-color);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 10%);
 }
 
 .queue-stats-section .section-title {
-    margin-bottom: 1.5rem;
-    color: var(--text-color);
-    font-size: 1.25rem;
-    font-weight: 600;
+  margin-bottom: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-color);
 }
 
 .queue-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.5rem;
-    width: 100%;
-    min-height: 120px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+  min-height: 120px;
 }
 
 .queue-stats .stat-card {
-    background: var(--background-color);
-    padding: 1.25rem;
-    border-radius: 6px;
-    text-align: center;
-    transition: transform 0.2s ease;
-    min-width: 150px;
-    min-height: 90px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 150px;
+  min-height: 90px;
+  padding: 1.25rem;
+  border-radius: 6px;
+  text-align: center;
+  background: var(--background-color);
+  transition: transform 0.2s ease;
 }
 
 .queue-stats .stat-card:hover {
-    transform: translateY(-2px);
+  transform: translateY(-2px);
 }
 
 .queue-stats .stat-card h3 {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .queue-stats .stat-value {
-    display: block;
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--text-color);
-    margin-bottom: 0.25rem;
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-color);
 }
 
 .queue-stats .stat-label {
-    display: block;
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-} 
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* Refresh button states */
+.refresh-btn.refreshing {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.refresh-btn.refreshing svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Dashboard controls layout improvements */
+.dashboard-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Responsive adjustments */
+@media (width <= 768px) {
+  .dashboard-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+}

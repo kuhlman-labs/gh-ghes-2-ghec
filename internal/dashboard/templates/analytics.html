@@ -1,0 +1,321 @@
+{{define "analytics_content"}}
+<div class="dashboard">
+    <div class="dashboard__section">
+        <div class="dashboard__header">
+            <h2 class="dashboard__title">Migration Analytics</h2>
+            <div class="dashboard__controls">
+                <div class="dropdown">
+                    <button class="btn btn--secondary">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Export Analytics
+                    </button>
+                    <div class="dropdown__content">
+                        <a href="/dashboard/export?format=csv" class="dropdown__item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+                            </svg>
+                            Export Data as CSV
+                        </a>
+                        <a href="/dashboard/export?format=json" class="dropdown__item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
+                            </svg>
+                            Export Data as JSON
+                        </a>
+                    </div>
+                </div>
+                <a href="/dashboard" class="btn btn--secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back to Overview
+                </a>
+            </div>
+        </div>
+
+        <!-- Combined Migration Overview & Insights -->
+        <div class="dashboard__section">
+            <div class="dashboard__section-header">
+                <h3 class="dashboard__section-title">📊 Migration Overview & Insights</h3>
+            </div>
+            <div class="grid grid-cols-4 gap-4 sm:grid-cols-1">
+                <!-- Total Migrations -->
+                <div class="card text-center">
+                    <div class="text-sm font-medium text-muted mb-1">Total Migrations</div>
+                    <div class="text-2xl font-bold mb-2">{{ .Stats.Total }}</div>
+                    <div class="text-xs text-muted">All time</div>
+                </div>
+                
+                <!-- Succeeded -->
+                <div class="card text-center">
+                    <div class="text-sm font-medium text-muted mb-1">Succeeded</div>
+                    <div class="text-2xl font-bold text-success mb-1">{{ .Stats.Succeeded }}</div>
+                    <div class="text-sm font-semibold text-success">
+                        {{if gt .Stats.Total 0}}{{percentage .Stats.Succeeded .Stats.Total}}%{{else}}0%{{end}} success rate
+                    </div>
+                </div>
+                
+                <!-- Failed -->
+                <div class="card text-center">
+                    <div class="text-sm font-medium text-muted mb-1">Failed</div>
+                    <div class="text-2xl font-bold text-danger mb-1">{{ .Stats.Failed }}</div>
+                    <div class="text-sm font-semibold text-danger">
+                        {{if gt .Stats.Total 0}}{{percentage .Stats.Failed .Stats.Total}}%{{else}}0%{{end}} failure rate
+                    </div>
+                </div>
+                
+                <!-- Active -->
+                <div class="card text-center">
+                    <div class="text-sm font-medium text-muted mb-1">Currently Active</div>
+                    <div class="text-2xl font-bold text-primary mb-1">{{ .Stats.Active }}</div>
+                    <div class="text-sm font-semibold text-primary">
+                        {{if .Stats.Active}}In progress{{else}}None running{{end}}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="dashboard__section">
+        <div class="dashboard__section-header">
+            <h3 class="dashboard__section-title">Analytics Charts</h3>
+        </div>
+        
+        <!-- Charts Row 1: Status Distribution & Migration Trends -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="card">
+                <div class="card__header">
+                    <h4 class="card__title">📈 Status Distribution</h4>
+                    <div class="flex items-center gap-4">
+                        <div class="flex items-center gap-2">
+                            <label for="status-period" class="text-sm font-medium">Period:</label>
+                            <select id="status-period" class="form-input form-input--small">
+                                <option value="today">Today</option>
+                                <option value="week" selected>This Week</option>
+                                <option value="month">This Month</option>
+                                <option value="all">All Time</option>
+                            </select>
+                        </div>
+                        <button class="btn btn--secondary btn--small" onclick="DashboardCharts.refreshCharts()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38"/>
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="card__content">
+                    <div class="flex items-center gap-6">
+                        <div class="flex-1">
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 rounded-full bg-success"></div>
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium">Succeeded</div>
+                                    <div class="text-lg font-bold">{{ .Stats.Succeeded }}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 rounded-full bg-warning"></div>
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium">Running</div>
+                                    <div class="text-lg font-bold">{{ .Stats.Active }}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 rounded-full bg-danger"></div>
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium">Failed</div>
+                                    <div class="text-lg font-bold">{{ .Stats.Failed }}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="w-3 h-3 rounded-full bg-muted"></div>
+                                <div class="flex-1">
+                                    <div class="text-sm font-medium">Pending</div>
+                                    <div class="text-lg font-bold">0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card__header">
+                    <h4 class="card__title">📊 Migration Trends</h4>
+                    <div class="flex items-center gap-2">
+                        <label for="trends-period" class="text-sm font-medium">Period:</label>
+                        <select id="trends-period" class="form-input form-input--small">
+                            <option value="week">Last 7 Days</option>
+                            <option value="month" selected>Last 30 Days</option>
+                            <option value="quarter">Last 3 Months</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card__content">
+                    <div class="h-64">
+                        <canvas id="trendsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row 2: Repository Sizes & Performance Metrics -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div class="card">
+                <div class="card__header">
+                    <h4 class="card__title">📦 Repository Size Distribution</h4>
+                </div>
+                <div class="card__content">
+                    <div class="h-64">
+                        <canvas id="sizeChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card__header">
+                    <h4 class="card__title">⚡ Performance Metrics</h4>
+                    <div class="flex items-center gap-2">
+                        <label for="performance-period" class="text-sm font-medium">Period:</label>
+                        <select id="performance-period" class="form-input form-input--small">
+                            <option value="week" selected>Last 4 Weeks</option>
+                            <option value="month">Last 6 Months</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card__content">
+                    <div class="h-64">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Heatmap -->
+        <div class="card">
+            <div class="card__header">
+                <h4 class="card__title">🔥 Migration Activity Heatmap</h4>
+                <div class="flex items-center gap-2">
+                    <label for="heatmap-period" class="text-sm font-medium">Period:</label>
+                    <select id="heatmap-period" class="form-input form-input--small">
+                        <option value="week" selected>This Week</option>
+                        <option value="month">This Month</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card__content">
+                <div id="activityHeatmap"></div>
+                <div class="heatmap-legend mt-4">
+                    <div class="flex items-center justify-between text-sm text-muted">
+                        <span>Less activity</span>
+                        <span>More activity</span>
+                    </div>
+                    <div class="flex items-center gap-1 mt-2">
+                        <div class="heatmap-legend-cell" style="background-color: var(--gray-100);"></div>
+                        <div class="heatmap-legend-cell" style="background-color: rgba(3, 102, 214, 0.2);"></div>
+                        <div class="heatmap-legend-cell" style="background-color: rgba(3, 102, 214, 0.4);"></div>
+                        <div class="heatmap-legend-cell" style="background-color: rgba(3, 102, 214, 0.6);"></div>
+                        <div class="heatmap-legend-cell" style="background-color: rgba(3, 102, 214, 0.8);"></div>
+                        <div class="heatmap-legend-cell" style="background-color: rgba(3, 102, 214, 1.0);"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Function to check if auto-refresh is enabled
+    function autoRefreshEnabled() {
+        return true;
+    }
+    
+    // Main initialization function
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize dashboard charts immediately
+        if (typeof DashboardCharts !== 'undefined' && DashboardCharts.initializeDashboardCharts) {
+            console.log('Initializing dashboard charts...');
+            DashboardCharts.initializeDashboardCharts();
+        } else {
+            console.warn('DashboardCharts not available, retrying in 100ms...');
+            // Retry after a short delay in case the script is still loading
+            setTimeout(function() {
+                if (typeof DashboardCharts !== 'undefined' && DashboardCharts.initializeDashboardCharts) {
+                    console.log('Initializing dashboard charts (retry)...');
+                    DashboardCharts.initializeDashboardCharts();
+                } else {
+                    console.error('DashboardCharts still not available after retry');
+                }
+            }, 100);
+        }
+        
+        // Enhanced dropdown handling with modern interaction patterns
+        const dropdowns = document.querySelectorAll('.dropdown');
+        
+        dropdowns.forEach(dropdown => {
+            const btn = dropdown.querySelector('.btn');
+            const content = dropdown.querySelector('.dropdown__content');
+            
+            if (btn && content) {
+                // Handle click events
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    
+                    // Close other dropdowns
+                    dropdowns.forEach(otherDropdown => {
+                        if (otherDropdown !== dropdown) {
+                            const otherContent = otherDropdown.querySelector('.dropdown__content');
+                            if (otherContent) otherContent.classList.remove('show');
+                        }
+                    });
+                    
+                    // Toggle current dropdown
+                    content.classList.toggle('show');
+                });
+                
+                // Handle keyboard events
+                btn.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        content.classList.toggle('show');
+                    }
+                });
+            }
+        });
+        
+        // Close dropdowns when clicking outside
+        document.addEventListener('click', function(event) {
+            dropdowns.forEach(dropdown => {
+                const content = dropdown.querySelector('.dropdown__content');
+                if (content && content.classList.contains('show')) {
+                    content.classList.remove('show');
+                }
+            });
+        });
+        
+        // Close dropdowns on escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                dropdowns.forEach(dropdown => {
+                    const content = dropdown.querySelector('.dropdown__content');
+                    if (content && content.classList.contains('show')) {
+                        content.classList.remove('show');
+                    }
+                });
+            }
+        });
+    });
+</script>
+{{end}} 

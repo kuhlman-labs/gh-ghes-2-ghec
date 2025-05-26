@@ -1,0 +1,41 @@
+{{define "header"}}
+<header class="header">
+    <div class="container header__container">
+        <a href="/dashboard" class="header__logo">
+            <img src="/static/images/github-mark-white.png" alt="GitHub Mark" class="header__logo-icon">
+            <div class="header__logo-text">
+                Migration Dashboard
+            </div>
+        </a>
+        <nav class="nav">
+            <ul class="nav__list">
+                <li class="nav__item">
+                    <a href="/dashboard" class="nav__link {{ if eq .Active "overview" }}nav__link--active{{ end }}" {{ if eq .Active "overview" }}aria-current="page"{{ end }}>
+                        Overview
+                    </a>
+                </li>
+                <li class="nav__item">
+                    <a href="/dashboard/analytics" class="nav__link {{ if eq .Active "analytics" }}nav__link--active{{ end }}" {{ if eq .Active "analytics" }}aria-current="page"{{ end }}>
+                        Analytics
+                    </a>
+                </li>
+                <li class="nav__item">
+                    <a href="/dashboard/wizard" class="nav__link {{ if eq .Active "wizard" }}nav__link--active{{ end }}" {{ if eq .Active "wizard" }}aria-current="page"{{ end }}>
+                        New Migration
+                    </a>
+                </li>
+                <li class="nav__item">
+                    <a href="/dashboard/history" class="nav__link {{ if eq .Active "history" }}nav__link--active{{ end }}" {{ if eq .Active "history" }}aria-current="page"{{ end }}>
+                        History
+                    </a>
+                </li>
+                <li class="nav__item">
+                    <a href="/dashboard/errors" class="nav__link {{ if eq .Active "errors" }}nav__link--active{{ end }}" {{ if eq .Active "errors" }}aria-current="page"{{ end }}>
+                        Errors
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</header>
+{{end}} 

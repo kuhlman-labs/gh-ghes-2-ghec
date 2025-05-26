@@ -1,19 +1,23 @@
 {{define "queue_stats_section"}}
-<div class="dashboard-stats queue-stats">
-    <div class="stat-card">
-        <h3>Queue Size</h3>
-        <span class="stat-value">{{ .QueueStats.queue_size }}</span>
-        <span class="stat-label">/ {{ .QueueStats.max_queue_size }}</span>
+<div class="card text-center">
+    <h3 class="text-sm font-semibold text-muted mb-2">Queue Size</h3>
+    <div class="flex items-baseline justify-center gap-1">
+        <span class="text-2xl font-bold">{{ .QueueStats.queue_size }}</span>
+        <span class="text-sm text-muted">/ {{ .QueueStats.max_queue_size }}</span>
     </div>
-    <div class="stat-card">
-        <h3>Active Archives</h3>
-        <span class="stat-value">{{ .QueueStats.active_archive_generations }}</span>
-        <span class="stat-label">/ {{ .QueueStats.max_archive_generations }}</span>
+</div>
+<div class="card text-center">
+    <h3 class="text-sm font-semibold text-muted mb-2">Active Archives</h3>
+    <div class="flex items-baseline justify-center gap-1">
+        <span class="text-2xl font-bold">{{ .QueueStats.active_archive_generations }}</span>
+        <span class="text-sm text-muted">/ {{ .QueueStats.max_archive_generations }}</span>
     </div>
-    <div class="stat-card">
-        <h3>Active Migrations</h3>
-        <span class="stat-value">{{ .QueueStats.active_migrations }}</span>
-        <span class="stat-label">/ {{ if .QueueStats.max_migration_threads }}{{ .QueueStats.max_migration_threads }}{{ else }}10{{ end }}</span>
+</div>
+<div class="card text-center">
+    <h3 class="text-sm font-semibold text-muted mb-2">Active Migrations</h3>
+    <div class="flex items-baseline justify-center gap-1">
+        <span class="text-2xl font-bold">{{ .QueueStats.active_migrations }}</span>
+        <span class="text-sm text-muted">/ {{ if .QueueStats.max_migration_threads }}{{ .QueueStats.max_migration_threads }}{{ else }}10{{ end }}</span>
     </div>
 </div>
 {{end}} 

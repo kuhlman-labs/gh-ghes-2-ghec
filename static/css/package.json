@@ -1,0 +1,48 @@
+{
+  "name": "gh-ghes-2-ghec-css",
+  "version": "1.0.0",
+  "description": "Modern CSS architecture for GitHub Enterprise migration tool",
+  "main": "main.css",
+  "scripts": {
+    "lint": "stylelint \"**/*.css\"",
+    "lint:fix": "stylelint \"**/*.css\" --fix",
+    "build": "npm run setup && npm run lint && npm run concat && npm run minify",
+    "concat": "cat _variables.css _base.css _layout.css _components.css charts.css _utilities.css wizard.css > dist/styles.css",
+    "minify": "cleancss -o dist/styles.min.css dist/styles.css",
+    "watch": "npm run lint -- --watch",
+    "dev": "npm run watch",
+    "setup": "mkdir -p dist"
+  },
+  "devDependencies": {
+    "@stylistic/stylelint-config": "^2.0.0",
+    "clean-css-cli": "^5.6.2",
+    "stylelint": "^16.19.1",
+    "stylelint-config-recess-order": "^6.0.0",
+    "stylelint-config-standard": "^38.0.0",
+    "stylelint-order": "^7.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead",
+    "not ie 11"
+  ],
+  "keywords": [
+    "css",
+    "design-system",
+    "bem",
+    "itcss",
+    "responsive",
+    "accessibility"
+  ],
+  "author": "Development Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/gh-ghes-2-ghec.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/gh-ghes-2-ghec/issues"
+  },
+  "homepage": "https://github.com/your-org/gh-ghes-2-ghec#readme"
+}

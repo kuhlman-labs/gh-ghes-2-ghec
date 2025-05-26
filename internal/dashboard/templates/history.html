@@ -1,121 +1,137 @@
 {{define "history_content"}}
-<div class="dashboard-history">
-    <div class="dashboard-header">
-        <h2>Migration History</h2>
-        <div class="dashboard-controls">
-            <div class="dropdown">
-                <button class="btn btn-export">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                        <polyline points="7 10 12 15 17 10"/>
-                        <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Export
-                </button>
-                <div class="dropdown-content">
-                    <a href="/dashboard/history/export?format=csv{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" class="dropdown-item">
+<div class="dashboard">
+    <div class="dashboard__section">
+        <div class="dashboard__header">
+            <h2 class="dashboard__title">Migration History</h2>
+            <div class="dashboard__controls">
+                <div class="dropdown">
+                    <button class="btn btn--secondary">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
-                            <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
-                        Export as CSV
-                    </a>
-                    <a href="/dashboard/history/export?format=json{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" class="dropdown-item">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
-                            <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
-                        </svg>
-                        Export as JSON
-                    </a>
+                        Export
+                    </button>
+                    <div class="dropdown__content">
+                        <a href="/dashboard/history/export?format=csv{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" class="dropdown__item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M9 17v-2M12 17v-4M15 17v-6"/>
+                            </svg>
+                            Export as CSV
+                        </a>
+                        <a href="/dashboard/history/export?format=json{{if .SearchQuery}}&search={{.SearchQuery}}{{end}}{{if gt .PageSize 0}}&page-size={{.PageSize}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" class="dropdown__item">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+                                <path d="M14 3v5h5M10 12a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-2a1 1 0 0 0-1 1M9 17v-1.5a1.5 1.5 0 0 1 3 0V17M12 16h3"/>
+                            </svg>
+                            Export as JSON
+                        </a>
+                    </div>
                 </div>
+                <a href="/dashboard" class="btn btn--secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                    Back to Overview
+                </a>
             </div>
-            <a href="/dashboard" class="btn btn-secondary">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-                Back to Overview
-            </a>
         </div>
     </div>
 
-    <div class="info-section">
-        <div class="search-controls">
-            <div class="page-size-selector">
-                <label for="history-page-size">Show:</label>
-                <select id="history-page-size" name="page-size" hx-get="/dashboard/history{{if .SearchQuery}}?search={{.SearchQuery}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" hx-target=".dashboard-history" hx-swap="outerHTML" hx-trigger="change">
+    <div class="dashboard__section">        
+        <div class="flex flex-wrap items-center gap-4 mb-6">
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-medium">Repository:</span>
+                <input type="text" name="filter-repo" class="form-input" placeholder="Search repositories..." value="{{ .SearchQuery }}" 
+                       hx-get="/dashboard/history" 
+                       hx-target=".dashboard" 
+                       hx-swap="outerHTML" 
+                       hx-trigger="keyup changed delay:500ms" 
+                       hx-include="[name='page-size'], [name='sort-by'], [name='sort-dir']">
+            </div>
+            <div class="flex items-center gap-2">
+                <label for="history-page-size" class="text-sm font-medium">Show:</label>
+                <select id="history-page-size" name="page-size" class="form-input" hx-get="/dashboard/history{{if .SearchQuery}}?search={{.SearchQuery}}{{end}}{{if .SortBy}}&sort-by={{.SortBy}}{{end}}{{if .SortDir}}&sort-dir={{.SortDir}}{{end}}" hx-target=".dashboard" hx-swap="outerHTML" hx-trigger="change">
                     <option value="20" {{ if eq .PageSize 20 }}selected{{ end }}>20 per page</option>
                     <option value="50" {{ if eq .PageSize 50 }}selected{{ end }}>50 per page</option>
                     <option value="100" {{ if eq .PageSize 100 }}selected{{ end }}>100 per page</option>
                     <option value="0" {{ if eq .PageSize 0 }}selected{{ end }}>All</option>
                 </select>
             </div>
-            <div class="search-container">
-                <form action="/dashboard/history" method="GET" class="search-form">
-                    <div class="search-input-container">
-                        <input 
-                            type="text" 
-                            name="search" 
-                            id="repository-search" 
-                            placeholder="Search by repository name" 
-                            value="{{ .SearchQuery }}"
-                            class="search-input"
-                        >
-                        <button type="submit" class="search-button">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            Search
-                        </button>
-                    </div>
-                    <!-- Preserve params when submitting search -->
-                    <input type="hidden" name="page-size" value="{{ .PageSize }}">
-                    <input type="hidden" name="sort-by" value="{{ .SortBy }}">
-                    <input type="hidden" name="sort-dir" value="{{ .SortDir }}">
-                    {{if .SearchQuery}}
-                    <a href="/dashboard/history" class="btn btn-sm clear-search">Clear</a>
-                    {{end}}
-                </form>
-            </div>
+            {{if .SearchQuery}}
+            <button class="btn btn--secondary btn--small" hx-get="/dashboard/history" hx-target=".dashboard" hx-swap="outerHTML">
+                Clear Filters
+            </button>
+            {{end}}
         </div>
             
         {{if .Migrations}}
-            <div class="dashboard-table" id="history-migrations-table">
-                <table class="info-table">
-                    <thead>
-                        <tr>
-                            <th class="sortable" data-column="repository">Source Repository</th>
-                            <th class="sortable" data-column="status">Status</th>
-                            <th class="sortable" data-column="stage">Stage</th>
-                            <th class="sortable" data-column="progress">Progress</th>
-                            <th class="sortable" data-column="started_at">Started</th>
-                            <th class="sortable" data-column="duration">Duration</th>
-                            <th class="actions-column">Actions</th>
+            <div class="table-container" id="history-migrations-table">
+                <table class="table">
+                    <thead class="table__header">
+                        <tr class="table__row">
+                            <th class="table__header-cell table__header-cell--sortable" data-column="repository">Source Repository</th>
+                            <th class="table__header-cell table__header-cell--sortable" data-column="status">Status</th>
+                            <th class="table__header-cell table__header-cell--sortable" data-column="stage">Stage</th>
+                            <th class="table__header-cell table__header-cell--sortable" data-column="progress">Progress</th>
+                            <th class="table__header-cell table__header-cell--sortable" data-column="started_at">Started</th>
+                            <th class="table__header-cell table__header-cell--sortable" data-column="duration">Duration</th>
+                            <th class="table__header-cell">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {{range .Migrations}}
-                            <tr class="status-{{ToLower .Status}}">
-                                <td>{{.Repository}}</td>
-                                <td>
-                                    <span class="status-indicator status-{{ToLower .Status}}"></span>
-                                    {{Title .Status}}
+                            <tr class="table__row">
+                                <td class="table__cell font-medium">{{.Repository}}</td>
+                                <td class="table__cell">
+                                    {{if eq (.Status | ToLower) "running"}}
+                                        <span class="status status--running">{{.Status | Title}}</span>
+                                    {{else if eq (.Status | ToLower) "succeeded"}}
+                                        <span class="status status--success">{{.Status | Title}}</span>
+                                    {{else if eq (.Status | ToLower) "failed"}}
+                                        <span class="status status--danger">{{.Status | Title}}</span>
+                                    {{else if eq (.Status | ToLower) "pending"}}
+                                        <span class="status status--pending">{{.Status | Title}}</span>
+                                    {{else}}
+                                        <span class="status">{{.Status | Title}}</span>
+                                    {{end}}
                                 </td>
-                                <td>{{if .Error}}{{.Error}}{{else}}{{Title .Stage}}: {{Title .State}}{{end}}</td>
-                                <td>
-                                    <div class="progress-bar">
-                                        <div class="progress-value status-{{ToLower .Status}}" data-progress="{{.Progress}}"></div>
+                                <td class="table__cell">
+                                    {{if .Error}}
+                                        <span class="text-danger text-sm">{{.Error}}</span>
+                                    {{else}}
+                                        <div class="text-sm">
+                                            <div class="font-medium">{{.Stage | Title}}</div>
+                                            <div class="text-muted">{{.State | Title}}</div>
+                                        </div>
+                                    {{end}}
+                                </td>
+                                <td class="table__cell">
+                                    <div class="flex items-center gap-3">
+                                        <div class="progress flex-1">
+                                            {{if eq (.Status | ToLower) "succeeded"}}
+                                                <div class="progress__bar progress__bar--success" style="width: {{.Progress}}%"></div>
+                                            {{else if eq (.Status | ToLower) "failed"}}
+                                                <div class="progress__bar progress__bar--danger" style="width: {{.Progress}}%"></div>
+                                            {{else if eq (.Status | ToLower) "running"}}
+                                                <div class="progress__bar progress__bar--animated" style="width: {{.Progress}}%"></div>
+                                            {{else}}
+                                                <div class="progress__bar" style="width: {{.Progress}}%"></div>
+                                            {{end}}
+                                        </div>
+                                        <span class="progress__text">{{.Progress}}%</span>
                                     </div>
-                                    <span class="progress-text">{{.Progress}}%</span>
                                 </td>
-                                <td>{{FormatDateTime .StartedAt}}</td>
-                                <td>{{FormatDuration .Duration}}</td>
-                                <td class="actions-column">
-                                    <a href="/dashboard/migration/{{.Repository}}" class="btn btn-sm btn-secondary">
+                                <td class="table__cell text-sm">{{.StartedAt | FormatDateTime}}</td>
+                                <td class="table__cell text-sm">{{.Duration | FormatDuration}}</td>
+                                <td class="table__cell">
+                                    <a href="/dashboard/migration/{{.Repository}}" class="btn btn--small btn--secondary">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                                            <polyline points="7 10 12 15 17 10"/>
-                                            <line x1="12" y1="15" x2="12" y2="3"/>
+                                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                            <path d="M15 3h6v6"/>
+                                            <path d="M10 14L21 3"/>
                                         </svg>
                                         Details
                                     </a>
@@ -127,17 +143,16 @@
             </div>
         {{else}}
             <div class="empty-state">
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 13V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h5.5"/>
-                    <path d="m20 17-3 3-1.5-1.5"/>
-                    <path d="m4 10 4.1 3.5L12 8"/>
-                </svg>
+                <div class="empty-state__icon">📋</div>
                 {{if .SearchQuery}}
-                <p>No matching repositories found for "{{.SearchQuery}}"</p>
-                <p><a href="/dashboard/history">View all completed migrations</a></p>
+                <h3 class="empty-state__title">No matching repositories found</h3>
+                <p class="empty-state__description">
+                    No repositories found for "{{.SearchQuery}}". 
+                    <a href="/dashboard/history" class="text-primary hover:underline">View all completed migrations</a>
+                </p>
                 {{else}}
-                <p>No migration history found.</p>
-                <p>Completed or failed migrations will appear here.</p>
+                <h3 class="empty-state__title">No migration history found</h3>
+                <p class="empty-state__description">Completed or failed migrations will appear here.</p>
                 {{end}}
             </div>
         {{end}}
@@ -151,7 +166,7 @@
 <script>
 // Function to set up sorting functionality
 function setupHistoryTableSorting() {
-    const sortableHeaders = document.querySelectorAll('th.sortable');
+    const sortableHeaders = document.querySelectorAll('.table__header-cell--sortable');
     const sortByInput = document.querySelector('input[name="sort-by"]');
     const sortDirInput = document.querySelector('input[name="sort-dir"]');
     
@@ -161,7 +176,8 @@ function setupHistoryTableSorting() {
     if (sortByInput.value) {
         const header = document.querySelector(`th[data-column="${sortByInput.value}"]`);
         if (header) {
-            header.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+            header.classList.remove('table__header-cell--sort-asc', 'table__header-cell--sort-desc');
+            header.classList.add(sortDirInput.value === 'desc' ? 'table__header-cell--sort-desc' : 'table__header-cell--sort-asc');
         }
     }
     
@@ -184,13 +200,13 @@ function setupHistoryTableSorting() {
             }
             
             // Update UI immediately to show which column is being sorted
-            document.querySelectorAll('th.sortable').forEach(th => {
-                th.classList.remove('sort-asc', 'sort-desc');
+            document.querySelectorAll('.table__header-cell--sortable').forEach(th => {
+                th.classList.remove('table__header-cell--sort-asc', 'table__header-cell--sort-desc');
             });
-            this.classList.add(sortDirInput.value === 'desc' ? 'sort-desc' : 'sort-asc');
+            this.classList.add(sortDirInput.value === 'desc' ? 'table__header-cell--sort-desc' : 'table__header-cell--sort-asc');
             
             // Navigate to the sorted URL
-            const searchValue = document.getElementById('repository-search')?.value || '';
+            const searchValue = document.querySelector('input[name="filter-repo"]')?.value || '';
             const pageSizeValue = document.getElementById('history-page-size')?.value || '20';
             
             // Ensure all parameters are properly encoded to prevent XSS
@@ -199,38 +215,63 @@ function setupHistoryTableSorting() {
     });
 }
 
-// Initialize progress bars
-function initializeProgressBars() {
-    document.querySelectorAll('.progress-value').forEach(function(el) {
-        const progress = parseFloat(el.getAttribute('data-progress'));
-        el.style.width = progress + '%';
-    });
-}
-
-// Handle dropdown menu on touch devices
+// Enhanced dropdown handling with modern interaction patterns
 document.addEventListener('DOMContentLoaded', function() {
-    const dropdownBtn = document.querySelector('.btn-export');
-    if (dropdownBtn) {
-        dropdownBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            const dropdown = this.closest('.dropdown');
-            const content = dropdown.querySelector('.dropdown-content');
-            content.classList.toggle('show');
-        });
+    const dropdowns = document.querySelectorAll('.dropdown');
+    
+    dropdowns.forEach(dropdown => {
+        const btn = dropdown.querySelector('.btn');
+        const content = dropdown.querySelector('.dropdown__content');
         
-        // Close dropdown when clicking outside of it
-        document.addEventListener('click', function(event) {
-            const dropdowns = document.querySelectorAll('.dropdown-content');
-            dropdowns.forEach(function(dropdown) {
-                if (dropdown.classList.contains('show')) {
-                    dropdown.classList.remove('show');
+        if (btn && content) {
+            // Handle click events
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                
+                // Close other dropdowns
+                dropdowns.forEach(otherDropdown => {
+                    if (otherDropdown !== dropdown) {
+                        const otherContent = otherDropdown.querySelector('.dropdown__content');
+                        if (otherContent) otherContent.classList.remove('show');
+                    }
+                });
+                
+                // Toggle current dropdown
+                content.classList.toggle('show');
+            });
+            
+            // Handle keyboard events
+            btn.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    content.classList.toggle('show');
                 }
             });
-        });
-    }
+        }
+    });
     
-    // Initialize progress bars
-    initializeProgressBars();
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+        dropdowns.forEach(dropdown => {
+            const content = dropdown.querySelector('.dropdown__content');
+            if (content && content.classList.contains('show')) {
+                content.classList.remove('show');
+            }
+        });
+    });
+    
+    // Close dropdowns on escape key
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            dropdowns.forEach(dropdown => {
+                const content = dropdown.querySelector('.dropdown__content');
+                if (content && content.classList.contains('show')) {
+                    content.classList.remove('show');
+                }
+            });
+        }
+    });
     
     // Set up sorting
     setupHistoryTableSorting();

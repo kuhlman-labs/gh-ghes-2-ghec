@@ -1,0 +1,25 @@
+{{define "migration_wizard"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Migration Wizard - GitHub Migration Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dist/styles.css">
+    <link rel="icon" type="image/x-icon" href="/static/images/favicon.ico">
+</head>
+<body>
+    {{template "header" .}}
+    
+    <main class="main">
+        {{template "migration_wizard_content" .}}
+    </main>
+    
+    {{template "footer" .}}
+    
+    <!-- Scripts -->
+    <script src="/static/js/htmx.min.js"></script>
+    <script src="/static/js/migration-wizard.js"></script>
+</body>
+</html>
+{{end}} 

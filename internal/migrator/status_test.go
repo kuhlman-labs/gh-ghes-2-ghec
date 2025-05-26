@@ -166,13 +166,162 @@ func TestParseMessageToStageAndState(t *testing.T) {
 			expectedStage: "unknown",
 			expectedState: "unknown",
 		},
+		{
+			name:          "Migration process initiated",
+			message:       "Migration process initiated",
+			overallStatus: payload.StatusInProgress,
+			expectedStage: "migration",
+			expectedState: "starting",
+		},
+		{
+			name:          "Starting migration import",
+			message:       "Starting migration import",
+			overallStatus: payload.StatusInProgress,
+			expectedStage: "migration",
+			expectedState: "starting",
+		},
+		{
+			name:          "estimating repository size",
+			message:       "estimating repository size",
+			overallStatus: payload.StatusInProgress,
+			expectedStage: "validation",
+			expectedState: "estimating_size",
+		},
+		{
+			name:          "checking if repository exists in target organization",
+			message:       "checking if repository exists in target organization",
+			overallStatus: payload.StatusInProgress,
+			expectedStage: "validation",
+			expectedState: "checking_target",
+		},
+		{
+			name:          "checking target repository",
+			message:       "checking target repository",
+			overallStatus: payload.StatusInProgress,
+			expectedStage: "validation",
+			expectedState: "checking_target",
+		},
+		{
+			name:          "validating source repository",
+			message:       "validating source repository",
+			overallStatus: payload.StatusInProgress,
+			expectedStage: "validation",
+			expectedState: "checking_source",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stage, state := parseMessageToStageAndState(tt.message, tt.overallStatus)
+			stage, state := parseMessageToStageAndState(tt.message, tt.overallStatus, nil)
 			assert.Equal(t, tt.expectedStage, stage)
 			assert.Equal(t, tt.expectedState, state)
+		})
+	}
+}
+
+func TestParseMessageToStageAndState_NewPatterns(t *testing.T) {
+	tests := []struct {
+		name      string
+		message   string
+		status    string
+		wantStage string
+		wantState string
+	}{
+		{
+			name:      "pre-enqueue validation",
+			message:   "pre-enqueue validation",
+			status:    payload.StatusInProgress,
+			wantStage: "queue",
+			wantState: "pre_validation",
+		},
+		{
+			name:      "initializing archive job",
+			message:   "initializing archive job",
+			status:    payload.StatusInProgress,
+			wantStage: "queue",
+			wantState: "initializing_archive",
+		},
+		{
+			name:      "repository size message",
+			message:   "repository size: Small (1.00 MB)",
+			status:    payload.StatusInProgress,
+			wantStage: "validation",
+			wantState: "size_estimated",
+		},
+		{
+			name:      "pre-enqueue validation repository exists",
+			message:   "pre-enqueue validation: repository exists in target organization, attempting to delete",
+			status:    payload.StatusInProgress,
+			wantStage: "validation",
+			wantState: "target_exists",
+		},
+		{
+			name:      "pre-enqueue validation successfully deleted",
+			message:   "pre-enqueue validation: successfully deleted existing repository: target-org/repo",
+			status:    payload.StatusInProgress,
+			wantStage: "validation",
+			wantState: "target_cleaned",
+		},
+		{
+			name:      "creating migration source in GHEC",
+			message:   "creating migration source in GHEC",
+			status:    payload.StatusInProgress,
+			wantStage: "setup",
+			wantState: "creating_source",
+		},
+		{
+			name:      "starting archive generation",
+			message:   "starting archive generation",
+			status:    payload.StatusInProgress,
+			wantStage: "archive",
+			wantState: "preparing",
+		},
+		{
+			name:      "retrieving archive URL",
+			message:   "retrieving archive URL",
+			status:    payload.StatusInProgress,
+			wantStage: "archive",
+			wantState: "retrieving_url",
+		},
+		{
+			name:      "uploading archive to GHOS",
+			message:   "uploading archive to GHOS",
+			status:    payload.StatusInProgress,
+			wantStage: "storage",
+			wantState: "uploading",
+		},
+		{
+			name:      "archive complete waiting for migration worker",
+			message:   "archive complete, waiting for migration worker",
+			status:    payload.StatusInProgress,
+			wantStage: "queue",
+			wantState: "waiting_migration_worker",
+		},
+		{
+			name:      "repository exists attempting to delete",
+			message:   "repository exists in target organization, attempting to delete: target-org/repo",
+			status:    payload.StatusInProgress,
+			wantStage: "validation",
+			wantState: "target_exists",
+		},
+		{
+			name:      "successfully deleted existing repository",
+			message:   "successfully deleted existing repository: target-org/repo",
+			status:    payload.StatusInProgress,
+			wantStage: "validation",
+			wantState: "target_cleaned",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stage, state := parseMessageToStageAndState(tt.message, tt.status, nil)
+			if stage != tt.wantStage {
+				t.Errorf("parseMessageToStageAndState() stage = %v, want %v", stage, tt.wantStage)
+			}
+			if state != tt.wantState {
+				t.Errorf("parseMessageToStageAndState() state = %v, want %v", state, tt.wantState)
+			}
 		})
 	}
 }
@@ -272,7 +421,7 @@ func TestUpdateStatus(t *testing.T) {
 			assert.True(t, status.UpdatedAt.Equal(timestamp) || status.UpdatedAt.After(timestamp.Add(-1*time.Second)))
 
 			// Verify stage and state were parsed correctly
-			expectedStage, expectedState := parseMessageToStageAndState(tt.message, tt.newOverallStatus)
+			expectedStage, expectedState := parseMessageToStageAndState(tt.message, tt.newOverallStatus, nil)
 			assert.Equal(t, expectedStage, status.Stage)
 			assert.Equal(t, expectedState, status.State)
 		})
@@ -504,5 +653,217 @@ func TestUpdateStatusProgressCalculation(t *testing.T) {
 		assert.True(t, status.Progress >= stage.minProgress, "Progress should be at least %d for message '%s', got %d", stage.minProgress, stage.message, status.Progress)
 		assert.True(t, status.Progress >= lastProgress, "Progress should not go backwards")
 		lastProgress = status.Progress
+	}
+}
+
+func TestParseMessageToStageAndState_ContextAware(t *testing.T) {
+	tests := []struct {
+		name          string
+		message       string
+		overallStatus string
+		existing      *payload.MigrationStatus
+		expectedStage string
+		expectedState string
+		description   string
+	}{
+		{
+			name:          "validation during migration should not regress",
+			message:       "repository exists in target organization, attempting to delete",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "migration",
+				State: "starting",
+			},
+			expectedStage: "migration",
+			expectedState: "pre_migration_validation",
+			description:   "Validation during migration phase should be treated as migration activity",
+		},
+		{
+			name:          "GHOS upload during migration should not regress",
+			message:       "uploading archive to GHOS",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "queue",
+				State: "waiting_migration_worker",
+			},
+			expectedStage: "migration",
+			expectedState: "uploading_to_ghos",
+			description:   "GHOS uploads during migration should be migration activities",
+		},
+		{
+			name:          "GHOS upload completion during migration",
+			message:       "archive uploaded to GHOS: https://example.com",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "migration",
+				State: "uploading_to_ghos",
+			},
+			expectedStage: "migration",
+			expectedState: "ghos_upload_complete",
+			description:   "GHOS upload completion should be migration activity",
+		},
+		{
+			name:          "archive operations during storage stage treated as migration setup",
+			message:       "retrieving archive URL",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "storage",
+				State: "uploading",
+			},
+			expectedStage: "migration",
+			expectedState: "preparing_archive",
+			description:   "Archive operations after storage stage should be migration setup",
+		},
+		{
+			name:          "normal progression should work",
+			message:       "generating migration archive",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "validation",
+				State: "checking_target",
+			},
+			expectedStage: "archive",
+			expectedState: "generating",
+			description:   "Normal stage progression should continue to work",
+		},
+		{
+			name:          "queue state should preserve progress",
+			message:       "archive complete, waiting for migration worker",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "archive",
+				State: "exported",
+			},
+			expectedStage: "queue",
+			expectedState: "waiting_migration_worker",
+			description:   "Queue states should work normally",
+		},
+		{
+			name:          "validation during migration worker waiting",
+			message:       "checking target repository",
+			overallStatus: payload.StatusInProgress,
+			existing: &payload.MigrationStatus{
+				Stage: "queue",
+				State: "waiting_migration_worker",
+			},
+			expectedStage: "migration",
+			expectedState: "pre_migration_validation",
+			description:   "Validation when waiting for migration worker should be migration activity",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stage, state := parseMessageToStageAndState(tt.message, tt.overallStatus, tt.existing)
+			assert.Equal(t, tt.expectedStage, stage, "Stage mismatch: %s", tt.description)
+			assert.Equal(t, tt.expectedState, state, "State mismatch: %s", tt.description)
+		})
+	}
+}
+
+func TestProgressRegressionPrevention(t *testing.T) {
+	// This test demonstrates the fix for the progress regression issue
+	// where validation and GHOS uploads during migration would drop progress
+
+	m := &Migrator{
+		logger:     slog.Default(),
+		migrations: make(map[string]*payload.MigrationStatus),
+		mu:         sync.RWMutex{},
+		webhookURL: "",
+	}
+
+	repoName := "org/test-repo"
+	timestamp := time.Now()
+	attemptStartTime := time.Now().Add(-1 * time.Minute)
+
+	// Set up initial state - simulate having completed archive stage
+	m.migrations[repoName] = &payload.MigrationStatus{
+		Repository:        repoName,
+		Status:            payload.StatusInProgress,
+		Stage:             "archive",
+		State:             "exported",
+		Progress:          40, // Archive stage completed
+		StageProgress:     80,
+		CompletedStages:   []string{"validation", "setup"},
+		CurrentStageIndex: 3,
+		StartedAt:         attemptStartTime,
+		UpdatedAt:         timestamp,
+	}
+
+	// Simulate the progression that was causing issues
+	testCases := []struct {
+		message       string
+		status        string
+		expectedStage string
+		expectedState string
+		minProgress   int
+		description   string
+	}{
+		{
+			message:       "archive complete, waiting for migration worker",
+			status:        payload.StatusInProgress,
+			expectedStage: "queue",
+			expectedState: "waiting_migration_worker",
+			minProgress:   40, // Should maintain progress from archive completion
+			description:   "After archive completion, waiting for migration worker",
+		},
+		{
+			message:       "repository exists in target organization, attempting to delete",
+			status:        payload.StatusInProgress,
+			expectedStage: "migration",
+			expectedState: "pre_migration_validation",
+			minProgress:   40, // Should NOT regress from previous progress
+			description:   "Validation during migration should not regress progress",
+		},
+		{
+			message:       "uploading archive to GHOS",
+			status:        payload.StatusInProgress,
+			expectedStage: "migration",
+			expectedState: "uploading_to_ghos",
+			minProgress:   40, // Should NOT regress from previous progress
+			description:   "GHOS upload during migration should not regress progress",
+		},
+		{
+			message:       "archive uploaded to GHOS: https://example.com",
+			status:        payload.StatusInProgress,
+			expectedStage: "migration",
+			expectedState: "ghos_upload_complete",
+			minProgress:   40, // Should advance from previous state
+			description:   "GHOS upload completion should advance progress",
+		},
+		{
+			message:       "migration created with ID: 12345",
+			status:        payload.StatusInProgress,
+			expectedStage: "migration",
+			expectedState: "created",
+			minProgress:   70, // Should advance significantly
+			description:   "Migration creation should advance progress",
+		},
+	}
+
+	lastProgress := 40 // Start with the initial progress
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("step_%d_%s", i+1, tc.expectedState), func(t *testing.T) {
+			m.updateStatus(repoName, tc.status, tc.message, timestamp, attemptStartTime)
+
+			m.mu.RLock()
+			status, exists := m.migrations[repoName]
+			m.mu.RUnlock()
+
+			assert.True(t, exists, "Status should exist")
+			assert.NotNil(t, status, "Status should not be nil")
+			assert.Equal(t, tc.expectedStage, status.Stage, "Stage should match expected: %s", tc.description)
+			assert.Equal(t, tc.expectedState, status.State, "State should match expected: %s", tc.description)
+			assert.True(t, status.Progress >= tc.minProgress,
+				"Progress should be at least %d%% for %s, got %d%%",
+				tc.minProgress, tc.description, status.Progress)
+			assert.True(t, status.Progress >= lastProgress,
+				"Progress should not regress: was %d%%, now %d%% for %s",
+				lastProgress, status.Progress, tc.description)
+
+			lastProgress = status.Progress
+			t.Logf("Step %d: %s -> Stage: %s, State: %s, Progress: %d%%",
+				i+1, tc.description, status.Stage, status.State, status.Progress)
+		})
 	}
 }

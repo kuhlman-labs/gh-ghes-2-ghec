@@ -77,7 +77,8 @@ func (qmi *QueueManagerIntegration) EnqueueMigration(
 		"priority", priority,
 		"delete_if_exists", req.DeleteIfExists)
 
-	// Initialize API clients for validation
+	// Always create real GitHub clients for validation - never use test implementations
+	// This ensures that pre-enqueue validation works correctly in production
 	clients, err := config.NewClients(&config.ClientsConfig{
 		GHESToken:    req.GHESToken,
 		GHCloudToken: req.GHCloudToken,
@@ -410,14 +411,14 @@ func (qmi *QueueManagerIntegration) validateRepositoryForQueue(
 	// Update state to "queued"
 	qmi.migrator.mu.Lock()
 	if status, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
-		status.Stage = "preparation"
-		status.State = "queued"
+		status.Stage = "queue"
+		status.State = "waiting_archive_worker"
 	}
 	qmi.migrator.mu.Unlock()
 
 	// Repository passed validation
 	qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress,
-		"pre-enqueue validation successful, queuing for archive generation",
+		"validation complete, waiting for archive worker",
 		time.Now(), attemptStartTime)
 	return true, nil
 }
@@ -451,16 +452,21 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 
 	var githubAPI github.API
 
-	// Use existing GitHub API client if available (for testing), otherwise create new clients
+	// Use existing GitHub API client if available (typically injected for testing)
+	// In production, no client should be injected, so we'll always create real clients
 	if qmi.migrator.githubAPI != nil {
 		githubAPI = qmi.migrator.githubAPI
-		qmi.logger.Debug("Using existing GitHub API client (likely for testing)",
-			"repository", sourceRepoFullName)
-	} else {
+		qmi.logger.Debug("Using injected GitHub API client",
+			"repository", sourceRepoFullName,
+			"is_test", qmi.migrator.githubAPI.IsTestImplementation())
+	}
+
+	if githubAPI == nil {
 		// Initialize clients for this migration
 		clients, err := config.NewClients(&config.ClientsConfig{
 			GHESToken:    req.GHESToken,
 			GHCloudToken: req.GHCloudToken,
+			GHESBaseURL:  req.GHESBaseURL,
 			Proxy:        qmi.migrator.config.GitHub.Proxy,
 		})
 		if err != nil {
@@ -650,11 +656,11 @@ func (qmi *QueueManagerIntegration) handleArchiveJob(job *queue.MigrationJob) er
 			// Update status to queueing for migration
 			qmi.migrator.mu.Lock()
 			if migStatus, exists := qmi.migrator.migrations[sourceRepoFullName]; exists {
-				migStatus.Stage = "archive"
-				migStatus.State = "completed"
+				migStatus.Stage = "queue"
+				migStatus.State = "waiting_migration_worker"
 			}
 			qmi.migrator.mu.Unlock()
-			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "archive generated, queueing for migration", time.Now(), attemptStartTime)
+			qmi.migrator.updateStatus(sourceRepoFullName, payload.StatusInProgress, "archive complete, waiting for migration worker", time.Now(), attemptStartTime)
 
 			// Enqueue the migration job (second phase)
 			err = qmi.queueManager.EnqueueMigrationJob(sourceRepoFullName, req, job.Priority)

@@ -1,0 +1,125 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js for CSS building
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'static/css/package-lock.json'
+
+      - name: Build CSS
+        run: |
+          cd static/css
+          npm ci
+          npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            latest
+
+      - name: Extract version from git tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+          echo "build_time=$BUILD_TIME" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_TIME=${{ steps.version.outputs.build_time }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Azure CLI Action - Terraform Init
+        uses: Azure/cli@v2.1.0
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          inlineScript: |
+            cd terraform
+            terraform init
+        env:
+          TF_VAR_github_owner: ${{ github.repository_owner }}
+          TF_VAR_github_username: ${{ github.actor }}
+          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Azure CLI Action - Terraform Apply
+        uses: Azure/cli@v2.1.0
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          inlineScript: |
+            cd terraform
+            terraform apply -auto-approve
+        env:
+          TF_VAR_github_owner: ${{ github.repository_owner }}
+          TF_VAR_github_username: ${{ github.actor }}
+          TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Azure CLI Action - Update Web App Container
+        uses: Azure/cli@v2.1.0
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          inlineScript: |
+            az webapp config container set \
+              --name gh-ghes-2-ghec-app \
+              --resource-group gh-ghes-2-ghec-rg \
+              --docker-custom-image-name ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} 
