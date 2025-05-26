@@ -67,7 +67,7 @@
             {{template "errors_content" .}}
         {{else}}
             <div class="empty-state">
-                <div class="empty-state__icon">⚠️</div>
+                <div class="empty-state__icon" role="img" aria-label="Warning">⚠️</div>
                 <h2 class="empty-state__title">Page Not Found</h2>
                 <p class="empty-state__description">Error: Page content not found (PageName: {{.PageName}}).</p>
             </div>
