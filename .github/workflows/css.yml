@@ -14,7 +14,7 @@ on:
       - '.github/workflows/css.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   css-lint-and-build:
