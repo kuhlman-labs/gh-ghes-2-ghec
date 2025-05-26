@@ -114,7 +114,7 @@ jobs:
           TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v2
+        uses: azure/webapps-deploy@v3
         with:
           app-name: gh-ghes-2-ghec-app
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }} 
