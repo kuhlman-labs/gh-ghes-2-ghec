@@ -10,7 +10,7 @@ unit:
 
 # Integration Test Configuration  
 integration:
-  timeout: 15m
+  timeout: 20m  # Increased timeout for container setup
   database:
     sqlite:
       enabled: true
@@ -22,6 +22,12 @@ integration:
       database: test_ghes_migration
       username: test_user
       password: test_pass
+      # Container-specific settings
+      container:
+        startup_timeout: 180s  # Increased for CI environments
+        health_check_timeout: 60s
+        connection_retry_attempts: 5
+        connection_retry_delay: 2s
     mysql:
       enabled: true
       host: localhost
@@ -29,10 +35,23 @@ integration:
       database: test_ghes_migration
       username: test_user
       password: test_pass
+      # Container-specific settings
+      container:
+        startup_timeout: 240s  # MySQL can be slower to start
+        health_check_timeout: 90s
+        connection_retry_attempts: 5
+        connection_retry_delay: 3s
   github:
     mock_api: true
     rate_limit_test: true
     timeout: 30s
+  # Container management settings
+  containers:
+    cleanup_timeout: 60s
+    termination_grace_period: 30s
+    force_remove_after: 90s
+    orphan_cleanup_enabled: true
+    orphan_cleanup_age: 1h
 
 # End-to-End Test Configuration
 e2e:

@@ -132,9 +132,10 @@ Types:
 │   │   └── prometheus-alerts.yml # Prometheus alert rules
 │   ├── api/                # API documentation
 │   ├── dashboards/         # Grafana dashboards
-│   │   └── migration-dashboard.json # Grafana dashboard definition
+│   │   │   └── migration-dashboard.json # Grafana dashboard definition
 │   ├── deployment/         # Deployment guides
 │   ├── images/             # Documentation images
+│   ├── testing.md          # Comprehensive testing guide
 │   └── monitoring/         # Monitoring documentation
 │       ├── alerting.md     # Alerting guide
 │       ├── dashboards.md   # Dashboard guide
@@ -180,6 +181,15 @@ Types:
 │   └── js/                 # JavaScript files
 │       ├── dashboard.js    # Dashboard functionality
 │       └── htmx.min.js     # HTMX library for dynamic UI
+├── test/                   # Test organization and configuration
+│   ├── config/             # Test configuration files
+│   │   └── test_config.yaml # Main test configuration
+│   ├── helpers/            # Test utilities and helpers
+│   │   ├── test_utils.go   # TestSuite and utility functions
+│   │   └── test_utils_test.go # Tests for test utilities
+│   ├── integration/        # Integration tests
+│   ├── e2e/                # End-to-end tests
+│   └── load/               # Load and performance tests
 ├── .dockerignore           # Docker ignore file
 ├── .gitignore              # Git ignore file
 ├── CONTRIBUTING.md         # Contribution guidelines
@@ -228,49 +238,73 @@ Key directories and their purposes:
 - `static/`: Static assets for the web dashboard
   - `css/`: CSS stylesheets
   - `js/`: JavaScript files and libraries
+- `test/`: Test organization and configuration
+  - `config/`: Test configuration files including test_config.yaml
+  - `helpers/`: Common test utilities, TestSuite, and helper functions
+  - `integration/`: Integration tests with external services and databases
+  - `e2e/`: End-to-end tests for complete workflow validation
+  - `load/`: Load testing and performance regression tests
 - Root files:
   - `Dockerfile`: Container definition
-  - `Makefile`: Build and development commands
+  - `Makefile`: Build and development commands with comprehensive test targets
   - `config.yaml.template`: Template configuration file
   - `main.go`: Application entry point
 
 
 When adding new code:
-1. Place command-line related code in `cmd/`
-2. Put internal implementation details in `internal/`
+1. Place command-line related code in `cmd/` with corresponding tests
+2. Put internal implementation details in `internal/` with unit tests
 3. Keep configuration in `config.yaml` or `internal/config/`
 4. Add new GitHub API operations in `internal/github/`
 5. Implement new migration features in `internal/migrator/`
-6. Add documentation in `docs/`
+6. Add documentation in `docs/` including testing documentation
 7. Place web assets in `static/`
 8. Update web UI in `internal/dashboard/`
+9. Add integration tests in `test/integration/` for external dependencies
+10. Add end-to-end tests in `test/e2e/` for complete workflows
+11. Update test configuration in `test/config/test_config.yaml` as needed
+12. Use `test/helpers/` utilities for consistent test setup and cleanup
 
 ## Testing
 
-### Running Tests
+The project has a comprehensive testing strategy with multiple test types. For detailed information about testing standards, setup, and best practices, see the [Testing Guide](docs/testing.md).
+
+### Quick Start
 
 ```bash
-# Run all tests
-go test ./...
+# Run all tests with automatic cleanup
+make test
 
-# Run tests with coverage
-go test ./... -cover
-
-# Run specific test
-go test ./internal/migrator -run TestMigration
+# Run only unit tests (fast)
+make test-unit
 
 # Run integration tests
-go test ./test/integration/...
+make test-integration
+
+# Run tests with coverage report
+make test-coverage
+
+# Use the enhanced local test script
+./scripts/local/test-local.sh --help
 ```
+
+### Test Types
+
+- **Unit Tests**: Fast, isolated tests in `internal/` and `cmd/` directories
+- **Integration Tests**: Database and external service tests in `test/integration/`
+- **End-to-End Tests**: Complete workflow tests in `test/e2e/`
+- **Load Tests**: Performance and scalability tests
+- **Security Tests**: Vulnerability scanning with `make sec`
 
 ### Writing Tests
 
-1. Unit tests should be in the same package as the code they test
-2. Integration tests should be in the `test/integration` directory
-3. Use table-driven tests where appropriate
-4. Mock external dependencies using interfaces
+1. **Unit tests**: Place alongside source code, achieve >90% coverage
+2. **Integration tests**: Use `helpers.NewTestSuite(t)` for setup
+3. **Use table-driven tests** for multiple scenarios
+4. **Mock external dependencies** using interfaces
+5. **Always defer cleanup** functions
 
-Example test:
+Example test pattern:
 ```go
 func TestMigration(t *testing.T) {
     tests := []struct {
@@ -295,6 +329,15 @@ func TestMigration(t *testing.T) {
     }
 }
 ```
+
+### Test Requirements
+
+- **Coverage**: Maintain >90% test coverage on new code
+- **Container Management**: Use proper cleanup for integration tests
+- **Documentation**: Document complex test scenarios
+- **Performance**: Monitor test execution time and resource usage
+
+See the [Testing Guide](docs/testing.md) for comprehensive documentation on test configuration, container lifecycle management, debugging, and advanced testing features.
 
 ## Documentation
 

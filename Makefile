@@ -7,7 +7,7 @@ LDFLAGS=-ldflags "-X github.com/kuhlman-labs/gh-ghes-2-ghec/internal/version.Ver
 GO_FILES=$(shell find . -name "*.go" -type f -not -path "./vendor/*")
 CSS_DIR=static/css
 
-.PHONY: all build clean test lint vet fmt docker docker-run help run css-deps css-build css-lint css-clean
+.PHONY: all build clean test test-unit test-integration test-clean lint vet fmt docker docker-run help run css-deps css-build css-lint css-clean
 
 all: clean fmt lint test css-build build
 
@@ -41,9 +41,51 @@ clean: css-clean
 	rm -f $(BINARY_NAME)
 	go clean
 
-# Run tests
-test:
-	go test -v ./...
+# Run all tests with container cleanup
+test: test-clean
+	@echo "Running all tests..."
+	go clean -testcache
+	go test -v -timeout=25m ./...
+	@$(MAKE) test-clean
+
+# Run unit tests only (fast)
+test-unit:
+	@echo "Running unit tests..."
+	go clean -testcache
+	go test -v -short -timeout=10m ./...
+
+# Run integration tests with proper container management
+test-integration: test-clean
+	@echo "Running integration tests..."
+	@echo "Cleaning up any existing test containers..."
+	-docker container prune -f --filter "label=test-suite=gh-ghes-2-ghec"
+	go clean -testcache
+	go test -v -timeout=30m ./test/integration/...
+	@$(MAKE) test-clean
+
+# Clean up test containers and resources
+test-clean:
+	@echo "Cleaning up test containers and resources..."
+	-docker container stop $$(docker container ls -q --filter "label=test-suite=gh-ghes-2-ghec") 2>/dev/null || true
+	-docker container rm $$(docker container ls -aq --filter "label=test-suite=gh-ghes-2-ghec") 2>/dev/null || true
+	-docker volume prune -f 2>/dev/null || true
+	-docker network prune -f 2>/dev/null || true
+
+# Run tests with coverage
+test-coverage: test-clean
+	@echo "Running tests with coverage..."
+	go clean -testcache
+	go test -v -timeout=25m -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+	@$(MAKE) test-clean
+
+# Run tests in CI environment
+test-ci: test-clean
+	@echo "Running tests in CI environment..."
+	go clean -testcache
+	CI=true go test -v -timeout=35m -race ./...
+	@$(MAKE) test-clean
 
 # Run linter (Go)
 lint:
@@ -88,7 +130,12 @@ help:
 	@echo "  make              : Build the application after running format, lint, test, and CSS build"
 	@echo "  make build        : Build the application (includes CSS build)"
 	@echo "  make clean        : Clean build files (includes CSS)"
-	@echo "  make test         : Run tests"
+	@echo "  make test         : Run all tests with container cleanup"
+	@echo "  make test-unit    : Run unit tests only (fast)"
+	@echo "  make test-integration : Run integration tests with container management"
+	@echo "  make test-coverage : Run tests with coverage report"
+	@echo "  make test-ci      : Run tests in CI environment"
+	@echo "  make test-clean   : Clean up test containers and resources"
 	@echo "  make lint         : Run linter"
 	@echo "  make vet          : Run go vet"
 	@echo "  make fmt          : Format code"
