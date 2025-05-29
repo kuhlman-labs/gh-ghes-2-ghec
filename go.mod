@@ -14,7 +14,7 @@ require (
 	github.com/lmittmann/tint v1.1.0
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/prometheus/client_golang v1.22.0
-	github.com/prometheus/client_model v0.6.1
+	github.com/prometheus/client_model v0.6.2
 	github.com/shurcooL/githubv4 v0.0.0-20240727222349-48295856cce7
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/viper v1.20.1
