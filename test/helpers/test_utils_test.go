@@ -19,7 +19,7 @@ func TestLoadTestConfig(t *testing.T) {
 	assert.True(t, config.Unit.Parallel)
 	assert.True(t, config.Unit.Short)
 
-	assert.Equal(t, "15m", config.Integration.Timeout)
+	assert.Equal(t, "20m", config.Integration.Timeout)
 	assert.True(t, config.Integration.Database.SQLite.Enabled)
 	assert.Equal(t, ":memory:", config.Integration.Database.SQLite.Path)
 }

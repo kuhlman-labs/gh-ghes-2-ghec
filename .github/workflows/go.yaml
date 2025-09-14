@@ -87,10 +87,24 @@ jobs:
     - name: Build
       run: go build -v ./...
 
-    - name: Test
+    # 10) Clean up any existing containers before tests
+    - name: Clean up existing containers
       run: |
-        go clean -testcache
-        go test -v -coverprofile=coverage.out ./...
+        docker container prune -f --filter "label=test-suite=gh-ghes-2-ghec" || true
+        docker volume prune -f || true
+
+    # 11) Run unit tests first (fast)
+    - name: Unit Tests
+      run: make test-unit
+
+    # 12) Run integration tests with container management
+    - name: Integration Tests
+      run: make test-ci
+
+    # 13) Clean up test containers after tests
+    - name: Clean up test containers
+      if: always()
+      run: make test-clean
 
     - name: Vet
       run: go vet ./...
