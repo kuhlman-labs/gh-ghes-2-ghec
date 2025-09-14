@@ -16,7 +16,7 @@ jobs:
     env:
       GOFLAGS: "-buildvcs=false"
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     # 1) Cache Go modules
     - name: Cache Go modules
