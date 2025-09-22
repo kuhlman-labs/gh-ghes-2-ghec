@@ -93,7 +93,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Azure CLI Action - Deploy Azure Resources
-        uses: Azure/cli@v2.1.0
+        uses: Azure/cli@v2.2.0
         with:
           inlineScript: |
             # Create resource group
