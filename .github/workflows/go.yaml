@@ -79,7 +79,7 @@ jobs:
 
     # 8) Security check
     - name: gosec security checker
-      uses: securego/gosec@v2.22.8
+      uses: securego/gosec@v2.22.10
       with:
         args: ./...
 
