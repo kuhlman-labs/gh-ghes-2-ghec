@@ -92,6 +92,12 @@ type StorageConfig struct {
 	ConnectionString string `mapstructure:"connection_string"` // Connection string or file path
 	TablePrefix      string `mapstructure:"table_prefix"`      // Optional prefix for table names
 	Timeout          int    `mapstructure:"timeout"`           // Timeout in seconds for database operations (0 means use default)
+	// Stale migration detection settings
+	StaleDetection struct {
+		Enabled         bool `mapstructure:"enabled"`           // Whether to detect and handle stale migrations on startup
+		MaxUpdateAge    int  `mapstructure:"max_update_age"`    // Max time since last update before considering stale (hours)
+		MaxMigrationAge int  `mapstructure:"max_migration_age"` // Max time since migration start before considering stale (hours)
+	} `mapstructure:"stale_detection"`
 }
 
 // QueueConfig holds queue-specific configuration.
@@ -152,6 +158,11 @@ type ConfigForWriting struct {
 		ConnectionString string `yaml:"connection_string"`
 		TablePrefix      string `yaml:"table_prefix"`
 		Timeout          int    `yaml:"timeout"`
+		StaleDetection   struct {
+			Enabled         bool `yaml:"enabled"`
+			MaxUpdateAge    int  `yaml:"max_update_age"`
+			MaxMigrationAge int  `yaml:"max_migration_age"`
+		} `yaml:"stale_detection"`
 	} `yaml:"storage"`
 	Queue struct {
 		Enabled             bool `yaml:"enabled"`
@@ -185,6 +196,11 @@ const (
 	defaultMaxMigrationThreads = 10   // GitHub's limit for concurrent migrations
 	defaultQueuePriority       = 50   // Default priority for migrations
 	defaultQueueStatsInterval  = 300  // Log queue stats every 5 minutes
+
+	// Stale migration detection defaults
+	defaultStaleDetectionEnabled = true // Enable stale detection by default
+	defaultMaxUpdateAge          = 2    // 2 hours since last update
+	defaultMaxMigrationAge       = 6    // 6 hours since migration start
 )
 
 var (
@@ -253,6 +269,9 @@ func loadConfig() error {
 	viper.SetDefault("storage.connection_string", defaultStoragePath)
 	viper.SetDefault("storage.table_prefix", "")
 	viper.SetDefault("storage.timeout", defaultDbTimeout)
+	viper.SetDefault("storage.stale_detection.enabled", defaultStaleDetectionEnabled)
+	viper.SetDefault("storage.stale_detection.max_update_age", defaultMaxUpdateAge)
+	viper.SetDefault("storage.stale_detection.max_migration_age", defaultMaxMigrationAge)
 
 	// Set default values for queue configuration
 	viper.SetDefault("queue.enabled", true) // Enable smart queueing by default
@@ -339,6 +358,15 @@ func CreateDefaultConfig() *Config {
 			ConnectionString: defaultStoragePath,
 			TablePrefix:      "",
 			Timeout:          defaultDbTimeout,
+			StaleDetection: struct {
+				Enabled         bool `mapstructure:"enabled"`
+				MaxUpdateAge    int  `mapstructure:"max_update_age"`
+				MaxMigrationAge int  `mapstructure:"max_migration_age"`
+			}{
+				Enabled:         defaultStaleDetectionEnabled,
+				MaxUpdateAge:    defaultMaxUpdateAge,
+				MaxMigrationAge: defaultMaxMigrationAge,
+			},
 		},
 		Queue: QueueConfig{
 			Enabled:             true,
@@ -383,6 +411,9 @@ func convertToWritable(cfg *Config) ConfigForWriting {
 	writeCfg.Storage.ConnectionString = cfg.Storage.ConnectionString
 	writeCfg.Storage.TablePrefix = cfg.Storage.TablePrefix
 	writeCfg.Storage.Timeout = cfg.Storage.Timeout
+	writeCfg.Storage.StaleDetection.Enabled = cfg.Storage.StaleDetection.Enabled
+	writeCfg.Storage.StaleDetection.MaxUpdateAge = cfg.Storage.StaleDetection.MaxUpdateAge
+	writeCfg.Storage.StaleDetection.MaxMigrationAge = cfg.Storage.StaleDetection.MaxMigrationAge
 	writeCfg.Queue.Enabled = cfg.Queue.Enabled
 	writeCfg.Queue.MaxQueueSize = cfg.Queue.MaxQueueSize
 	writeCfg.Queue.MaxArchiveThreads = cfg.Queue.MaxArchiveThreads

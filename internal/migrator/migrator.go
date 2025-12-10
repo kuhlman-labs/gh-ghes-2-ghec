@@ -120,12 +120,102 @@ func (m *Migrator) loadMigrationsFromStorage() error {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	staleCount := 0
 	for sourceRepoFullName, status := range statuses { // status.Repository is already sourceRepoFullName from storage
+		// Check for stale in-progress migrations that may have been interrupted by server shutdown
+		if status.Status == payload.StatusInProgress {
+			if m.isStaleInProgressMigration(status) {
+				m.logger.Warn("Detected stale in-progress migration from previous server session",
+					"repository_full_name", sourceRepoFullName,
+					"status", status.Status,
+					"stage", status.Stage,
+					"state", status.State,
+					"started_at", status.StartedAt.Format(time.RFC3339),
+					"updated_at", status.UpdatedAt.Format(time.RFC3339),
+					"migration_id", status.MigrationID)
+
+				// Handle the stale migration
+				m.handleStaleInProgressMigration(ctx, status)
+				staleCount++
+			}
+		}
+
 		m.migrations[sourceRepoFullName] = status // Key by sourceRepoFullName
 		m.logger.Debug("Loaded status from storage", "repository_full_name", sourceRepoFullName, "status", status.Status)
 	}
+
+	if staleCount > 0 {
+		m.logger.Info("Detected and handled stale in-progress migrations", "count", staleCount)
+	}
+
 	m.logger.Info("Successfully loaded migration statuses from storage", "count", len(m.migrations))
 	return nil
+}
+
+// isStaleInProgressMigration determines if an in-progress migration is stale
+// (likely interrupted by server shutdown)
+func (m *Migrator) isStaleInProgressMigration(status *payload.MigrationStatus) bool {
+	if status.Status != payload.StatusInProgress {
+		return false
+	}
+
+	// Check if stale detection is enabled
+	if !m.config.Storage.StaleDetection.Enabled {
+		return false
+	}
+
+	// Consider a migration stale if:
+	// 1. It's been more than configured hours since the last update
+	// 2. OR it's been more than configured hours since it started
+	now := time.Now()
+	timeSinceUpdate := now.Sub(status.UpdatedAt)
+	timeSinceStart := now.Sub(status.StartedAt)
+
+	// Use configured thresholds
+	maxUpdateAge := time.Duration(m.config.Storage.StaleDetection.MaxUpdateAge) * time.Hour
+	maxMigrationAge := time.Duration(m.config.Storage.StaleDetection.MaxMigrationAge) * time.Hour
+
+	return timeSinceUpdate > maxUpdateAge || timeSinceStart > maxMigrationAge
+}
+
+// handleStaleInProgressMigration handles a stale in-progress migration
+func (m *Migrator) handleStaleInProgressMigration(ctx context.Context, status *payload.MigrationStatus) {
+	// Archive the stale status first
+	statusToArchive := deepCopyMigrationStatus(status)
+	statusToArchive.Error = "Migration interrupted by server shutdown - marked as failed during recovery"
+	statusToArchive.Status = payload.StatusFailed
+	statusToArchive.UpdatedAt = time.Now()
+
+	archiveCtx, archiveCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer archiveCancel()
+
+	if err := m.storage.ArchiveMigrationAttempt(archiveCtx, statusToArchive); err != nil {
+		m.logger.Error("Failed to archive stale migration status",
+			"repository", status.Repository,
+			"error", err)
+	} else {
+		m.logger.Info("Archived stale migration status",
+			"repository", status.Repository)
+	}
+
+	// Update the current status to failed
+	status.Status = payload.StatusFailed
+	status.Error = "Migration interrupted by server shutdown - marked as failed during recovery. Use retry to restart the migration."
+	status.UpdatedAt = time.Now()
+
+	// Save the updated status
+	saveCtx, saveCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer saveCancel()
+
+	if err := m.storage.SaveMigrationStatus(saveCtx, status); err != nil {
+		m.logger.Error("Failed to update stale migration status to failed",
+			"repository", status.Repository,
+			"error", err)
+	} else {
+		m.logger.Info("Updated stale migration status to failed",
+			"repository", status.Repository)
+	}
 }
 
 // StartMigration initiates the migration process for the repositories specified in the request.

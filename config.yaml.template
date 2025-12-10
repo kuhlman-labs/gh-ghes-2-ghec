@@ -48,6 +48,11 @@ storage:
   connection_string: "./data/migrations.db"  # For sqlite: file path; for mysql/postgres: DSN connection string
   table_prefix: ""                    # Optional prefix for database table names (useful for shared databases)
   timeout: 120                        # Database operation timeout in seconds 
+  # Stale migration detection and recovery
+  stale_detection:
+    enabled: true
+    max_update_age: 2    # hours - migrations with no updates for this long are considered stale
+    max_migration_age: 6 # hours - migrations running for this long are considered stale
 
 ### Queue Configuration ###
 queue:
